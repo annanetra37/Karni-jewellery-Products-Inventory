@@ -27,12 +27,11 @@ This is the first cut covering milestones **M1 – M5** of the spec:
 | M3 Receiving & Kacca (stock check-in + cash drawer with handover reconciliation + discrepancy detection) | ✅ |
 | M4 Orders & Notifications (create order + in-app notification feed + mismatch alerts) | ✅ (email outbound deferred — see _Limitations_) |
 | M5 Admin panel (users invite, products, inventory edit, light reports) | ✅ |
-| M6 Polish (multi-line counter sales, file-upload photos, FX-rate admin UI, returns UI, full bilingual UI) | not yet |
+| M6 Polish (file-upload photos, FX-rate admin UI, returns UI, full bilingual UI) | partial — multi-line sales shipped |
 
 ### Explicitly not built yet
 - Outbound **email** (invites, low-stock) — no Resend / SMTP wired. Invite URL is shown in the admin user list for manual sharing.
 - **File upload** for product photos — admin product page accepts an image URL only. R2 / Railway-volume upload is the natural next step (schema already has `imageUrl`).
-- **Multi-line counter sales** — per spec §5 the sell flow is one item per sale. Schema and receipt handle multi-line today; the UI doesn't.
 - **Returns** UI — schema supports `RETURN` movements but there's no screen.
 - **FX rate** admin screen — rates are seeded and used; editing requires DB access for now.
 - **Bilingual UI strings** — catalog stores HY+EN; UI shell is English-only.

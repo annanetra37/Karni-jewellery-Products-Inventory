@@ -6,44 +6,72 @@ import { nextNumber, saleNumber } from '@/lib/counter';
 import { notify } from '@/lib/notify';
 
 const Body = z.object({
-  variantId: z.string(),
-  quantity: z.number().int().min(1),
   sellingPointId: z.string(),
   customerId: z.string().nullable().optional(),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
+  lines: z.array(z.object({
+    variantId: z.string(),
+    quantity: z.number().int().min(1),
+  })).min(1),
 });
 
 export async function POST(req: NextRequest) {
   const u = await getCurrentUser();
   if (!u) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const body = await req.json();
-  const parsed = Body.safeParse(body);
+  const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
-  const { variantId, quantity, sellingPointId, customerId, paymentMethod } = parsed.data;
+  const { sellingPointId, customerId, paymentMethod, lines } = parsed.data;
 
-  let lowStock: { variantSku: string; remaining: number; sellingPointName: string } | null = null;
+  // Reject duplicate variantIds — caller should consolidate first.
+  const variantIds = lines.map((l) => l.variantId);
+  if (new Set(variantIds).size !== variantIds.length) {
+    return NextResponse.json({ error: 'duplicate items — consolidate quantities client-side' }, { status: 400 });
+  }
+
   let saleId = '';
+  const lowStockHits: { variantSku: string; remaining: number; sellingPointName: string }[] = [];
 
   try {
     saleId = await prisma.$transaction(async (tx) => {
-      const variant = await tx.variant.findUnique({ where: { id: variantId } });
-      if (!variant) throw new Error('Variant not found');
       const sp = await tx.sellingPoint.findUnique({ where: { id: sellingPointId } });
       if (!sp) throw new Error('Selling point not found');
 
-      // Lock inventory row (or create at 0).
-      const existing = await tx.inventoryItem.findUnique({
-        where: { variantId_sellingPointId: { variantId, sellingPointId } },
-      });
-      const current = existing?.quantity ?? 0;
-      if (current < quantity) {
-        throw new Error(`Only ${current} left at ${sp.name}.`);
+      // Lock + validate every line first, before any writes.
+      type Prepared = {
+        line: typeof lines[number];
+        variantId: string;
+        sku: string;
+        unitPriceAmd: number;
+        lineTotalAmd: number;
+        newQty: number;
+        existingItemId: string | null;
+        reorderPoint: number;
+      };
+      const prepared: Prepared[] = [];
+      for (const l of lines) {
+        const variant = await tx.variant.findUnique({ where: { id: l.variantId } });
+        if (!variant) throw new Error('Variant not found');
+        const existing = await tx.inventoryItem.findUnique({
+          where: { variantId_sellingPointId: { variantId: l.variantId, sellingPointId } },
+        });
+        const current = existing?.quantity ?? 0;
+        if (current < l.quantity) {
+          throw new Error(`Only ${current} left at ${sp.name} for ${variant.sku}.`);
+        }
+        const unit = Number(variant.priceAmd);
+        prepared.push({
+          line: l,
+          variantId: l.variantId,
+          sku: variant.sku,
+          unitPriceAmd: unit,
+          lineTotalAmd: unit * l.quantity,
+          newQty: current - l.quantity,
+          existingItemId: existing?.id ?? null,
+          reorderPoint: variant.reorderPoint,
+        });
       }
-      const newQty = current - quantity;
 
-      const unitPrice = variant.priceAmd;
-      const lineTotal = Number(unitPrice) * quantity;
-
+      const subtotal = prepared.reduce((s, p) => s + p.lineTotalAmd, 0);
       const n = await nextNumber(tx, 'sale');
       const sNumber = saleNumber(n);
 
@@ -53,42 +81,45 @@ export async function POST(req: NextRequest) {
           sellingPointId,
           customerId: customerId || null,
           soldById: u.id,
-          subtotalAmd: lineTotal,
-          totalAmd: lineTotal,
+          subtotalAmd: subtotal,
+          totalAmd: subtotal,
           paymentMethod: paymentMethod || 'CASH',
           lineItems: {
-            create: [{
-              variantId, quantity,
-              unitPriceAmd: unitPrice,
-              lineTotalAmd: lineTotal,
-            }],
+            create: prepared.map((p) => ({
+              variantId: p.variantId,
+              quantity: p.line.quantity,
+              unitPriceAmd: p.unitPriceAmd,
+              lineTotalAmd: p.lineTotalAmd,
+            })),
           },
         },
       });
 
-      await tx.stockMovement.create({
-        data: {
-          variantId, sellingPointId,
-          type: 'SALE',
-          qtyDelta: -quantity,
-          unitPriceAmd: unitPrice,
-          performedById: u.id,
-          saleId: sale.id,
-        },
-      });
-
-      if (existing) {
-        await tx.inventoryItem.update({
-          where: { id: existing.id },
-          data: { quantity: newQty },
+      for (const p of prepared) {
+        await tx.stockMovement.create({
+          data: {
+            variantId: p.variantId,
+            sellingPointId,
+            type: 'SALE',
+            qtyDelta: -p.line.quantity,
+            unitPriceAmd: p.unitPriceAmd,
+            performedById: u.id,
+            saleId: sale.id,
+          },
         });
-      } else {
-        // Was missing; create at 0 (would have failed earlier if quantity > 0).
-        await tx.inventoryItem.create({ data: { variantId, sellingPointId, quantity: 0 } });
-      }
-
-      if (newQty <= variant.reorderPoint) {
-        lowStock = { variantSku: variant.sku, remaining: newQty, sellingPointName: sp.name };
+        if (p.existingItemId) {
+          await tx.inventoryItem.update({
+            where: { id: p.existingItemId },
+            data: { quantity: p.newQty },
+          });
+        } else {
+          await tx.inventoryItem.create({
+            data: { variantId: p.variantId, sellingPointId, quantity: p.newQty },
+          });
+        }
+        if (p.newQty <= p.reorderPoint) {
+          lowStockHits.push({ variantSku: p.sku, remaining: p.newQty, sellingPointName: sp.name });
+        }
       }
       return sale.id;
     });
@@ -96,25 +127,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  // Post-commit notifications (debounced per-sku per location 10 min).
-  if (lowStock) {
+  // Post-commit notifications, debounced per (sku, location).
+  if (lowStockHits.length > 0) {
     const ten = new Date(Date.now() - 10 * 60 * 1000);
-    const r = lowStock as { variantSku: string; remaining: number; sellingPointName: string };
-    const recent = await prisma.notification.findFirst({
-      where: {
-        type: 'LOW_STOCK',
-        relatedId: r.variantSku,
-        body: { contains: r.sellingPointName },
-        createdAt: { gte: ten },
-      },
-    });
-    if (!recent) {
-      await notify({
-        type: 'LOW_STOCK', toAdmins: true,
-        title: `Low stock: ${r.variantSku}`,
-        body: `${r.remaining} left at ${r.sellingPointName}`,
-        relatedId: r.variantSku,
+    for (const r of lowStockHits) {
+      const recent = await prisma.notification.findFirst({
+        where: {
+          type: 'LOW_STOCK',
+          relatedId: r.variantSku,
+          body: { contains: r.sellingPointName },
+          createdAt: { gte: ten },
+        },
       });
+      if (!recent) {
+        await notify({
+          type: 'LOW_STOCK', toAdmins: true,
+          title: `Low stock: ${r.variantSku}`,
+          body: `${r.remaining} left at ${r.sellingPointName}`,
+          relatedId: r.variantSku,
+        });
+      }
     }
   }
   return NextResponse.json({ id: saleId });
