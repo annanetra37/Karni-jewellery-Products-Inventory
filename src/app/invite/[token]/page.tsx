@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { createSession, hashPassword } from '@/lib/auth';
+import { PasswordInput } from '@/components/PasswordInput';
 
 async function acceptAction(formData: FormData) {
   'use server';
@@ -45,7 +46,8 @@ export default async function InvitePage({
           </div>
           <div>
             <label className="label" htmlFor="password">New password</label>
-            <input id="password" name="password" type="password" className="input" required minLength={8} />
+            <PasswordInput id="password" name="password" required minLength={8} autoComplete="new-password" />
+            <p className="text-xs text-karni-700 mt-1">At least 8 characters.</p>
           </div>
           <button className="btn-primary w-full" type="submit">Activate account</button>
         </form>

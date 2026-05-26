@@ -7,10 +7,13 @@ export default async function HomePage() {
   const user = await getCurrentUser();
   if (!user) {
     return (
-      <div className="card text-center mt-10">
-        <h1 className="text-2xl font-bold mb-2">Karni Sales</h1>
-        <p className="text-karni-700 mb-4">POS & inventory for Karni Jewellery.</p>
-        <Link href="/login" className="btn-primary inline-block">Sign in</Link>
+      <div className="max-w-md mx-auto mt-12">
+        <div className="card text-center space-y-3">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-b from-karni-500 to-karni-700 text-white text-xl font-bold flex items-center justify-center shadow-md">K</div>
+          <h1 className="text-2xl font-bold tracking-tight">Karni Sales</h1>
+          <p className="text-karni-700 text-sm">Point-of-sale and inventory for Karni Jewellery.</p>
+          <Link href="/login" className="btn-primary inline-flex">Sign in</Link>
+        </div>
       </div>
     );
   }
@@ -28,52 +31,68 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-4">
-      <div className="card">
-        <p className="text-karni-700 text-sm">Hello,</p>
-        <h1 className="text-xl font-bold">{user.fullName}</h1>
-        <p className="text-xs text-karni-700 mt-1">Role: {user.role}</p>
-      </div>
+      <section>
+        <p className="text-sm text-karni-700">Welcome back,</p>
+        <h1 className="page-title">{user.fullName}</h1>
+        <p className="page-subtitle">Signed in as {user.email} · <span className="chip">{user.role}</span></p>
+      </section>
 
       {openShift ? (
-        <Link href="/kacca" className="card block bg-emerald-50 border-emerald-200">
-          <p className="text-sm text-emerald-900">Shift open at <b>{openShift.sellingPoint.name}</b></p>
-          <p className="text-xs text-emerald-700 mt-1">Opening count: {formatAmd(openShift.openingCountAmd as unknown as number)}</p>
+        <Link href="/kacca" className="card-interactive block">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <p className="text-sm font-semibold text-emerald-800">Shift open at {openShift.sellingPoint.name}</p>
+              </div>
+              <p className="text-xs text-karni-700">Opening count {formatAmd(Number(openShift.openingCountAmd))} · started {openShift.openingAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+            <span className="text-karni-700">›</span>
+          </div>
         </Link>
       ) : (
-        <Link href="/kacca" className="card block bg-amber-50 border-amber-200">
-          <p className="text-sm text-amber-900">No shift open. Start your kacca →</p>
+        <Link href="/kacca" className="card-interactive block">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">No shift open</p>
+              <p className="text-xs text-karni-700 mt-0.5">Tap to start your kacca and begin selling.</p>
+            </div>
+            <span className="text-karni-700">›</span>
+          </div>
         </Link>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <section className="grid grid-cols-2 gap-3">
         <div className="card">
-          <p className="text-xs text-karni-700">Sales today</p>
-          <p className="text-2xl font-bold">{todaySalesCount}</p>
+          <p className="text-xs uppercase tracking-wide text-karni-700 font-semibold">Sales today</p>
+          <p className="text-3xl font-bold mt-1">{todaySalesCount}</p>
         </div>
         <div className="card">
-          <p className="text-xs text-karni-700">Revenue today</p>
-          <p className="text-2xl font-bold">{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
+          <p className="text-xs uppercase tracking-wide text-karni-700 font-semibold">Revenue today</p>
+          <p className="text-3xl font-bold mt-1">{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-2 gap-3">
+      <section className="grid grid-cols-2 gap-3">
         <Link href="/sell" className="btn-primary">Start a sale</Link>
         <Link href="/receive" className="btn-secondary">Receive stock</Link>
         <Link href="/orders/new" className="btn-secondary">New order</Link>
         <Link href="/customers" className="btn-secondary">Customers</Link>
-      </div>
+      </section>
 
       {isAdmin(user) && (
-        <div className="card">
-          <p className="font-medium mb-2">Admin</p>
-          <div className="grid grid-cols-2 gap-3">
-            <Link href="/admin/users" className="btn-ghost">Users</Link>
-            <Link href="/admin/products" className="btn-ghost">Products</Link>
-            <Link href="/admin/inventory" className="btn-ghost">Inventory</Link>
-            <Link href="/admin/reports" className="btn-ghost">Reports</Link>
+        <section className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold">Admin</p>
+            <span className="chip">{lowStock} low / out</span>
           </div>
-          <p className="text-xs text-karni-700 mt-3">{lowStock} variants at or below reorder point.</p>
-        </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <Link href="/admin/users" className="btn-secondary">Users</Link>
+            <Link href="/admin/products" className="btn-secondary">Products</Link>
+            <Link href="/admin/inventory" className="btn-secondary">Inventory</Link>
+            <Link href="/admin/reports" className="btn-secondary">Reports</Link>
+          </div>
+        </section>
       )}
     </div>
   );

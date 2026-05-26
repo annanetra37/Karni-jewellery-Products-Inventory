@@ -1,7 +1,17 @@
-import { requireAdmin } from '@/lib/auth';
+import { headers } from 'next/headers';
+import { requireAdmin, hashPassword } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { randomBytes } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
+import { CopyButton } from '@/components/CopyButton';
+import { PasswordInput } from '@/components/PasswordInput';
+
+async function originFromHeaders() {
+  const h = await headers();
+  const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000';
+  const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
 
 async function inviteAction(formData: FormData) {
   'use server';
@@ -35,51 +45,142 @@ async function reactivateAction(formData: FormData) {
   revalidatePath('/admin/users');
 }
 
+async function resetPasswordAction(formData: FormData) {
+  'use server';
+  await requireAdmin();
+  const id = String(formData.get('id') || '');
+  const token = randomBytes(24).toString('hex');
+  await prisma.user.update({
+    where: { id },
+    data: { passwordHash: null, inviteToken: token, inviteAcceptedAt: null },
+  });
+  revalidatePath('/admin/users');
+}
+
+async function setPasswordDirectlyAction(formData: FormData) {
+  'use server';
+  await requireAdmin();
+  const id = String(formData.get('id') || '');
+  const next = String(formData.get('password') || '');
+  if (next.length < 8) return;
+  await prisma.user.update({
+    where: { id },
+    data: { passwordHash: await hashPassword(next), inviteToken: null, inviteAcceptedAt: new Date() },
+  });
+  revalidatePath('/admin/users');
+}
+
 export default async function AdminUsersPage() {
   await requireAdmin();
-  const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+  const [users, origin] = await Promise.all([
+    prisma.user.findMany({ orderBy: { createdAt: 'desc' } }),
+    originFromHeaders(),
+  ]);
+
   return (
-    <div className="space-y-3">
-      <h1 className="text-xl font-bold">Users</h1>
-      <form action={inviteAction} className="card space-y-2">
-        <p className="font-medium">Invite a salesperson</p>
-        <input className="input" name="fullName" placeholder="Full name" required />
-        <input className="input" name="email" placeholder="Email" type="email" required />
-        <select className="input" name="role" defaultValue="SALES">
-          <option value="SALES">Sales</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-        <button className="btn-primary w-full" type="submit">Send invite</button>
-        <p className="text-xs text-karni-700">After saving, share the invite URL with the new user (shown in the list below).</p>
+    <div className="space-y-4">
+      <header>
+        <h1 className="page-title">Users</h1>
+        <p className="page-subtitle">Invite salespeople, promote admins, reset passwords.</p>
+      </header>
+
+      <form action={inviteAction} className="card space-y-3">
+        <p className="font-semibold">Invite a new user</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="fullName">Full name</label>
+            <input id="fullName" className="input" name="fullName" placeholder="e.g. Anna Karapetyan" required />
+          </div>
+          <div>
+            <label className="label" htmlFor="email">Email</label>
+            <input id="email" className="input" name="email" type="email" placeholder="email@example.com" required />
+          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="role">Role</label>
+          <select id="role" className="input" name="role" defaultValue="SALES">
+            <option value="SALES">Sales</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
+        <button className="btn-primary w-full sm:w-auto" type="submit">Generate invite</button>
+        <p className="text-xs text-karni-700">A one-time activation URL will appear in the user's row below. Copy and share it.</p>
       </form>
 
-      <ul className="space-y-2">
-        {users.map((u) => (
-          <li key={u.id} className="card">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="font-medium">{u.fullName} <span className="chip ml-2">{u.role}</span></p>
-                <p className="text-xs text-karni-700">{u.email} · {u.isActive ? 'active' : 'disabled'}</p>
-                {u.inviteToken && (
-                  <p className="text-[10px] text-karni-700 font-mono break-all mt-1">
-                    Invite URL: /invite/{u.inviteToken}
+      <ul className="space-y-3">
+        {users.map((u) => {
+          const inviteUrl = u.inviteToken ? `${origin}/invite/${u.inviteToken}` : null;
+          const pending = !!u.inviteToken;
+          return (
+            <li key={u.id} className="card space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold flex items-center gap-2">
+                    {u.fullName}
+                    <span className={`chip ${u.role === 'ADMIN' ? 'chip-warn' : ''}`}>{u.role}</span>
+                    {!u.isActive && <span className="chip chip-danger">Disabled</span>}
+                    {pending && <span className="chip chip-ok">Pending activation</span>}
                   </p>
-                )}
+                  <p className="text-sm text-karni-700">{u.email}</p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {u.isActive ? (
+                    <form action={deactivateAction}>
+                      <input type="hidden" name="id" value={u.id} />
+                      <button className="btn-link-danger" type="submit">Deactivate</button>
+                    </form>
+                  ) : (
+                    <form action={reactivateAction}>
+                      <input type="hidden" name="id" value={u.id} />
+                      <button className="btn-link" type="submit">Reactivate</button>
+                    </form>
+                  )}
+                </div>
               </div>
-              {u.isActive ? (
-                <form action={deactivateAction}>
-                  <input type="hidden" name="id" value={u.id} />
-                  <button className="text-red-700 text-sm underline">Deactivate</button>
-                </form>
-              ) : (
-                <form action={reactivateAction}>
-                  <input type="hidden" name="id" value={u.id} />
-                  <button className="text-emerald-700 text-sm underline">Reactivate</button>
-                </form>
+
+              {inviteUrl && (
+                <div className="rounded-xl bg-karni-50 border border-karni-100 p-3 space-y-2">
+                  <p className="text-xs font-medium text-karni-900">
+                    {u.inviteAcceptedAt ? 'New reset link' : 'Activation link'} — share with this user:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono break-all bg-white border border-karni-100 rounded-lg px-2 py-1.5">
+                      {inviteUrl}
+                    </code>
+                    <CopyButton value={inviteUrl} />
+                  </div>
+                </div>
               )}
-            </div>
-          </li>
-        ))}
+
+              <details className="rounded-xl border border-karni-100 px-3 py-2">
+                <summary className="cursor-pointer text-sm text-karni-700 select-none hover:text-karni-900">
+                  Reset / set password
+                </summary>
+                <div className="pt-3 space-y-3">
+                  <form action={resetPasswordAction} className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Send a reset link</p>
+                      <p className="text-xs text-karni-700">Wipes their password and generates a new activation URL above.</p>
+                    </div>
+                    <input type="hidden" name="id" value={u.id} />
+                    <button className="btn-secondary" type="submit">Send reset</button>
+                  </form>
+                  <form action={setPasswordDirectlyAction} className="space-y-2">
+                    <input type="hidden" name="id" value={u.id} />
+                    <p className="text-sm font-medium">Or set a temporary password directly</p>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <PasswordInput name="password" placeholder="At least 8 characters" minLength={8} required />
+                      </div>
+                      <button className="btn-secondary" type="submit">Set</button>
+                    </div>
+                    <p className="text-xs text-karni-700">Tell the user the password verbally; they can change it themselves under <code>/account/password</code>.</p>
+                  </form>
+                </div>
+              </details>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
