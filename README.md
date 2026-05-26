@@ -2,12 +2,13 @@
 Set these on the app service (not the Postgres plugin):
 
 Variable	Value	What it does
-DATABASE_URL	${{Postgres.DATABASE_URL}}	Railway reference variable — auto-pulls from the Postgres plugin in the same project. Required.
-SESSION_SECRET	a 32+ char random string — generate with openssl rand -hex 32	Signs the auth cookies. Required. Change this and everyone gets logged out.
-ADMIN_EMAIL	your email, e.g. annanetra37@gmail.com	Becomes the first/only admin on first deploy. Required for the auto-seed.
-ADMIN_NAME	e.g. Annanetra	Display name for that admin.
-ADMIN_INITIAL_PASSWORD	something memorable, e.g. karni-admin-2026	First-login password. Change after you sign in.
-NEXT_TELEMETRY_DISABLED	1	Optional — silences Next's telemetry pings.
+
+* DATABASE_URL	${{Postgres.DATABASE_URL}}	
+* SESSION_SECRET	a 32+ char random string — generate with openssl rand -hex 32	Signs the auth cookies. Required. Change this and everyone gets logged out.
+* ADMIN_EMAIL	your email, e.g. annanetra37@gmail.com
+* ADMIN_NAME	e.g. Annanetra
+* ADMIN_INITIAL_PASSWORD	 karni-admin-2026	
+* NEXT_TELEMETRY_DISABLED	1	Optional — silences Next's telemetry pings.
 
 
 
