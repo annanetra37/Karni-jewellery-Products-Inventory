@@ -4,15 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build",
-    "start": "next start -p 3000",
+    "build": "prisma generate && next build",
+    "start": "tsx scripts/bootstrap.ts && next start -p ${PORT:-3000}",
+    "start:web": "next start -p ${PORT:-3000}",
     "lint": "next lint",
+    "bootstrap": "tsx scripts/bootstrap.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:push": "prisma db push",
-    "import:catalog": "tsx scripts/import-catalog.ts",
-    "seed:admin": "tsx scripts/seed-admin.ts"
+    "import:catalog": "tsx scripts/import-catalog.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
