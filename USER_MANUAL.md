@@ -84,9 +84,9 @@ The top-right has **Notifs** (unread badge) and **Logout**.
 
 **URL:** `/sell`. **Spec:** §4–5.
 
-The fastest path from "customer hands you a piece" to "sale recorded + receipt".
+The fastest path from "customer hands you pieces" to "sale recorded + receipt". You can put **multiple items** in one sale — each becomes a line on the receipt.
 
-### Step 1 — pick a product
+### Step 1 — find and add products to the cart
 
 You land on a search bar. Type any of:
 
@@ -101,46 +101,54 @@ The search is **typo-tolerant** (trigram fuzzy) and updates as you type. Filter 
 - **Selling point** — switching this changes the live stock numbers shown.
 - **Category** — Pendant, Earring, Ring, Bracelet, Necklace, Brooch.
 - **Color**.
+- **Size** — Small, Medium, Large, or "Any size".
 - **In stock only** toggle.
 
-Each result card shows the **photo** (or "no photo" placeholder), name, variant info, **price in AMD**, and a stock badge:
+Each result card shows the **photo**, name, variant info, **price in AMD**, and a stock badge:
 
 - 🟢 `N in stock` — fine.
 - 🟡 `Low: N` — at or below the reorder point.
 - 🔴 `Out of stock` — none at that location.
 
-**Tap the card** to select it.
+**Tap a card to add it to the cart.** Tap the same card again to bump its quantity by 1.
 
-### Step 2 — confirm sale details
+### Step 2 — review the cart
 
-The screen turns into a sales sheet with three blocks:
+Once any item is in the cart, the search collapses into a **+ Add another item** section, and the cart appears at the top. For each line:
 
-**A. Product** — name, variant, SKU. Use **−** / **+** to change quantity. Use **Change** (top right) to swap to a different product. The line total recalculates live.
+- **−** / **+** adjust the quantity. The line total recalculates live.
+- **Remove** drops the line entirely.
+- **Clear** at the top wipes the whole cart.
 
-**B. Selling point + payment**
+The **Subtotal** at the bottom sums the entire sale. Tap **+ Add another item** to expand the search and add more.
+
+### Step 3 — confirm sale details
+
+Below the cart, three blocks:
+
+**A. Selling point + payment**
 - **Selling point** — defaults to whatever location your current kacca shift is at (if any). Required.
-- **Stock here** is shown beneath so you know how many are at that location.
 - **Payment method** — Cash / Card / Transfer / Other. **Only Cash** sales count toward the kacca's expected closing total.
 
-**C. Customer**
+**B. Customer**
 - Start typing in **Find by name / phone / email** — matches appear instantly. Tap one to attach.
 - Or tap **+ Add new customer**, fill in name + phone and/or email, save. (If a customer with that phone/email already exists, the system attaches the existing one instead of creating a duplicate.)
 - Or skip entirely — the sale will be marked as walk-in / no customer.
 
-### Step 3 — Confirm & Sell
+### Step 4 — Confirm & Sell
 
 Big primary button at the bottom: **Confirm & Sell — N ֏**.
 
 What happens behind the scenes, all inside one database transaction:
 
-1. The system locks the inventory row at that selling point.
-2. **Rejects** if the resulting quantity would go below 0 — you'll see `Only N left at [location]`.
-3. Writes a `SALE` movement to the audit log.
-4. Decrements cached stock.
-5. Creates the sale + line item, assigns a sale number (e.g. `KARNI-2026-00042`).
-6. If the new stock is at or below the reorder point (default: 2), an admin notification fires.
+1. The system locks the inventory row at that selling point **for every line in the cart**.
+2. **Rejects the whole sale** if any line would push stock below 0 — you'll see `Only N left at [location] for [SKU]`. No partial writes; the cart is preserved so you can adjust.
+3. Writes one `SALE` movement per line to the audit log.
+4. Decrements cached stock for each line.
+5. Creates one sale + N line items, assigns a sale number (e.g. `KARNI-2026-00042`).
+6. For each line whose new stock is at or below its reorder point (default: 2), an admin notification fires (debounced per SKU + location for 10 min).
 
-You're redirected to the **receipt**.
+You're redirected to the **receipt**, which lists every line.
 
 ---
 
