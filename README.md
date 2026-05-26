@@ -13,7 +13,15 @@ This is the first cut covering milestones **M1 – M5** of the spec:
 | M3 Receiving & Kacca (stock check-in + cash drawer with handover reconciliation + discrepancy detection) | ✅ |
 | M4 Orders & Notifications (create order + in-app notification feed + mismatch alerts) | ✅ (email outbound deferred — see _Limitations_) |
 | M5 Admin panel (users invite, products, inventory edit, light reports) | ✅ |
-| M6 Polish (multi-line sales, batch receiving was included, photo uploads via URL, bilingual UI pass) | partial |
+| M6 Polish (multi-line counter sales, file-upload photos, FX-rate admin UI, returns UI, full bilingual UI) | not yet |
+
+### Explicitly not built yet
+- Outbound **email** (invites, low-stock) — no Resend / SMTP wired. Invite URL is shown in the admin user list for manual sharing.
+- **File upload** for product photos — admin product page accepts an image URL only. R2 / Railway-volume upload is the natural next step (schema already has `imageUrl`).
+- **Multi-line counter sales** — per spec §5 the sell flow is one item per sale. Schema and receipt handle multi-line today; the UI doesn't.
+- **Returns** UI — schema supports `RETURN` movements but there's no screen.
+- **FX rate** admin screen — rates are seeded and used; editing requires DB access for now.
+- **Bilingual UI strings** — catalog stores HY+EN; UI shell is English-only.
 
 ---
 
@@ -53,27 +61,52 @@ Change `ADMIN_INITIAL_PASSWORD` in `.env` before the first import in production.
 
 ---
 
-## Deploying on Railway
+## Deploying on Railway (one-shot)
 
-1. Push this repo to GitHub. Connect to Railway as a new project.
-2. Add a **PostgreSQL** plugin. Copy its `DATABASE_URL` into the app service.
-3. Set service env vars:
-   - `DATABASE_URL` (from plugin)
-   - `SESSION_SECRET` (32+ chars; generate with `openssl rand -hex 32`)
-   - `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_INITIAL_PASSWORD`
-4. Build command: `npx prisma generate && npm run build`
-   Start command: `npx prisma migrate deploy && npm start`
-5. After the first deploy, run the catalog import as a one-off job:
-   ```bash
-   railway run npm run import:catalog
+The app **bootstraps itself on first start**: migrations run, `pg_trgm`
+extension is enabled, the trigram index is built, and the catalog
+(163 designs / 474 variants / 10 selling points / FX rates / admin user)
+is imported automatically — but only if the database is empty.
+Re-deploys are no-ops.
+
+1. Push this repo to GitHub. In Railway, **New Project → Deploy from GitHub** → pick this repo.
+2. In the same project, **+ New → Database → PostgreSQL**. Railway auto-injects `DATABASE_URL` into the app service via the `${{Postgres.DATABASE_URL}}` reference variable. If it isn't already set, add it on the app service manually:
    ```
-   (And re-run any time the spreadsheet changes — the script is idempotent.)
-6. In the Railway Postgres console, run:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS pg_trgm;
-   CREATE INDEX IF NOT EXISTS variant_search_trgm
-     ON "Variant" USING gin ("searchBlob" gin_trgm_ops);
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
    ```
+3. Set the remaining env vars on the app service:
+   - `SESSION_SECRET` — 32+ chars; generate with `openssl rand -hex 32`
+   - `ADMIN_EMAIL` — owner's email (becomes the first admin)
+   - `ADMIN_NAME` — owner's display name
+   - `ADMIN_INITIAL_PASSWORD` — first-login password; change after login
+4. Build command (Railway auto-detects, but if you set it manually): `npm run build`
+   Start command: `npm start` *(this runs `tsx scripts/bootstrap.ts && next start`)*
+5. Deploy. Watch the build logs — on the very first deploy you'll see:
+   ```
+   Applying migration `20260526000000_init`
+   Applying migration `20260526000100_trigram_index`
+   → Fresh database. Running catalog import…
+   ✓ Selling points seeded: 10
+   ✓ Designs upserted: 163
+   ✓ Variants upserted: 474
+   ✓ Admin created: annanetra37@gmail.com
+   ```
+   On every subsequent deploy:
+   ```
+   No pending migrations to apply.
+   ✓ Catalog already populated (474 variants). Skipping import.
+   ```
+6. Open the Railway-generated URL, sign in with `ADMIN_EMAIL` + `ADMIN_INITIAL_PASSWORD`. You're live.
+
+> ⚠ The `Karni_Master_Product_Database.xlsx` file **must be present in the deployed repo** for the auto-import — it's the seed data source. It's committed in this repo; don't remove it.
+
+### Re-importing the catalog later
+
+The import script is idempotent (upsert on `designId` / `sku`). To re-run after editing the spreadsheet:
+
+```bash
+railway run npm run import:catalog
+```
 
 ---
 
