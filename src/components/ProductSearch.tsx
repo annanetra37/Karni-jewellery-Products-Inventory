@@ -23,6 +23,7 @@ export function ProductSearch({
   const [spId, setSpId] = useState(defaultSellingPointId || '');
   const [category, setCategory] = useState('');
   const [color, setColor] = useState('');
+  const [size, setSize] = useState('');
   const [inStock, setInStock] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,10 +35,11 @@ export function ProductSearch({
     if (spId) u.set('sellingPointId', spId);
     if (category) u.set('category', category);
     if (color) u.set('color', color);
+    if (size) u.set('size', size);
     if (inStock) u.set('inStock', '1');
     u.set('limit', '25');
     return `/api/search?${u.toString()}`;
-  }, [q, spId, category, color, inStock]);
+  }, [q, spId, category, color, size, inStock]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -71,6 +73,12 @@ export function ProductSearch({
             <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
           </select>
           <input className="input flex-1 min-w-[100px]" placeholder="Color" value={color} onChange={(e) => setColor(e.target.value)} />
+          <select className="input flex-1 min-w-[110px]" value={size} onChange={(e) => setSize(e.target.value)}>
+            <option value="">Any size</option>
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} />
             In stock only
