@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+html, body { background: #fdfbf7; color: #2a1f15; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Armenian", sans-serif; }
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-medium transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-karni-600 text-white hover:bg-karni-700; }
+  .btn-secondary { @apply btn bg-karni-100 text-karni-900 hover:bg-karni-50; }
+  .btn-ghost { @apply btn bg-transparent text-karni-700 hover:bg-karni-50; }
+  .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
+  .card { @apply rounded-2xl bg-white shadow-sm border border-karni-100 p-4; }
+  .input { @apply w-full rounded-xl border border-karni-100 bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-karni-500; }
+  .label { @apply block text-sm font-medium text-karni-900 mb-1; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full bg-karni-100 px-3 py-1 text-xs font-medium text-karni-900; }
+  .chip-warn { @apply chip bg-amber-100 text-amber-900; }
+  .chip-danger { @apply chip bg-red-100 text-red-900; }
+  .chip-ok { @apply chip bg-emerald-100 text-emerald-900; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
