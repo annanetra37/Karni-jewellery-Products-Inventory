@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
   const category = sp.get('category') || '';
   const collection = sp.get('collection') || '';
   const color = sp.get('color') || '';
+  const size = sp.get('size') || '';
   const inStock = sp.get('inStock') === '1';
   const limit = Math.min(50, Number(sp.get('limit') || 25));
 
@@ -49,13 +50,14 @@ export async function GET(req: NextRequest) {
         AND ($2 = '' OR v.category = $2)
         AND ($3 = '' OR v.collection = $3)
         AND ($4 = '' OR v.color = $4)
-        AND (v."searchBlob" ILIKE $5 OR similarity(v."searchBlob", $6) > 0.15 OR v.sku ILIKE $5 OR v.barcode = $6)
-        AND ($7 = false OR COALESCE(ii.quantity, 0) > 0)
-      ORDER BY GREATEST(similarity(v."searchBlob", $6), CASE WHEN v.sku ILIKE $5 THEN 1 ELSE 0 END) DESC,
+        AND ($5 = '' OR v.size = $5)
+        AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
+        AND ($8 = false OR COALESCE(ii.quantity, 0) > 0)
+      ORDER BY GREATEST(similarity(v."searchBlob", $7), CASE WHEN v.sku ILIKE $6 THEN 1 ELSE 0 END) DESC,
                v."designName" ASC
-      LIMIT $8
+      LIMIT $9
       `,
-      sellingPointId, category, collection, color, like, q, inStock, limit
+      sellingPointId, category, collection, color, size, like, q, inStock, limit
     );
   } else {
     rows = await prisma.$queryRawUnsafe<Row[]>(
@@ -72,11 +74,12 @@ export async function GET(req: NextRequest) {
         AND ($2 = '' OR v.category = $2)
         AND ($3 = '' OR v.collection = $3)
         AND ($4 = '' OR v.color = $4)
-        AND ($5 = false OR COALESCE(ii.quantity, 0) > 0)
+        AND ($5 = '' OR v.size = $5)
+        AND ($6 = false OR COALESCE(ii.quantity, 0) > 0)
       ORDER BY v."createdAt" DESC
-      LIMIT $6
+      LIMIT $7
       `,
-      sellingPointId, category, collection, color, inStock, limit
+      sellingPointId, category, collection, color, size, inStock, limit
     );
   }
   return NextResponse.json({ results: rows });
