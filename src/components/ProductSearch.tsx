@@ -53,15 +53,22 @@ export function ProductSearch({
   return (
     <div className="space-y-3">
       <div className="card space-y-3">
-        <input
-          autoFocus={autoFocus}
-          inputMode="search"
-          enterKeyHint="search"
-          placeholder="Search SKU, design, color, letter, barcode…"
-          className="input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        <div className="relative">
+          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-karni-700 pointer-events-none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+            </svg>
+          </span>
+          <input
+            autoFocus={autoFocus}
+            inputMode="search"
+            enterKeyHint="search"
+            placeholder="Search SKU, design, color, letter, barcode…"
+            className="input pl-10"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
         <div className="flex flex-wrap gap-2">
           <select className="input flex-1 min-w-[140px]" value={spId} onChange={(e) => setSpId(e.target.value)}>
             <option value="">All selling points</option>
@@ -79,54 +86,68 @@ export function ProductSearch({
             <option value="medium">Medium</option>
             <option value="large">Large</option>
           </select>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} />
+          <label className="flex items-center gap-2 text-sm font-medium text-karni-900 px-3 py-2 rounded-xl bg-karni-100/60 cursor-pointer hover:bg-karni-100 transition">
+            <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="accent-karni-600" />
             In stock only
           </label>
         </div>
       </div>
 
-      {loading && <p className="text-xs text-karni-700 text-center">Searching…</p>}
+      {loading && (
+        <p className="text-xs text-karni-700 text-center flex items-center justify-center gap-2">
+          <span className="inline-block w-3 h-3 rounded-full border-2 border-karni-300 border-t-karni-700 animate-spin"></span>
+          Searching…
+        </p>
+      )}
 
       <ul className="grid gap-2">
         {results.map((r) => {
           const qty = r.quantity ?? 0;
           const stockBadge = hideStock ? null
-            : qty <= 0 ? <span className="chip-danger">Out of stock</span>
-            : qty <= r.reorderPoint ? <span className="chip-warn">Low: {qty}</span>
-            : <span className="chip-ok">{qty} in stock</span>;
+            : qty <= 0 ? <span className="chip chip-danger">Out of stock</span>
+            : qty <= r.reorderPoint ? <span className="chip chip-warn">Low · {qty}</span>
+            : <span className="chip chip-ok">{qty} in stock</span>;
           return (
             <li key={r.id}>
               <button
                 type="button"
                 onClick={() => onPick?.(r)}
-                className="w-full text-left card flex items-center gap-3 hover:bg-karni-50"
+                className="card-interactive w-full text-left flex items-center gap-3"
               >
-                <div className="w-16 h-16 rounded-lg bg-karni-100 flex items-center justify-center overflow-hidden shrink-0">
+                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-karni-100 to-karni-50 flex items-center justify-center overflow-hidden shrink-0 border border-karni-100">
                   {r.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={r.imageUrl} alt={r.designName} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="text-karni-500 text-xs">no photo</span>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-karni-500" aria-hidden="true">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <circle cx="9" cy="9" r="2" />
+                      <path d="m21 15-5-5L5 21" />
+                    </svg>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{r.designName}</p>
+                  <p className="font-semibold truncate">{r.designName}</p>
                   <p className="text-xs text-karni-700 truncate">
                     {[r.subcollection, r.color, r.size].filter(Boolean).join(' · ')}
                   </p>
-                  <p className="text-[10px] text-karni-700 mt-1 font-mono truncate">{r.sku}</p>
+                  <p className="text-[10px] text-karni-700 mt-1 font-mono truncate opacity-70">{r.sku}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold">{Math.round(Number(r.priceAmd)).toLocaleString()} ֏</p>
-                  {stockBadge}
+                <div className="text-right shrink-0">
+                  <p className="font-bold whitespace-nowrap">{Math.round(Number(r.priceAmd)).toLocaleString()} ֏</p>
+                  <div className="mt-1">{stockBadge}</div>
                 </div>
               </button>
             </li>
           );
         })}
         {!loading && results.length === 0 && (
-          <li className="text-center text-karni-700 text-sm py-8">No results.</li>
+          <li className="text-center text-karni-700 text-sm py-10">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-2 opacity-50" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            No results.
+          </li>
         )}
       </ul>
     </div>
