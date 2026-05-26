@@ -1,36 +1,94 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { saveImage } from '@/lib/upload';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import Link from 'next/link';
 
 async function saveAction(formData: FormData) {
   'use server';
   await requireAdmin();
   const id = String(formData.get('id') || '');
+  const designId = String(formData.get('designId') || '');
+
+  const designName = String(formData.get('designName') || '').trim();
+  const designNameHy = String(formData.get('designNameHy') || '').trim();
+  const category = String(formData.get('category') || '').trim() || null;
+  const collection = String(formData.get('collection') || '').trim() || null;
+  const subcollection = String(formData.get('subcollection') || '').trim() || null;
+  const motif = String(formData.get('motif') || '').trim() || null;
+  const culturalMeaningEn = String(formData.get('culturalMeaningEn') || '').trim() || null;
+
+  const size = String(formData.get('size') || '').trim() || null;
+  const color = String(formData.get('color') || '').trim() || null;
   const priceAmd = Number(formData.get('priceAmd') || 0);
   const costAmd = formData.get('costAmd') ? Number(formData.get('costAmd')) : null;
+  const weightG = formData.get('weightG') ? Number(formData.get('weightG')) : null;
   const reorderPoint = Number(formData.get('reorderPoint') || 2);
-  const imageUrl = String(formData.get('imageUrl') || '') || null;
+  const barcode = String(formData.get('barcode') || '').trim() || null;
   const status = String(formData.get('status') || 'ACTIVE') as 'ACTIVE' | 'OUT_OF_STOCK' | 'ARCHIVED' | 'COMING_SOON';
   const onWebsite = formData.get('onWebsite') === 'on';
   const onEtsy = formData.get('onEtsy') === 'on';
   const onIg = formData.get('onIg') === 'on';
   const inStockists = formData.get('inStockists') === 'on';
 
+  // Handle uploaded image (preferred) or pasted URL
+  let imageUrl = String(formData.get('imageUrl') || '').trim() || null;
+  const file = formData.get('imageFile') as File | null;
+  if (file && file.size > 0) imageUrl = await saveImage(file);
+
   const fx = await prisma.fxRate.findMany();
   const r: Record<string, number> = {};
   fx.forEach((x) => { r[x.currency] = Number(x.ratePerAmd); });
 
-  await prisma.variant.update({
-    where: { id },
-    data: {
-      priceAmd, costAmd, reorderPoint, imageUrl, status,
-      onWebsite, onEtsy, onIg, inStockists,
-      priceUsd: r.USD ? priceAmd * r.USD : undefined,
-      priceEur: r.EUR ? priceAmd * r.EUR : undefined,
-      priceRub: r.RUB ? priceAmd * r.RUB : undefined,
-    },
+  const searchBlob = [
+    designName, category, collection, subcollection, size, color, barcode,
+  ].filter(Boolean).map((s) => String(s).toLowerCase()).join(' ');
+
+  await prisma.$transaction(async (tx) => {
+    await tx.design.update({
+      where: { id: designId },
+      data: { nameEn: designName, nameHy: designNameHy || null, category, collection, subcollection, motif, culturalMeaningEn },
+    });
+    await tx.variant.update({
+      where: { id },
+      data: {
+        designName, category, collection, subcollection, size, color,
+        priceAmd, costAmd, weightG, reorderPoint, barcode,
+        imageUrl, status,
+        onWebsite, onEtsy, onIg, inStockists,
+        priceUsd: r.USD ? priceAmd * r.USD : undefined,
+        priceEur: r.EUR ? priceAmd * r.EUR : undefined,
+        priceRub: r.RUB ? priceAmd * r.RUB : undefined,
+        searchBlob,
+      },
+    });
   });
+  revalidatePath('/admin/products');
+  redirect('/admin/products');
+}
+
+async function deleteAction(formData: FormData) {
+  'use server';
+  await requireAdmin();
+  const id = String(formData.get('id') || '');
+  const v = await prisma.variant.findUnique({
+    where: { id },
+    include: { _count: { select: { saleLineItems: true, orderLineItems: true, movements: true } }, design: { include: { _count: { select: { variants: true } } } } },
+  });
+  if (!v) redirect('/admin/products');
+  const hasHistory = v._count.saleLineItems + v._count.orderLineItems + v._count.movements > 0;
+  if (hasHistory) {
+    await prisma.variant.update({ where: { id }, data: { status: 'ARCHIVED' } });
+  } else {
+    await prisma.$transaction(async (tx) => {
+      await tx.inventoryItem.deleteMany({ where: { variantId: id } });
+      await tx.variant.delete({ where: { id } });
+      // If this was the last variant for the design, delete the design too.
+      const remaining = await tx.variant.count({ where: { designId: v.designId } });
+      if (remaining === 0) await tx.design.delete({ where: { id: v.designId } });
+    });
+  }
   revalidatePath('/admin/products');
   redirect('/admin/products');
 }
@@ -57,11 +115,13 @@ async function adjustStockAction(formData: FormData) {
         data: { variantId, sellingPointId, type: 'ADJUSTMENT', qtyDelta: delta, performedById: u.id, note },
       });
     }
-    await tx.inventoryItem.upsert({
-      where: { variantId_sellingPointId: { variantId, sellingPointId } },
-      create: { variantId, sellingPointId, quantity: newQty },
-      update: { quantity: newQty },
-    });
+    if (current) {
+      await tx.inventoryItem.update({ where: { id: current.id }, data: { quantity: newQty } });
+    } else {
+      await tx.inventoryItem.create({
+        data: { variantId, sellingPointId, quantity: newQty, createdById: u.id },
+      });
+    }
   });
   revalidatePath(`/admin/products/${variantId}`);
 }
@@ -71,71 +131,185 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const v = await prisma.variant.findUnique({
     where: { id },
-    include: { inventoryItems: { include: { sellingPoint: true } }, design: true },
+    include: {
+      inventoryItems: { include: { sellingPoint: true, createdBy: true } },
+      design: true,
+      _count: { select: { saleLineItems: true } },
+    },
   });
   if (!v) notFound();
   const sps = await prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+  const totalStock = v.inventoryItems.reduce((s, ii) => s + ii.quantity, 0);
 
   return (
-    <div className="space-y-3">
-      <h1 className="text-xl font-bold">{v.designName}</h1>
-      <p className="text-xs font-mono text-karni-700">{v.sku}</p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <Link href="/admin/products" className="btn-link">← Back to products</Link>
+        <span className="chip">{totalStock} on hand</span>
+      </div>
+      <header>
+        <h1 className="page-title">{v.designName}</h1>
+        <p className="page-subtitle font-mono">{v.sku}</p>
+      </header>
 
-      <form action={saveAction} className="card space-y-3">
+      <form action={saveAction} className="card space-y-4" encType="multipart/form-data">
         <input type="hidden" name="id" value={v.id} />
-        <div>
-          <label className="label">Image URL</label>
-          <input className="input" name="imageUrl" defaultValue={v.imageUrl || ''} placeholder="https://…/photo.jpg" />
+        <input type="hidden" name="designId" value={v.designId} />
+
+        <fieldset className="space-y-3">
+          <legend className="font-semibold text-karni-900">Photo</legend>
           {v.imageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={v.imageUrl} alt="" className="mt-2 rounded-lg max-h-40 object-cover" />
+            <img src={v.imageUrl} alt="" className="rounded-xl max-h-48 object-cover border border-karni-100" />
           )}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Price (AMD)</label>
-            <input className="input" name="priceAmd" type="number" step="0.01" defaultValue={Number(v.priceAmd)} required />
+          <div>
+            <label className="label" htmlFor="imageFile">Upload a new photo</label>
+            <input id="imageFile" name="imageFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="input" />
+            <p className="text-xs text-karni-700 mt-1">JPEG / PNG / WebP / GIF, up to 5 MB. Replaces the current image.</p>
           </div>
-          <div><label className="label">Cost (AMD)</label>
-            <input className="input" name="costAmd" type="number" step="0.01" defaultValue={v.costAmd ? Number(v.costAmd) : ''} />
+          <div>
+            <label className="label" htmlFor="imageUrl">…or paste a URL</label>
+            <input id="imageUrl" name="imageUrl" className="input" defaultValue={v.imageUrl || ''} placeholder="https://…/photo.jpg" />
           </div>
-          <div><label className="label">Reorder point</label>
-            <input className="input" name="reorderPoint" type="number" min={0} defaultValue={v.reorderPoint} />
+        </fieldset>
+
+        <fieldset className="space-y-3">
+          <legend className="font-semibold text-karni-900">Design</legend>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Design name (EN)</label>
+              <input className="input" name="designName" defaultValue={v.designName} required />
+            </div>
+            <div>
+              <label className="label">Design name (HY, optional)</label>
+              <input className="input" name="designNameHy" defaultValue={v.design.nameHy || ''} />
+            </div>
+            <div>
+              <label className="label">Category</label>
+              <select className="input" name="category" defaultValue={v.category || ''}>
+                <option value="">—</option>
+                <option>Pendant</option><option>Earring</option><option>Ring</option>
+                <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Collection</label>
+              <input className="input" name="collection" defaultValue={v.collection || ''} />
+            </div>
+            <div>
+              <label className="label">Subcollection (e.g. Armenian letter)</label>
+              <input className="input" name="subcollection" defaultValue={v.subcollection || ''} />
+            </div>
+            <div>
+              <label className="label">Motif / symbol</label>
+              <input className="input" name="motif" defaultValue={v.design.motif || ''} />
+            </div>
           </div>
-          <div><label className="label">Status</label>
+          <div>
+            <label className="label">Cultural meaning</label>
+            <textarea className="input" name="culturalMeaningEn" rows={2} defaultValue={v.design.culturalMeaningEn || ''} />
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-3">
+          <legend className="font-semibold text-karni-900">Variant</legend>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label">Size</label>
+              <select className="input" name="size" defaultValue={v.size || ''}>
+                <option value="">—</option>
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Color</label>
+              <input className="input" name="color" defaultValue={v.color || ''} />
+            </div>
+            <div>
+              <label className="label">Barcode</label>
+              <input className="input" name="barcode" defaultValue={v.barcode || ''} />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-4 gap-3">
+            <div>
+              <label className="label">Price (AMD)</label>
+              <input className="input" name="priceAmd" type="number" step="0.01" defaultValue={Number(v.priceAmd)} required />
+            </div>
+            <div>
+              <label className="label">Cost (AMD)</label>
+              <input className="input" name="costAmd" type="number" step="0.01" defaultValue={v.costAmd ? Number(v.costAmd) : ''} />
+            </div>
+            <div>
+              <label className="label">Weight (g)</label>
+              <input className="input" name="weightG" type="number" step="0.001" defaultValue={v.weightG ? Number(v.weightG) : ''} />
+            </div>
+            <div>
+              <label className="label">Reorder point</label>
+              <input className="input" name="reorderPoint" type="number" min={0} defaultValue={v.reorderPoint} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Status</label>
             <select className="input" name="status" defaultValue={v.status}>
-              <option>ACTIVE</option><option>OUT_OF_STOCK</option><option>COMING_SOON</option><option>ARCHIVED</option>
+              <option value="ACTIVE">Active</option>
+              <option value="OUT_OF_STOCK">Out of stock</option>
+              <option value="COMING_SOON">Coming soon</option>
+              <option value="ARCHIVED">Archived (hidden from search)</option>
             </select>
           </div>
+          <div className="grid sm:grid-cols-4 gap-2 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" name="onWebsite" defaultChecked={v.onWebsite} className="accent-karni-600" /> Website</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="onEtsy" defaultChecked={v.onEtsy} className="accent-karni-600" /> Etsy</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="onIg" defaultChecked={v.onIg} className="accent-karni-600" /> Instagram</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="inStockists" defaultChecked={v.inStockists} className="accent-karni-600" /> Consignment</label>
+          </div>
+        </fieldset>
+
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-primary flex-1" type="submit">Save changes</button>
+          <Link href="/admin/products" className="btn-secondary">Cancel</Link>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <label className="flex items-center gap-2"><input type="checkbox" name="onWebsite" defaultChecked={v.onWebsite} /> Website</label>
-          <label className="flex items-center gap-2"><input type="checkbox" name="onEtsy" defaultChecked={v.onEtsy} /> Etsy</label>
-          <label className="flex items-center gap-2"><input type="checkbox" name="onIg" defaultChecked={v.onIg} /> Instagram</label>
-          <label className="flex items-center gap-2"><input type="checkbox" name="inStockists" defaultChecked={v.inStockists} /> Consignment</label>
-        </div>
-        <button className="btn-primary w-full" type="submit">Save</button>
       </form>
 
-      <section className="card">
-        <p className="font-medium mb-2">Stock by selling point</p>
+      <section className="card space-y-3">
+        <p className="font-semibold">Stock by selling point</p>
         <ul className="space-y-2">
           {sps.map((sp) => {
             const item = v.inventoryItems.find((i) => i.sellingPointId === sp.id);
             const qty = item?.quantity ?? 0;
             return (
-              <li key={sp.id} className="border-b border-karni-100 pb-2">
+              <li key={sp.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
                 <form action={adjustStockAction} className="flex items-center gap-2">
                   <input type="hidden" name="variantId" value={v.id} />
                   <input type="hidden" name="sellingPointId" value={sp.id} />
-                  <span className="flex-1">{sp.name}</span>
+                  <div className="flex-1">
+                    <p className="font-medium">{sp.name}</p>
+                    {item?.createdBy && (
+                      <p className="text-xs text-karni-700">First checked in by {item.createdBy.fullName} · {item.firstSeenAt.toLocaleDateString()}</p>
+                    )}
+                  </div>
                   <input className="input w-20" name="newQty" type="number" min={0} defaultValue={qty} />
-                  <button className="btn-secondary px-3 py-2" type="submit">Set</button>
+                  <button className="btn-secondary" type="submit">Set</button>
                 </form>
               </li>
             );
           })}
         </ul>
       </section>
+
+      <form action={deleteAction} className="card border-red-200 bg-red-50/60">
+        <input type="hidden" name="id" value={v.id} />
+        <p className="font-semibold text-red-900 mb-1">Delete this product</p>
+        <p className="text-sm text-red-800 mb-3">
+          {v._count.saleLineItems > 0
+            ? <>This variant has <b>{v._count.saleLineItems}</b> sale line(s). It will be <b>archived</b> (hidden from search) instead of hard-deleted so history is preserved.</>
+            : <>Hard-deletes the variant (and the design if no other variants remain). Use Archive if you want it kept.</>
+          }
+        </p>
+        <button className="btn-danger" type="submit">{v._count.saleLineItems > 0 ? 'Archive' : 'Delete permanently'}</button>
+      </form>
     </div>
   );
 }

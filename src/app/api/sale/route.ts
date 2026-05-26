@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
           });
         } else {
           await tx.inventoryItem.create({
-            data: { variantId: p.variantId, sellingPointId, quantity: p.newQty },
+            data: { variantId: p.variantId, sellingPointId, quantity: p.newQty, createdById: u.id },
           });
         }
         if (p.newQty <= p.reorderPoint) {

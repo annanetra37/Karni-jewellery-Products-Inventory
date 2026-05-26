@@ -91,6 +91,7 @@ model User {
   cashCloses       CashDrawerSession[] @relation("CashCloseBy")
   shifts           CashDrawerSession[] @relation("ShiftUser")
   customersCreated Customer[]        @relation("CustomerCreatedBy")
+  inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   notifications    Notification[]
 }
 
@@ -176,10 +177,13 @@ model InventoryItem {
   variantId      String
   sellingPointId String
   quantity       Int      @default(0)
+  createdById    String?
+  firstSeenAt    DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   variant      Variant      @relation(fields: [variantId], references: [id])
   sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
+  createdBy    User?        @relation("InventoryCreatedBy", fields: [createdById], references: [id])
 
   @@unique([variantId, sellingPointId])
   @@index([sellingPointId])
