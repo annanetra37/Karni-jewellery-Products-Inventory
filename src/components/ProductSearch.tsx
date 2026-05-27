@@ -11,13 +11,15 @@ type SearchResult = {
 type SellingPoint = { id: string; name: string; type: string };
 
 export function ProductSearch({
-  sellingPoints, defaultSellingPointId, onPick, hideStock = false, autoFocus = false,
+  sellingPoints, defaultSellingPointId, onPick, hideStock = false, autoFocus = false, linkBase,
 }: {
   sellingPoints: SellingPoint[];
   defaultSellingPointId?: string;
   onPick?: (r: SearchResult) => void;
   hideStock?: boolean;
   autoFocus?: boolean;
+  /** When set, each result becomes an anchor to `${linkBase}/{id}` instead of calling onPick. */
+  linkBase?: string;
 }) {
   const [q, setQ] = useState('');
   const [spId, setSpId] = useState(defaultSellingPointId || '');
@@ -107,37 +109,40 @@ export function ProductSearch({
             : qty <= 0 ? <span className="chip chip-danger">Out of stock</span>
             : qty <= r.reorderPoint ? <span className="chip chip-warn">Low · {qty}</span>
             : <span className="chip chip-ok">{qty} in stock</span>;
+          const inner = (
+            <>
+              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-karni-100 to-karni-50 flex items-center justify-center overflow-hidden shrink-0 border border-karni-100">
+                {r.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.imageUrl} alt={r.designName} className="w-full h-full object-cover" />
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-karni-500" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="9" cy="9" r="2" />
+                    <path d="m21 15-5-5L5 21" />
+                  </svg>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold truncate">{r.designName}</p>
+                <p className="text-xs text-karni-700 truncate">
+                  {[r.subcollection, r.color, r.size].filter(Boolean).join(' · ')}
+                </p>
+                <p className="text-[10px] text-karni-700 mt-1 font-mono truncate opacity-70">{r.sku}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="font-bold whitespace-nowrap">{Math.round(Number(r.priceAmd)).toLocaleString()} ֏</p>
+                <div className="mt-1">{stockBadge}</div>
+              </div>
+            </>
+          );
           return (
             <li key={r.id}>
-              <button
-                type="button"
-                onClick={() => onPick?.(r)}
-                className="card-interactive w-full text-left flex items-center gap-3"
-              >
-                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-karni-100 to-karni-50 flex items-center justify-center overflow-hidden shrink-0 border border-karni-100">
-                  {r.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={r.imageUrl} alt={r.designName} className="w-full h-full object-cover" />
-                  ) : (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-karni-500" aria-hidden="true">
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <circle cx="9" cy="9" r="2" />
-                      <path d="m21 15-5-5L5 21" />
-                    </svg>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">{r.designName}</p>
-                  <p className="text-xs text-karni-700 truncate">
-                    {[r.subcollection, r.color, r.size].filter(Boolean).join(' · ')}
-                  </p>
-                  <p className="text-[10px] text-karni-700 mt-1 font-mono truncate opacity-70">{r.sku}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-bold whitespace-nowrap">{Math.round(Number(r.priceAmd)).toLocaleString()} ֏</p>
-                  <div className="mt-1">{stockBadge}</div>
-                </div>
-              </button>
+              {linkBase ? (
+                <a href={`${linkBase}/${r.id}`} className="card-interactive w-full text-left flex items-center gap-3 no-underline">{inner}</a>
+              ) : (
+                <button type="button" onClick={() => onPick?.(r)} className="card-interactive w-full text-left flex items-center gap-3">{inner}</button>
+              )}
             </li>
           );
         })}

@@ -1,45 +1,25 @@
+import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import Link from 'next/link';
+import { ProductSearch } from '@/components/ProductSearch';
 
-export default async function AdminProductsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function AdminProductsPage() {
   await requireAdmin();
-  const { q = '' } = await searchParams;
-  const where = q
-    ? { OR: [
-        { sku: { contains: q, mode: 'insensitive' as const } },
-        { designName: { contains: q, mode: 'insensitive' as const } },
-        { color: { contains: q, mode: 'insensitive' as const } },
-      ] }
-    : {};
-  const variants = await prisma.variant.findMany({
-    where, take: 50, orderBy: { designName: 'asc' },
-  });
+  const sps = await prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
   return (
-    <div className="space-y-3">
-      <h1 className="text-xl font-bold">Products</h1>
-      <form className="card" action="/admin/products" method="get">
-        <input className="input" name="q" defaultValue={q} placeholder="Search SKU / name / color" />
-      </form>
-      <ul className="space-y-2">
-        {variants.map((v) => (
-          <li key={v.id}>
-            <Link className="card block" href={`/admin/products/${v.id}`}>
-              <div className="flex justify-between">
-                <div>
-                  <p className="font-medium">{v.designName}</p>
-                  <p className="text-xs text-karni-700">{[v.color, v.size].filter(Boolean).join(' · ')}</p>
-                  <p className="text-[10px] font-mono text-karni-700">{v.sku}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold">{Math.round(Number(v.priceAmd)).toLocaleString()} ֏</p>
-                  <p className="text-xs text-karni-700">{v.status}</p>
-                </div>
-              </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <header>
+          <h1 className="page-title">Products</h1>
+          <p className="page-subtitle">Browse, filter, edit. Tap any card to manage it.</p>
+        </header>
+        <Link href="/admin/products/new" className="btn-primary">+ New product</Link>
+      </div>
+      <ProductSearch
+        sellingPoints={sps.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
+        linkBase="/admin/products"
+        autoFocus
+      />
     </div>
   );
 }

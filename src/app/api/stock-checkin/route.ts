@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       });
       await tx.inventoryItem.upsert({
         where: { variantId_sellingPointId: { variantId: l.variantId, sellingPointId } },
-        create: { variantId: l.variantId, sellingPointId, quantity: l.quantity },
+        create: { variantId: l.variantId, sellingPointId, quantity: l.quantity, createdById: u.id },
         update: { quantity: { increment: l.quantity } },
       });
     }
