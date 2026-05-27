@@ -9,7 +9,7 @@ export default async function HomePage() {
     return (
       <div className="max-w-md mx-auto mt-12">
         <div className="card text-center space-y-3">
-          <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-b from-karni-500 to-karni-700 text-white text-xl font-bold flex items-center justify-center shadow-md">K</div>
+          <div className="mx-auto w-14 h-14 rounded-2xl text-white text-xl font-bold flex items-center justify-center shadow-lift" style={{ background: 'linear-gradient(135deg,#2d2520,#1a1612)' }}>K</div>
           <h1 className="text-2xl font-bold tracking-tight">Karni Sales</h1>
           <p className="text-karni-700 text-sm">Point-of-sale and inventory for Karni Jewellery.</p>
           <Link href="/login" className="btn-primary inline-flex">Sign in</Link>

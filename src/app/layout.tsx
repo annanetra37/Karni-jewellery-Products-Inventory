@@ -28,8 +28,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {user && (
           <header className="no-print sticky top-0 z-30 appbar">
             <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-3">
-              <Link href="/" className="flex items-center gap-2 font-bold text-karni-900 tracking-tight">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-b from-karni-500 to-karni-700 text-white text-sm font-bold shadow">K</span>
+              <Link href="/" className="flex items-center gap-2 font-bold tracking-tight" style={{ color: 'var(--ink)' }}>
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-white text-sm font-bold shadow-soft" style={{ background: 'linear-gradient(135deg,#2d2520,#1a1612)' }}>K</span>
                 Karni Sales
               </Link>
               <nav className="flex items-center gap-1 sm:gap-3 text-sm">

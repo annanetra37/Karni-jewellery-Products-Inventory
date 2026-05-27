@@ -1,17 +1,11 @@
-import { headers } from 'next/headers';
 import { requireAdmin, hashPassword } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { publicOrigin } from '@/lib/origin';
+import { sendEmail, wrap } from '@/lib/email';
 import { randomBytes } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { CopyButton } from '@/components/CopyButton';
 import { PasswordInput } from '@/components/PasswordInput';
-
-async function originFromHeaders() {
-  const h = await headers();
-  const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000';
-  const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https');
-  return `${proto}://${host}`;
-}
 
 async function inviteAction(formData: FormData) {
   'use server';
@@ -26,6 +20,17 @@ async function inviteAction(formData: FormData) {
     create: { email, fullName, role, inviteToken: token, isActive: true },
     update: { fullName, role, inviteToken: token, isActive: true, passwordHash: null, inviteAcceptedAt: null },
   });
+  const origin = await publicOrigin();
+  const url = `${origin}/invite/${token}`;
+  sendEmail({
+    to: email,
+    subject: `You're invited to Karni Sales`,
+    html: wrap(
+      `Welcome to Karni Sales, ${fullName}`,
+      `<p>You have been invited as a <strong>${role === 'ADMIN' ? 'admin' : 'salesperson'}</strong>. Click the button below to set your password and sign in.</p>`,
+      { href: url, label: 'Activate my account' },
+    ),
+  }).catch((e) => console.error('[invite] email failed', e));
   revalidatePath('/admin/users');
 }
 
@@ -50,10 +55,21 @@ async function resetPasswordAction(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get('id') || '');
   const token = randomBytes(24).toString('hex');
-  await prisma.user.update({
+  const user = await prisma.user.update({
     where: { id },
     data: { passwordHash: null, inviteToken: token, inviteAcceptedAt: null },
   });
+  const origin = await publicOrigin();
+  const url = `${origin}/invite/${token}`;
+  sendEmail({
+    to: user.email,
+    subject: 'Reset your Karni Sales password',
+    html: wrap(
+      'Password reset',
+      `<p>An admin reset your password. Click the link below to choose a new one.</p>`,
+      { href: url, label: 'Set a new password' },
+    ),
+  }).catch((e) => console.error('[reset] email failed', e));
   revalidatePath('/admin/users');
 }
 
@@ -74,7 +90,7 @@ export default async function AdminUsersPage() {
   await requireAdmin();
   const [users, origin] = await Promise.all([
     prisma.user.findMany({ orderBy: { createdAt: 'desc' } }),
-    originFromHeaders(),
+    publicOrigin(),
   ]);
 
   return (
