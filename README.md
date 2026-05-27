@@ -78,6 +78,23 @@ Re-deploys are no-ops.
    - `ADMIN_EMAIL` — owner's email (becomes the first admin)
    - `ADMIN_NAME` — owner's display name
    - `ADMIN_INITIAL_PASSWORD` — first-login password; change after login
+   - `NEXT_PUBLIC_APP_URL` — your public Railway URL, e.g.
+     `https://karni-jewellery-products-inventory-production.up.railway.app`
+     (used for logout redirect and invite links so they point at the
+     public URL, not the container's internal address)
+   - **Resend** (transactional email — invites, low-stock alerts, new orders):
+     - `RESEND_API_KEY` — get one at https://resend.com
+     - `EMAIL_FROM` — e.g. `Karni Sales <notifications@yourdomain.com>`
+       (verify the sending domain in the Resend dashboard first)
+   - **Azure Blob Storage** (product photo uploads):
+     - `AZURE_STORAGE_CONNECTION_STRING` — from the Azure portal under
+       Storage account → Access keys → Connection string
+     - `AZURE_STORAGE_CONTAINER` — defaults to `karni-uploads`; the
+       container is auto-created on first upload with public blob access
+
+   Without `RESEND_API_KEY`, emails are skipped silently (in-app
+   notifications still work). Without `AZURE_STORAGE_CONNECTION_STRING`,
+   uploads write to `/public/uploads/` which is ephemeral on Railway.
 4. Build command (Railway auto-detects, but if you set it manually): `npm run build`
    Start command: `npm start` *(this runs `tsx scripts/bootstrap.ts && next start`)*
 5. Deploy. Watch the build logs — on the very first deploy you'll see:

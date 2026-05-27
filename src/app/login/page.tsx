@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <div className="max-w-sm mx-auto mt-12">
       <div className="card space-y-4">
         <div className="text-center space-y-1">
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-gradient-to-b from-karni-500 to-karni-700 text-white text-lg font-bold flex items-center justify-center shadow-md">K</div>
+          <div className="mx-auto w-12 h-12 rounded-2xl text-white text-lg font-bold flex items-center justify-center shadow-lift" style={{ background: 'linear-gradient(135deg,#2d2520,#1a1612)' }}>K</div>
           <h1 className="text-2xl font-bold tracking-tight">Karni Sales</h1>
           <p className="text-sm text-karni-700">Sign in to continue.</p>
         </div>
