@@ -1,0 +1,37 @@
+erDiagram
+    User ||--o{ Sale : "soldBy"
+    User ||--o{ Order : "createdBy"
+    User ||--o{ StockMovement : "performedBy"
+    User ||--o{ Customer : "createdBy"
+    User ||--o{ InventoryItem : "checkedIn"
+    User ||--o{ CashDrawerSession : "shift"
+    User ||--o{ Notification : "recipient"
+    User ||--o{ User : "invites"
+
+    Design ||--o{ Variant : "has"
+
+    Variant ||--o{ InventoryItem : "stock"
+    Variant ||--o{ StockMovement : "ledger"
+    Variant ||--o{ SaleLineItem : "sold"
+    Variant ||--o{ OrderLineItem : "ordered"
+
+    SellingPoint ||--o{ InventoryItem : "holds"
+    SellingPoint ||--o{ StockMovement : "at"
+    SellingPoint ||--o{ Sale : "at"
+    SellingPoint ||--o{ Order : "for"
+    SellingPoint ||--o{ CashDrawerSession : "drawer"
+
+    Customer ||--o{ Sale : "buys"
+    Customer ||--o{ Order : "requests"
+
+    Sale ||--o{ SaleLineItem : "lines"
+    Sale ||--o{ StockMovement : "creates"
+
+    Order ||--o{ OrderLineItem : "lines"
+
+    FxRate {
+        string currency "USD/EUR/RUB"
+    }
+    Counter {
+        string id "sale/order seq"
+    }
