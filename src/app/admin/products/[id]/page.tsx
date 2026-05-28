@@ -1,6 +1,7 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { saveImage } from '@/lib/upload';
+import { METAL_TYPES, FILLING_MATERIALS, PLATING_TYPES, sumCost } from '@/lib/materials';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
@@ -22,8 +23,19 @@ async function saveAction(formData: FormData) {
   const size = String(formData.get('size') || '').trim() || null;
   const color = String(formData.get('color') || '').trim() || null;
   const priceAmd = Number(formData.get('priceAmd') || 0);
-  const costAmd = formData.get('costAmd') ? Number(formData.get('costAmd')) : null;
   const weightG = formData.get('weightG') ? Number(formData.get('weightG')) : null;
+
+  // Cost breakdown
+  const metalType = String(formData.get('metalType') || '').trim() || null;
+  const metalCostAmd = formData.get('metalCostAmd') ? Number(formData.get('metalCostAmd')) : null;
+  const fillingMaterial = String(formData.get('fillingMaterial') || '').trim() || null;
+  const fillingCostAmd = formData.get('fillingCostAmd') ? Number(formData.get('fillingCostAmd')) : null;
+  const platingType = String(formData.get('platingType') || '').trim() || null;
+  const platingCostAmd = formData.get('platingCostAmd') ? Number(formData.get('platingCostAmd')) : null;
+  const laborCostAmd = formData.get('laborCostAmd') ? Number(formData.get('laborCostAmd')) : null;
+  const breakdown = sumCost({ metalCostAmd, fillingCostAmd, platingCostAmd, laborCostAmd });
+  const manualCost = formData.get('costAmd') ? Number(formData.get('costAmd')) : null;
+  const costAmd = breakdown > 0 ? breakdown : manualCost;
   const reorderPoint = Number(formData.get('reorderPoint') || 2);
   const barcode = String(formData.get('barcode') || '').trim() || null;
   const status = String(formData.get('status') || 'ACTIVE') as 'ACTIVE' | 'OUT_OF_STOCK' | 'ARCHIVED' | 'COMING_SOON';
@@ -55,6 +67,8 @@ async function saveAction(formData: FormData) {
       data: {
         designName, category, collection, subcollection, size, color,
         priceAmd, costAmd, weightG, reorderPoint, barcode,
+        metalType, metalCostAmd, fillingMaterial, fillingCostAmd,
+        platingType, platingCostAmd, laborCostAmd,
         imageUrl, status,
         onWebsite, onEtsy, onIg, inStockists,
         priceUsd: r.USD ? priceAmd * r.USD : undefined,
@@ -232,14 +246,10 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               <input className="input" name="barcode" defaultValue={v.barcode || ''} />
             </div>
           </div>
-          <div className="grid sm:grid-cols-4 gap-3">
+          <div className="grid sm:grid-cols-3 gap-3">
             <div>
               <label className="label">Price (AMD)</label>
               <input className="input" name="priceAmd" type="number" step="0.01" defaultValue={Number(v.priceAmd)} required />
-            </div>
-            <div>
-              <label className="label">Cost (AMD)</label>
-              <input className="input" name="costAmd" type="number" step="0.01" defaultValue={v.costAmd ? Number(v.costAmd) : ''} />
             </div>
             <div>
               <label className="label">Weight (g)</label>
@@ -248,6 +258,48 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <div>
               <label className="label">Reorder point</label>
               <input className="input" name="reorderPoint" type="number" min={0} defaultValue={v.reorderPoint} />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-3">
+          <legend className="font-semibold text-karni-900">Cost breakdown</legend>
+          <p className="text-xs text-karni-700 -mt-1">Total cost is the sum of the components below. If you leave the components empty, the manual total is used.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Metal type</label>
+              <input className="input" name="metalType" list="metal-types" defaultValue={v.metalType || ''} placeholder="e.g. 925 Silver" />
+              <datalist id="metal-types">{METAL_TYPES.map((m) => <option key={m} value={m} />)}</datalist>
+            </div>
+            <div>
+              <label className="label">Metal cost (AMD)</label>
+              <input className="input" name="metalCostAmd" type="number" step="0.01" min="0" defaultValue={v.metalCostAmd ? Number(v.metalCostAmd) : ''} />
+            </div>
+            <div>
+              <label className="label">Filling material (enamel, etc.)</label>
+              <input className="input" name="fillingMaterial" list="filling-materials" defaultValue={v.fillingMaterial || ''} placeholder="e.g. Hot / Vitreous enamel" />
+              <datalist id="filling-materials">{FILLING_MATERIALS.map((m) => <option key={m} value={m} />)}</datalist>
+            </div>
+            <div>
+              <label className="label">Filling cost (AMD)</label>
+              <input className="input" name="fillingCostAmd" type="number" step="0.01" min="0" defaultValue={v.fillingCostAmd ? Number(v.fillingCostAmd) : ''} />
+            </div>
+            <div>
+              <label className="label">Plating type</label>
+              <input className="input" name="platingType" list="plating-types" defaultValue={v.platingType || ''} placeholder="e.g. 24k Gold Plate" />
+              <datalist id="plating-types">{PLATING_TYPES.map((m) => <option key={m} value={m} />)}</datalist>
+            </div>
+            <div>
+              <label className="label">Plating cost (AMD)</label>
+              <input className="input" name="platingCostAmd" type="number" step="0.01" min="0" defaultValue={v.platingCostAmd ? Number(v.platingCostAmd) : ''} />
+            </div>
+            <div>
+              <label className="label">Labor cost (AMD)</label>
+              <input className="input" name="laborCostAmd" type="number" step="0.01" min="0" defaultValue={v.laborCostAmd ? Number(v.laborCostAmd) : ''} />
+            </div>
+            <div>
+              <label className="label">Manual total cost (AMD) — if no breakdown</label>
+              <input className="input" name="costAmd" type="number" step="0.01" min="0" defaultValue={v.costAmd ? Number(v.costAmd) : ''} />
             </div>
           </div>
           <div>

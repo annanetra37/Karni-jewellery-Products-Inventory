@@ -133,6 +133,13 @@ model Variant {
   priceEur      Decimal? @db.Decimal(12, 2)
   priceRub      Decimal? @db.Decimal(12, 2)
   costAmd       Decimal? @db.Decimal(12, 2)
+  metalType        String?
+  metalCostAmd     Decimal? @db.Decimal(12, 2)
+  fillingMaterial  String?
+  fillingCostAmd   Decimal? @db.Decimal(12, 2)
+  platingType      String?
+  platingCostAmd   Decimal? @db.Decimal(12, 2)
+  laborCostAmd     Decimal? @db.Decimal(12, 2)
   barcode       String?  @unique
   imageUrl      String?
   weightG       Decimal? @db.Decimal(10, 3)
@@ -284,13 +291,23 @@ model Order {
 }
 
 model OrderLineItem {
-  id        String @id @default(cuid())
-  orderId   String
-  variantId String
-  quantity  Int
+  id          String  @id @default(cuid())
+  orderId     String
+  variantId   String?
+  quantity    Int
+  description String?
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variant Variant @relation(fields: [variantId], references: [id])
+  metalType        String?
+  metalCostAmd     Decimal? @db.Decimal(12, 2)
+  fillingMaterial  String?
+  fillingCostAmd   Decimal? @db.Decimal(12, 2)
+  platingType      String?
+  platingCostAmd   Decimal? @db.Decimal(12, 2)
+  laborCostAmd     Decimal? @db.Decimal(12, 2)
+  unitPriceAmd     Decimal? @db.Decimal(12, 2)
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant Variant? @relation(fields: [variantId], references: [id])
 }
 
 model CashDrawerSession {
