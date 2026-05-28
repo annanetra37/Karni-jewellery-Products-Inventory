@@ -10,6 +10,8 @@ type SearchResult = {
 
 type SellingPoint = { id: string; name: string; type: string };
 
+const LIMIT = 24;
+
 export function ProductSearch({
   sellingPoints, defaultSellingPointId, onPick, hideStock = false, autoFocus = false, linkBase,
 }: {
@@ -18,7 +20,6 @@ export function ProductSearch({
   onPick?: (r: SearchResult) => void;
   hideStock?: boolean;
   autoFocus?: boolean;
-  /** When set, each result becomes an anchor to `${linkBase}/{id}` instead of calling onPick. */
   linkBase?: string;
 }) {
   const [q, setQ] = useState('');
@@ -27,9 +28,16 @@ export function ProductSearch({
   const [color, setColor] = useState('');
   const [size, setSize] = useState('');
   const [inStock, setInStock] = useState(false);
+  const [page, setPage] = useState(0);
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const filtersActive = !!(q || spId || category || color || size || inStock);
+
+  // Reset to first page whenever a filter changes.
+  useEffect(() => { setPage(0); }, [q, spId, category, color, size, inStock]);
 
   const url = useMemo(() => {
     const u = new URLSearchParams();
@@ -39,18 +47,29 @@ export function ProductSearch({
     if (color) u.set('color', color);
     if (size) u.set('size', size);
     if (inStock) u.set('inStock', '1');
-    u.set('limit', '25');
+    u.set('limit', String(LIMIT));
+    u.set('offset', String(page * LIMIT));
     return `/api/search?${u.toString()}`;
-  }, [q, spId, category, color, size, inStock]);
+  }, [q, spId, category, color, size, inStock, page]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
       setLoading(true);
-      fetch(url).then((r) => r.json()).then((d) => setResults(d.results || []))
+      fetch(url)
+        .then((r) => r.json())
+        .then((d) => { setResults(d.results || []); setTotal(d.total || 0); })
         .finally(() => setLoading(false));
     }, 180);
   }, [url]);
+
+  function reset() {
+    setQ(''); setSpId(defaultSellingPointId || ''); setCategory(''); setColor(''); setSize(''); setInStock(false); setPage(0);
+  }
+
+  const start = total === 0 ? 0 : page * LIMIT + 1;
+  const end = Math.min(total, (page + 1) * LIMIT);
+  const lastPage = Math.max(0, Math.ceil(total / LIMIT) - 1);
 
   return (
     <div className="space-y-3">
@@ -72,35 +91,37 @@ export function ProductSearch({
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <select className="input flex-1 min-w-[140px]" value={spId} onChange={(e) => setSpId(e.target.value)}>
+          <select className="input flex-1 min-w-[150px]" value={spId} onChange={(e) => setSpId(e.target.value)}>
             <option value="">All selling points</option>
             {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
           </select>
-          <select className="input flex-1 min-w-[120px]" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <select className="input flex-1 min-w-[140px]" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
             <option>Pendant</option><option>Earring</option><option>Ring</option>
             <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
           </select>
-          <input className="input flex-1 min-w-[100px]" placeholder="Color" value={color} onChange={(e) => setColor(e.target.value)} />
-          <select className="input flex-1 min-w-[110px]" value={size} onChange={(e) => setSize(e.target.value)}>
+          <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
             <option value="">Any size</option>
             <option value="small">Small</option>
             <option value="medium">Medium</option>
             <option value="large">Large</option>
           </select>
-          <label className="flex items-center gap-2 text-sm font-medium text-karni-900 px-3 py-2 rounded-xl bg-karni-100/60 cursor-pointer hover:bg-karni-100 transition">
+          <input className="input flex-1 min-w-[110px]" placeholder="Color" value={color} onChange={(e) => setColor(e.target.value)} />
+          <label className="flex items-center gap-2 text-sm font-medium text-karni-900 px-3 py-2 rounded-xl bg-karni-100/60 cursor-pointer hover:bg-karni-100 transition whitespace-nowrap">
             <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="accent-karni-600" />
             In stock only
           </label>
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-karni-700">
+            {loading ? 'Searching…' : total > 0 ? `Showing ${start}–${end} of ${total}` : 'No matches'}
+          </p>
+          <button type="button" onClick={reset} disabled={!filtersActive}
+            className="btn-link disabled:opacity-40 disabled:cursor-not-allowed">
+            Reset filters
+          </button>
+        </div>
       </div>
-
-      {loading && (
-        <p className="text-xs text-karni-700 text-center flex items-center justify-center gap-2">
-          <span className="inline-block w-3 h-3 rounded-full border-2 border-karni-300 border-t-karni-700 animate-spin"></span>
-          Searching…
-        </p>
-      )}
 
       <ul className="grid gap-2">
         {results.map((r) => {
@@ -155,6 +176,18 @@ export function ProductSearch({
           </li>
         )}
       </ul>
+
+      {total > LIMIT && (
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <button type="button" className="btn-secondary" disabled={page <= 0 || loading} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            ← Prev
+          </button>
+          <span className="text-sm text-karni-700">Page {page + 1} of {lastPage + 1}</span>
+          <button type="button" className="btn-secondary" disabled={page >= lastPage || loading} onClick={() => setPage((p) => Math.min(lastPage, p + 1))}>
+            Next →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

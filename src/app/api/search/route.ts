@@ -29,11 +29,12 @@ export async function GET(req: NextRequest) {
   const color = sp.get('color') || '';
   const size = sp.get('size') || '';
   const inStock = sp.get('inStock') === '1';
-  const limit = Math.min(50, Number(sp.get('limit') || 25));
+  const limit = Math.min(50, Math.max(1, Number(sp.get('limit') || 24)));
+  const offset = Math.max(0, Number(sp.get('offset') || 0));
 
-  // Use trigram similarity ordering when a query is provided.
-  // Fall back to recent-first browse when query is empty.
   let rows: Row[];
+  let totalRows: { count: bigint }[];
+
   if (q) {
     const like = `%${q}%`;
     rows = await prisma.$queryRawUnsafe<Row[]>(
@@ -55,9 +56,26 @@ export async function GET(req: NextRequest) {
         AND ($8 = false OR COALESCE(ii.quantity, 0) > 0)
       ORDER BY GREATEST(similarity(v."searchBlob", $7), CASE WHEN v.sku ILIKE $6 THEN 1 ELSE 0 END) DESC,
                v."designName" ASC
-      LIMIT $9
+      LIMIT $9 OFFSET $10
       `,
-      sellingPointId, category, collection, color, size, like, q, inStock, limit
+      sellingPointId, category, collection, color, size, like, q, inStock, limit, offset
+    );
+    totalRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `
+      SELECT COUNT(*)::bigint AS count
+      FROM "Variant" v
+      LEFT JOIN "InventoryItem" ii
+        ON ii."variantId" = v.id
+       AND ($1 = '' OR ii."sellingPointId" = $1)
+      WHERE v.status <> 'ARCHIVED'
+        AND ($2 = '' OR v.category = $2)
+        AND ($3 = '' OR v.collection = $3)
+        AND ($4 = '' OR v.color = $4)
+        AND ($5 = '' OR v.size = $5)
+        AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
+        AND ($8 = false OR COALESCE(ii.quantity, 0) > 0)
+      `,
+      sellingPointId, category, collection, color, size, like, q, inStock
     );
   } else {
     rows = await prisma.$queryRawUnsafe<Row[]>(
@@ -76,11 +94,29 @@ export async function GET(req: NextRequest) {
         AND ($4 = '' OR v.color = $4)
         AND ($5 = '' OR v.size = $5)
         AND ($6 = false OR COALESCE(ii.quantity, 0) > 0)
-      ORDER BY v."createdAt" DESC
-      LIMIT $7
+      ORDER BY v."designName" ASC
+      LIMIT $7 OFFSET $8
       `,
-      sellingPointId, category, collection, color, size, inStock, limit
+      sellingPointId, category, collection, color, size, inStock, limit, offset
+    );
+    totalRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `
+      SELECT COUNT(*)::bigint AS count
+      FROM "Variant" v
+      LEFT JOIN "InventoryItem" ii
+        ON ii."variantId" = v.id
+       AND ($1 = '' OR ii."sellingPointId" = $1)
+      WHERE v.status <> 'ARCHIVED'
+        AND ($2 = '' OR v.category = $2)
+        AND ($3 = '' OR v.collection = $3)
+        AND ($4 = '' OR v.color = $4)
+        AND ($5 = '' OR v.size = $5)
+        AND ($6 = false OR COALESCE(ii.quantity, 0) > 0)
+      `,
+      sellingPointId, category, collection, color, size, inStock
     );
   }
-  return NextResponse.json({ results: rows });
+
+  const total = Number(totalRows[0]?.count ?? 0);
+  return NextResponse.json({ results: rows, total, limit, offset });
 }

@@ -1,11 +1,11 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { proposeSku, uniqueSku } from '@/lib/sku';
-import { saveImage } from '@/lib/upload';
 import { METAL_TYPES, FILLING_MATERIALS, PLATING_TYPES, sumCost } from '@/lib/materials';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
+import { ImageUploadField } from '@/components/ImageUploadField';
 
 async function createAction(formData: FormData) {
   'use server';
@@ -43,9 +43,7 @@ async function createAction(formData: FormData) {
 
   if (!designName || !priceAmd) redirect('/admin/products/new?err=missing');
 
-  let imageUrl: string | null = null;
-  const file = formData.get('imageFile') as File | null;
-  if (file && file.size > 0) imageUrl = await saveImage(file);
+  const imageUrl = String(formData.get('imageUrl') || '').trim() || null;
 
   let design;
   if (useExistingDesign && existingDesignId) {
@@ -122,14 +120,10 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
       </header>
       {sp.err === 'missing' && <p className="banner-danger">Design name and price are required.</p>}
 
-      <form action={createAction} className="card space-y-4" encType="multipart/form-data">
+      <form action={createAction} className="card space-y-4">
         <fieldset className="space-y-3">
           <legend className="font-semibold text-karni-900">Photo</legend>
-          <div>
-            <label className="label" htmlFor="imageFile">Upload an image (optional)</label>
-            <input id="imageFile" name="imageFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="input" />
-            <p className="text-xs text-karni-700 mt-1">JPEG / PNG / WebP / GIF, up to 5 MB.</p>
-          </div>
+          <ImageUploadField />
         </fieldset>
 
         <fieldset className="space-y-3">

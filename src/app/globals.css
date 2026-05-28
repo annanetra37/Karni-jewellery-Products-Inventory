@@ -177,6 +177,19 @@ body {
     color: var(--ink-soft);
     cursor: not-allowed;
   }
+  /* Native <select> styled as a clear dropdown with a chevron */
+  select.input {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    cursor: pointer;
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b6b73' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+    background-size: 1.05em;
+  }
+  select.input::-ms-expand { display: none; }
   .label {
     @apply block text-[12px] font-semibold uppercase tracking-wide mb-1.5;
     color: var(--ink-soft);
