@@ -32,7 +32,16 @@ export function ProductSearch({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [facets, setFacets] = useState<{ categories: string[]; sizes: string[] }>({ categories: [], sizes: [] });
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load the real distinct categories / sizes from the catalog.
+  useEffect(() => {
+    fetch('/api/facets')
+      .then((r) => r.json())
+      .then((d) => setFacets({ categories: d.categories || [], sizes: d.sizes || [] }))
+      .catch(() => {});
+  }, []);
 
   const filtersActive = !!(q || spId || category || color || size || inStock);
 
@@ -97,14 +106,11 @@ export function ProductSearch({
           </select>
           <select className="input flex-1 min-w-[140px]" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
-            <option>Pendant</option><option>Earring</option><option>Ring</option>
-            <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
+            {facets.categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
             <option value="">Any size</option>
-            <option value="small">Small</option>
-            <option value="medium">Medium</option>
-            <option value="large">Large</option>
+            {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <input className="input flex-1 min-w-[110px]" placeholder="Color" value={color} onChange={(e) => setColor(e.target.value)} />
           <label className="flex items-center gap-2 text-sm font-medium text-karni-900 px-3 py-2 rounded-xl bg-karni-100/60 cursor-pointer hover:bg-karni-100 transition whitespace-nowrap">
