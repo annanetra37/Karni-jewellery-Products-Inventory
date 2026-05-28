@@ -3,9 +3,35 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
+import { METAL_TYPES, FILLING_MATERIALS, PLATING_TYPES } from '@/lib/materials';
 
 type SP = { id: string; name: string; type: string };
-type Line = { variantId: string; sku: string; designName: string; quantity: number };
+type Line = {
+  variantId: string | null;
+  sku: string | null;
+  designName: string;
+  quantity: number;
+  description: string;
+  metalType: string;
+  metalCostAmd: string;
+  fillingMaterial: string;
+  fillingCostAmd: string;
+  platingType: string;
+  platingCostAmd: string;
+  laborCostAmd: string;
+  unitPriceAmd: string;
+};
+
+const emptyLine = (): Line => ({
+  variantId: null, sku: null, designName: '', quantity: 1, description: '',
+  metalType: '', metalCostAmd: '', fillingMaterial: '', fillingCostAmd: '',
+  platingType: '', platingCostAmd: '', laborCostAmd: '', unitPriceAmd: '',
+});
+
+function lineCost(l: Line): number {
+  const n = (s: string) => Number(s) || 0;
+  return (n(l.metalCostAmd) + n(l.fillingCostAmd) + n(l.platingCostAmd) + n(l.laborCostAmd)) * l.quantity;
+}
 
 export function NewOrderForm({ sellingPoints }: { sellingPoints: SP[] }) {
   const router = useRouter();
@@ -20,14 +46,63 @@ export function NewOrderForm({ sellingPoints }: { sellingPoints: SP[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
 
+  function update(i: number, patch: Partial<Line>) {
+    setLines((ls) => ls.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  }
+
+  async function addVariant(r: { id: string; sku: string; designName: string }) {
+    setPicking(false);
+    // Prefill cost breakdown from the variant defaults.
+    const base = emptyLine();
+    base.variantId = r.id; base.sku = r.sku; base.designName = r.designName;
+    setLines((ls) => [...ls, base]);
+    try {
+      const res = await fetch(`/api/variant/${r.id}`);
+      if (res.ok) {
+        const v = await res.json();
+        setLines((ls) => ls.map((x) => x.variantId === r.id && x.metalType === '' ? {
+          ...x,
+          metalType: v.metalType || '',
+          metalCostAmd: v.metalCostAmd != null ? String(v.metalCostAmd) : '',
+          fillingMaterial: v.fillingMaterial || '',
+          fillingCostAmd: v.fillingCostAmd != null ? String(v.fillingCostAmd) : '',
+          platingType: v.platingType || '',
+          platingCostAmd: v.platingCostAmd != null ? String(v.platingCostAmd) : '',
+          laborCostAmd: v.laborCostAmd != null ? String(v.laborCostAmd) : '',
+          unitPriceAmd: v.priceAmd != null ? String(v.priceAmd) : '',
+        } : x));
+      }
+    } catch { /* prefill is best-effort */ }
+  }
+
+  function addCustom() {
+    const l = emptyLine();
+    l.designName = 'Custom item';
+    l.description = '';
+    setLines((ls) => [...ls, l]);
+  }
+
   async function submit() {
     setErr(''); setSubmitting(true);
+    const num = (s: string) => (s === '' ? null : Number(s));
     const r = await fetch('/api/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         customerName: customerName || null, address: address || null, note: note || null,
         deadline: deadline || null, channel, sellingPointId: spId || null,
-        lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
+        lines: lines.map((l) => ({
+          variantId: l.variantId,
+          quantity: l.quantity,
+          description: l.description || null,
+          metalType: l.metalType || null,
+          metalCostAmd: num(l.metalCostAmd),
+          fillingMaterial: l.fillingMaterial || null,
+          fillingCostAmd: num(l.fillingCostAmd),
+          platingType: l.platingType || null,
+          platingCostAmd: num(l.platingCostAmd),
+          laborCostAmd: num(l.laborCostAmd),
+          unitPriceAmd: num(l.unitPriceAmd),
+        })),
       }),
     });
     const j = await r.json();
@@ -75,31 +150,88 @@ export function NewOrderForm({ sellingPoints }: { sellingPoints: SP[] }) {
       </div>
 
       <div className="card space-y-3">
-        <p className="font-medium">Items</p>
+        <p className="font-semibold">Items & cost details</p>
         {lines.map((l, i) => (
-          <div key={i} className="flex justify-between items-center border-b border-karni-100 pb-1">
-            <div>
-              <p>{l.designName}</p>
-              <p className="text-[10px] font-mono text-karni-700">{l.sku}</p>
+          <div key={i} className="card-flat space-y-3">
+            <div className="flex justify-between items-start gap-2">
+              <div className="flex-1 min-w-0">
+                {l.variantId ? (
+                  <>
+                    <p className="font-medium">{l.designName}</p>
+                    <p className="text-[10px] font-mono text-karni-700">{l.sku}</p>
+                  </>
+                ) : (
+                  <input className="input" placeholder="Custom item description"
+                    value={l.description} onChange={(e) => update(i, { description: e.target.value })} />
+                )}
+              </div>
+              <button className="btn-link-danger" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
             </div>
-            <div className="flex items-center gap-2">
-              <input type="number" min={1} className="input w-20" value={l.quantity}
-                onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
-              <button className="text-red-700 underline text-sm" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div>
+                <label className="label">Qty</label>
+                <input type="number" min={1} className="input" value={l.quantity}
+                  onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value) || 1) })} />
+              </div>
+              <div className="col-span-1 sm:col-span-3">
+                <label className="label">Unit price (AMD)</label>
+                <input type="number" step="0.01" min="0" className="input" value={l.unitPriceAmd}
+                  onChange={(e) => update(i, { unitPriceAmd: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="label">Metal type</label>
+                <input className="input" list="o-metal" value={l.metalType} onChange={(e) => update(i, { metalType: e.target.value })} placeholder="e.g. Gold 18k" />
+              </div>
+              <div>
+                <label className="label">Metal cost (AMD)</label>
+                <input className="input" type="number" step="0.01" min="0" value={l.metalCostAmd} onChange={(e) => update(i, { metalCostAmd: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Filling material</label>
+                <input className="input" list="o-filling" value={l.fillingMaterial} onChange={(e) => update(i, { fillingMaterial: e.target.value })} placeholder="e.g. Hot enamel" />
+              </div>
+              <div>
+                <label className="label">Filling cost (AMD)</label>
+                <input className="input" type="number" step="0.01" min="0" value={l.fillingCostAmd} onChange={(e) => update(i, { fillingCostAmd: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Plating type</label>
+                <input className="input" list="o-plating" value={l.platingType} onChange={(e) => update(i, { platingType: e.target.value })} placeholder="e.g. 24k Gold Plate" />
+              </div>
+              <div>
+                <label className="label">Plating cost (AMD)</label>
+                <input className="input" type="number" step="0.01" min="0" value={l.platingCostAmd} onChange={(e) => update(i, { platingCostAmd: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Labor cost (AMD)</label>
+                <input className="input" type="number" step="0.01" min="0" value={l.laborCostAmd} onChange={(e) => update(i, { laborCostAmd: e.target.value })} />
+              </div>
+              <div className="flex items-end">
+                <p className="text-sm text-karni-700">Line cost: <b>{lineCost(l).toLocaleString()} ֏</b></p>
+              </div>
             </div>
           </div>
         ))}
+
         {picking ? (
-          <ProductSearch sellingPoints={sellingPoints} onPick={(r) => {
-            setLines((ls) => [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, quantity: 1 }]);
-            setPicking(false);
-          }} />
+          <ProductSearch sellingPoints={sellingPoints} onPick={(r) => addVariant(r)} />
         ) : (
-          <button className="btn-secondary w-full" onClick={() => setPicking(true)}>+ Add item</button>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-secondary" onClick={() => setPicking(true)}>+ Add catalog item</button>
+            <button className="btn-ghost" onClick={addCustom}>+ Add custom item</button>
+          </div>
         )}
       </div>
 
-      {err && <p className="text-sm text-red-700">{err}</p>}
+      <datalist id="o-metal">{METAL_TYPES.map((m) => <option key={m} value={m} />)}</datalist>
+      <datalist id="o-filling">{FILLING_MATERIALS.map((m) => <option key={m} value={m} />)}</datalist>
+      <datalist id="o-plating">{PLATING_TYPES.map((m) => <option key={m} value={m} />)}</datalist>
+
+      {err && <p className="banner-danger">{err}</p>}
       <button className="btn-primary w-full" disabled={submitting} onClick={submit}>
         {submitting ? 'Saving…' : 'Create order'}
       </button>

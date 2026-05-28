@@ -13,7 +13,19 @@ const Body = z.object({
   deadline: z.string().nullable().optional(),
   channel: z.enum(['ONLINE', 'SALES_POINT']),
   sellingPointId: z.string().nullable().optional(),
-  lines: z.array(z.object({ variantId: z.string(), quantity: z.number().int().min(1) })).optional(),
+  lines: z.array(z.object({
+    variantId: z.string().nullable().optional(),
+    quantity: z.number().int().min(1),
+    description: z.string().nullable().optional(),
+    metalType: z.string().nullable().optional(),
+    metalCostAmd: z.number().nullable().optional(),
+    fillingMaterial: z.string().nullable().optional(),
+    fillingCostAmd: z.number().nullable().optional(),
+    platingType: z.string().nullable().optional(),
+    platingCostAmd: z.number().nullable().optional(),
+    laborCostAmd: z.number().nullable().optional(),
+    unitPriceAmd: z.number().nullable().optional(),
+  })).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -37,7 +49,19 @@ export async function POST(req: NextRequest) {
         channel: d.channel,
         sellingPointId: d.sellingPointId || null,
         lineItems: d.lines && d.lines.length > 0
-          ? { create: d.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })) }
+          ? { create: d.lines.map((l) => ({
+              variantId: l.variantId || null,
+              quantity: l.quantity,
+              description: l.description || null,
+              metalType: l.metalType || null,
+              metalCostAmd: l.metalCostAmd ?? null,
+              fillingMaterial: l.fillingMaterial || null,
+              fillingCostAmd: l.fillingCostAmd ?? null,
+              platingType: l.platingType || null,
+              platingCostAmd: l.platingCostAmd ?? null,
+              laborCostAmd: l.laborCostAmd ?? null,
+              unitPriceAmd: l.unitPriceAmd ?? null,
+            })) }
           : undefined,
       },
     });
