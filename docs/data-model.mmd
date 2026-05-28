@@ -1,0 +1,237 @@
+erDiagram
+    User ||--o{ User : "invites (createdById)"
+    User ||--o{ Sale : "soldBy"
+    User ||--o{ Order : "createdBy"
+    User ||--o{ StockMovement : "performedBy"
+    User ||--o{ Customer : "createdBy"
+    User ||--o{ InventoryItem : "first checked-in by"
+    User ||--o{ CashDrawerSession : "shift / open / close"
+    User ||--o{ Notification : "recipient"
+
+    Design ||--o{ Variant : "has variants"
+
+    Variant ||--o{ InventoryItem : "stocked as"
+    Variant ||--o{ StockMovement : "moved as"
+    Variant ||--o{ SaleLineItem : "sold as"
+    Variant ||--o{ OrderLineItem : "ordered as"
+
+    SellingPoint ||--o{ InventoryItem : "holds stock"
+    SellingPoint ||--o{ StockMovement : "at"
+    SellingPoint ||--o{ Sale : "rung up at"
+    SellingPoint ||--o{ Order : "for"
+    SellingPoint ||--o{ CashDrawerSession : "drawer at"
+
+    Customer ||--o{ Sale : "buyer"
+    Customer ||--o{ Order : "orders"
+
+    Sale ||--o{ SaleLineItem : "line items"
+    Sale ||--o{ StockMovement : "generated"
+
+    Order ||--o{ OrderLineItem : "line items"
+
+    User {
+        string id PK
+        string email UK
+        string passwordHash "nullable until invite accepted"
+        string fullName
+        Role role "SALES | ADMIN"
+        boolean isActive
+        string inviteToken UK "nullable"
+        datetime inviteAcceptedAt
+        string createdById FK "self -> User"
+        datetime createdAt
+    }
+
+    Design {
+        string id PK
+        string designId UK "e.g. DSGN-PEND-ALPHA-AYB"
+        string nameEn
+        string nameHy
+        string category
+        string collection
+        string subcollection
+        string motif
+        string culturalMeaningEn
+        string culturalMeaningHy
+        string metal
+        string plating
+        string enamelType
+        decimal basePriceAmd
+        string status
+        string primaryImageUrl
+        string notes
+        datetime createdAt
+    }
+
+    Variant {
+        string id PK
+        string sku UK "e.g. KARNI-PEND-ALPHA-AYB-RED"
+        string designId FK "-> Design"
+        string designName "denormalised"
+        string category
+        string collection
+        string subcollection
+        string size
+        string color
+        decimal priceAmd
+        decimal priceUsd
+        decimal priceEur
+        decimal priceRub
+        decimal costAmd "auto-sum of cost breakdown"
+        string metalType "Silver / Gold / Platinum..."
+        decimal metalCostAmd
+        string fillingMaterial "enamel, resin..."
+        decimal fillingCostAmd
+        string platingType "24k Gold Plate..."
+        decimal platingCostAmd
+        decimal laborCostAmd
+        string barcode UK
+        string imageUrl "Azure Blob URL"
+        decimal weightG
+        int reorderPoint "default 2"
+        VariantStatus status "ACTIVE | OUT_OF_STOCK | ARCHIVED | COMING_SOON"
+        boolean onWebsite
+        boolean onEtsy
+        boolean onIg
+        boolean inStockists
+        string searchBlob "trigram search text"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    SellingPoint {
+        string id PK
+        string name UK "Megamall, Website, Etsy..."
+        SellingPointType type "PHYSICAL | ONLINE | CONSIGNMENT"
+        string address "for receipts"
+        boolean isActive
+        datetime createdAt
+    }
+
+    InventoryItem {
+        string id PK
+        string variantId FK "-> Variant"
+        string sellingPointId FK "-> SellingPoint"
+        int quantity "cached, >= 0"
+        string createdById FK "-> User (first check-in)"
+        datetime firstSeenAt
+        datetime updatedAt
+    }
+
+    StockMovement {
+        string id PK
+        string variantId FK "-> Variant"
+        string sellingPointId FK "-> SellingPoint"
+        StockMovementType type "SALE | CHECKIN | ADJUSTMENT..."
+        int qtyDelta "signed: -1 sale, +10 checkin"
+        decimal unitPriceAmd
+        string performedById FK "-> User"
+        string saleId FK "-> Sale (nullable)"
+        string note
+        datetime createdAt
+    }
+
+    Customer {
+        string id PK
+        string fullName
+        string email "nullable"
+        string phone "nullable"
+        string notes
+        boolean isLoyalty
+        string createdById FK "-> User"
+        datetime createdAt
+    }
+
+    Sale {
+        string id PK
+        string saleNumber UK "KARNI-2026-00042"
+        string sellingPointId FK "-> SellingPoint"
+        string customerId FK "-> Customer (nullable)"
+        string soldById FK "-> User"
+        decimal subtotalAmd
+        decimal totalAmd
+        string currency "default AMD"
+        PaymentMethod paymentMethod "CASH | CARD | TRANSFER | OTHER"
+        datetime createdAt
+    }
+
+    SaleLineItem {
+        string id PK
+        string saleId FK "-> Sale (cascade)"
+        string variantId FK "-> Variant"
+        int quantity
+        decimal unitPriceAmd
+        decimal lineTotalAmd
+    }
+
+    Order {
+        string id PK
+        string orderNumber UK "ORD-2026-00001"
+        string createdById FK "-> User"
+        string customerId FK "-> Customer (nullable)"
+        string customerName "free text alt."
+        string address
+        string note
+        datetime deadline
+        OrderChannel channel "ONLINE | SALES_POINT"
+        string sellingPointId FK "-> SellingPoint (nullable)"
+        OrderStatus status "NEW | IN_PROGRESS | READY | FULFILLED | CANCELLED"
+        datetime createdAt
+    }
+
+    OrderLineItem {
+        string id PK
+        string orderId FK "-> Order (cascade)"
+        string variantId FK "-> Variant (nullable = custom item)"
+        int quantity
+        string description "custom item text"
+        string metalType
+        decimal metalCostAmd
+        string fillingMaterial
+        decimal fillingCostAmd
+        string platingType
+        decimal platingCostAmd
+        decimal laborCostAmd
+        decimal unitPriceAmd
+    }
+
+    CashDrawerSession {
+        string id PK
+        string sellingPointId FK "-> SellingPoint"
+        string userId FK "-> User (on shift)"
+        decimal openingCountAmd
+        string openingById FK "-> User"
+        datetime openingAt
+        decimal closingCountAmd
+        string closingById FK "-> User (nullable)"
+        datetime closingAt
+        decimal expectedClosingAmd "computed"
+        decimal discrepancyAmd "computed"
+        decimal priorClosingAmd "prev session close"
+        boolean handoverMismatch
+        CashSessionStatus status "OPEN | CLOSED | DISPUTED"
+        string note
+    }
+
+    Notification {
+        string id PK
+        string userId FK "-> User (nullable = broadcast)"
+        NotificationType type "NEW_ORDER | LOW_STOCK | KACCA_MISMATCH | INVITE"
+        string title
+        string body
+        string relatedId "id of order/variant/session"
+        boolean isRead
+        datetime createdAt
+    }
+
+    FxRate {
+        string id PK
+        string currency UK "USD / EUR / RUB"
+        decimal ratePerAmd
+        datetime updatedAt
+    }
+
+    Counter {
+        string id PK "sale | order"
+        int current "last sequence number"
+    }

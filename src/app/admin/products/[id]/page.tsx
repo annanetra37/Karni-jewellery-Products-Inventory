@@ -1,10 +1,10 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { saveImage } from '@/lib/upload';
 import { METAL_TYPES, FILLING_MATERIALS, PLATING_TYPES, sumCost } from '@/lib/materials';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
+import { ImageUploadField } from '@/components/ImageUploadField';
 
 async function saveAction(formData: FormData) {
   'use server';
@@ -44,10 +44,8 @@ async function saveAction(formData: FormData) {
   const onIg = formData.get('onIg') === 'on';
   const inStockists = formData.get('inStockists') === 'on';
 
-  // Handle uploaded image (preferred) or pasted URL
-  let imageUrl = String(formData.get('imageUrl') || '').trim() || null;
-  const file = formData.get('imageFile') as File | null;
-  if (file && file.size > 0) imageUrl = await saveImage(file);
+  // Image was already uploaded to blob storage client-side; we just store the URL.
+  const imageUrl = String(formData.get('imageUrl') || '').trim() || null;
 
   const fx = await prisma.fxRate.findMany();
   const r: Record<string, number> = {};
@@ -166,25 +164,13 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
         <p className="page-subtitle font-mono">{v.sku}</p>
       </header>
 
-      <form action={saveAction} className="card space-y-4" encType="multipart/form-data">
+      <form action={saveAction} className="card space-y-4">
         <input type="hidden" name="id" value={v.id} />
         <input type="hidden" name="designId" value={v.designId} />
 
         <fieldset className="space-y-3">
           <legend className="font-semibold text-karni-900">Photo</legend>
-          {v.imageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={v.imageUrl} alt="" className="rounded-xl max-h-48 object-cover border border-karni-100" />
-          )}
-          <div>
-            <label className="label" htmlFor="imageFile">Upload a new photo</label>
-            <input id="imageFile" name="imageFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="input" />
-            <p className="text-xs text-karni-700 mt-1">JPEG / PNG / WebP / GIF, up to 5 MB. Replaces the current image.</p>
-          </div>
-          <div>
-            <label className="label" htmlFor="imageUrl">…or paste a URL</label>
-            <input id="imageUrl" name="imageUrl" className="input" defaultValue={v.imageUrl || ''} placeholder="https://…/photo.jpg" />
-          </div>
+          <ImageUploadField defaultValue={v.imageUrl || ''} />
         </fieldset>
 
         <fieldset className="space-y-3">
