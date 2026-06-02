@@ -86,10 +86,12 @@ export default async function HomePage() {
             <p className="font-semibold">Admin</p>
             <span className="chip">{lowStock} low / out</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/users" className="btn-secondary">Users</Link>
             <Link href="/admin/products" className="btn-secondary">Products</Link>
             <Link href="/admin/inventory" className="btn-secondary">Inventory</Link>
+            <Link href="/admin/collections" className="btn-secondary">Collection photos</Link>
+            <Link href="/admin/categories" className="btn-secondary">Category photos</Link>
             <Link href="/admin/reports" className="btn-secondary">Reports</Link>
           </div>
         </section>

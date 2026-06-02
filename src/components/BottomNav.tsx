@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 
 const items = [
   { href: '/sell', label: 'Sell', icon: 'sell' },
-  { href: '/products', label: 'Catalog', icon: 'catalog' },
+  { href: '/browse', label: 'Catalog', icon: 'catalog' },
   { href: '/receive', label: 'Receive', icon: 'receive' },
   { href: '/kacca', label: 'Kacca', icon: 'kacca' },
   { href: '/orders', label: 'Orders', icon: 'orders' },
