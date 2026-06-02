@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
+import { ProductBrowse } from '@/components/ProductBrowse';
 
 type SP = { id: string; name: string; type: string };
 type CartLine = {
@@ -29,6 +30,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [addNew, setAddNew] = useState(false);
   const [newName, setNewName] = useState(''); const [newPhone, setNewPhone] = useState(''); const [newEmail, setNewEmail] = useState('');
 
+  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
 
@@ -137,13 +139,27 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
         <summary className="cursor-pointer font-medium select-none">
           {cart.length === 0 ? 'Find a product' : '+ Add another item'}
         </summary>
-        <div className="mt-3">
-          <ProductSearch
-            sellingPoints={sellingPoints}
-            defaultSellingPointId={spId}
-            autoFocus={cart.length === 0}
-            onPick={(r) => addToCart(r)}
-          />
+        <div className="mt-3 space-y-3">
+          <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
+            <button type="button" onClick={() => setPickerMode('browse')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'browse' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+              Browse
+            </button>
+            <button type="button" onClick={() => setPickerMode('search')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'search' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+              Search & filter
+            </button>
+          </div>
+          {pickerMode === 'browse' ? (
+            <ProductBrowse sellingPointId={spId} onPick={(r) => addToCart(r)} />
+          ) : (
+            <ProductSearch
+              sellingPoints={sellingPoints}
+              defaultSellingPointId={spId}
+              autoFocus={cart.length === 0}
+              onPick={(r) => addToCart(r)}
+            />
+          )}
         </div>
       </details>
 

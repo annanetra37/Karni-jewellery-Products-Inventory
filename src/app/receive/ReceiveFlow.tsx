@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
+import { ProductBrowse } from '@/components/ProductBrowse';
 
 type SP = { id: string; name: string; type: string };
 type Line = { variantId: string; sku: string; designName: string; color: string | null; size: string | null; quantity: number; note: string };
@@ -12,6 +13,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   const [spId, setSpId] = useState(defaultSellingPointId || sellingPoints[0]?.id || '');
   const [lines, setLines] = useState<Line[]>([]);
   const [picking, setPicking] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
 
@@ -38,11 +40,30 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
       </div>
 
       {picking ? (
-        <ProductSearch sellingPoints={sellingPoints} defaultSellingPointId={spId} autoFocus
-          onPick={(r) => {
-            setLines((ls) => [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, color: r.color, size: r.size, quantity: 1, note: '' }]);
-            setPicking(false);
-          }} />
+        <div className="space-y-3">
+          <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
+            <button type="button" onClick={() => setPickerMode('browse')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'browse' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+              Browse
+            </button>
+            <button type="button" onClick={() => setPickerMode('search')}
+              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'search' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+              Search & filter
+            </button>
+          </div>
+          {pickerMode === 'browse' ? (
+            <ProductBrowse sellingPointId={spId} onPick={(r) => {
+              setLines((ls) => [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, color: r.color, size: r.size, quantity: 1, note: '' }]);
+              setPicking(false);
+            }} />
+          ) : (
+            <ProductSearch sellingPoints={sellingPoints} defaultSellingPointId={spId} autoFocus
+              onPick={(r) => {
+                setLines((ls) => [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, color: r.color, size: r.size, quantity: 1, note: '' }]);
+                setPicking(false);
+              }} />
+          )}
+        </div>
       ) : (
         <button className="btn-secondary w-full" onClick={() => setPicking(true)}>+ Add variant</button>
       )}
