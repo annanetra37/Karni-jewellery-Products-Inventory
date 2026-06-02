@@ -361,3 +361,19 @@ model Counter {
   id      String @id
   current Int    @default(0)
 }
+
+model CollectionMeta {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  imageUrl  String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model CategoryMeta {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  imageUrl  String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
