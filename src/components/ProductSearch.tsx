@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from './I18nProvider';
 
 type SearchResult = {
   id: string; sku: string; designName: string; category: string | null;
@@ -34,6 +35,7 @@ export function ProductSearch({
   const [loading, setLoading] = useState(false);
   const [facets, setFacets] = useState<{ categories: string[]; sizes: string[] }>({ categories: [], sizes: [] });
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { t } = useT();
 
   // Load the real distinct categories / sizes from the catalog.
   useEffect(() => {
@@ -93,7 +95,7 @@ export function ProductSearch({
             autoFocus={autoFocus}
             inputMode="search"
             enterKeyHint="search"
-            placeholder="Search SKU, design, color, letter, barcode…"
+            placeholder={t('c.searchPlaceholder')}
             className="input pl-10"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -101,30 +103,30 @@ export function ProductSearch({
         </div>
         <div className="flex flex-wrap gap-2">
           <select className="input flex-1 min-w-[150px]" value={spId} onChange={(e) => setSpId(e.target.value)}>
-            <option value="">All selling points</option>
+            <option value="">{t('c.allSellingPoints')}</option>
             {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
           </select>
           <select className="input flex-1 min-w-[140px]" value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>
+            <option value="">{t('c.allCategories')}</option>
             {facets.categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
-            <option value="">Any size</option>
+            <option value="">{t('c.anySize')}</option>
             {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input className="input flex-1 min-w-[110px]" placeholder="Color" value={color} onChange={(e) => setColor(e.target.value)} />
+          <input className="input flex-1 min-w-[110px]" placeholder={t('c.color')} value={color} onChange={(e) => setColor(e.target.value)} />
           <label className="flex items-center gap-2 text-sm font-medium text-karni-900 px-3 py-2 rounded-xl bg-karni-100/60 cursor-pointer hover:bg-karni-100 transition whitespace-nowrap">
             <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="accent-karni-600" />
-            In stock only
+            {t('c.inStockOnly')}
           </label>
         </div>
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-karni-700">
-            {loading ? 'Searching…' : total > 0 ? `Showing ${start}–${end} of ${total}` : 'No matches'}
+            {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
           </p>
           <button type="button" onClick={reset} disabled={!filtersActive}
             className="btn-link disabled:opacity-40 disabled:cursor-not-allowed">
-            Reset filters
+            {t('c.reset')}
           </button>
         </div>
       </div>
@@ -133,9 +135,9 @@ export function ProductSearch({
         {results.map((r) => {
           const qty = r.quantity ?? 0;
           const stockBadge = hideStock ? null
-            : qty <= 0 ? <span className="chip chip-danger">Out of stock</span>
-            : qty <= r.reorderPoint ? <span className="chip chip-warn">Low · {qty}</span>
-            : <span className="chip chip-ok">{qty} in stock</span>;
+            : qty <= 0 ? <span className="chip chip-danger">{t('c.outOfStock')}</span>
+            : qty <= r.reorderPoint ? <span className="chip chip-warn">{t('c.low')} · {qty}</span>
+            : <span className="chip chip-ok">{qty} {t('c.inStock')}</span>;
           const inner = (
             <>
               <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-karni-100 to-karni-50 flex items-center justify-center overflow-hidden shrink-0 border border-karni-100">
@@ -178,7 +180,7 @@ export function ProductSearch({
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-2 opacity-50" aria-hidden="true">
               <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
             </svg>
-            No results.
+            {t('c.noResults')}
           </li>
         )}
       </ul>
@@ -186,11 +188,11 @@ export function ProductSearch({
       {total > LIMIT && (
         <div className="flex items-center justify-between gap-3 pt-1">
           <button type="button" className="btn-secondary" disabled={page <= 0 || loading} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-            ← Prev
+            ← {t('c.prev')}
           </button>
-          <span className="text-sm text-karni-700">Page {page + 1} of {lastPage + 1}</span>
+          <span className="text-sm text-karni-700">{t('c.page')} {page + 1} {t('c.of')} {lastPage + 1}</span>
           <button type="button" className="btn-secondary" disabled={page >= lastPage || loading} onClick={() => setPage((p) => Math.min(lastPage, p + 1))}>
-            Next →
+            {t('c.next')} →
           </button>
         </div>
       )}

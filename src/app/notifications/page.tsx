@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getT } from '@/lib/i18n-server';
 
 async function markAllRead() {
   'use server';
@@ -11,11 +12,11 @@ async function markAllRead() {
   revalidatePath('/notifications');
 }
 
-const META: Record<string, { label: string; tone: 'warn' | 'danger' | 'ok' | 'info'; icon: 'box' | 'cart' | 'cash' | 'mail' }> = {
-  LOW_STOCK: { label: 'Low stock', tone: 'warn', icon: 'box' },
-  NEW_ORDER: { label: 'New order', tone: 'ok', icon: 'cart' },
-  KACCA_MISMATCH: { label: 'Kacca discrepancy', tone: 'danger', icon: 'cash' },
-  INVITE: { label: 'Invite', tone: 'info', icon: 'mail' },
+const META: Record<string, { key: string; tone: 'warn' | 'danger' | 'ok' | 'info'; icon: 'box' | 'cart' | 'cash' | 'mail' }> = {
+  LOW_STOCK: { key: 'n.lowStock', tone: 'warn', icon: 'box' },
+  NEW_ORDER: { key: 'n.newOrder', tone: 'ok', icon: 'cart' },
+  KACCA_MISMATCH: { key: 'n.kacca', tone: 'danger', icon: 'cash' },
+  INVITE: { key: 'n.invite', tone: 'info', icon: 'mail' },
 };
 
 function Icon({ name }: { name: 'box' | 'cart' | 'cash' | 'mail' }) {
@@ -37,6 +38,7 @@ function timeAgo(d: Date): string {
 
 export default async function NotificationsPage() {
   const u = await requireUser();
+  const { t } = await getT();
   const [notifs, unread] = await Promise.all([
     prisma.notification.findMany({ where: { userId: u.id }, orderBy: { createdAt: 'desc' }, take: 100 }),
     prisma.notification.count({ where: { userId: u.id, isRead: false } }),
@@ -45,19 +47,19 @@ export default async function NotificationsPage() {
     <div className="space-y-4">
       <header className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="page-title">Notifications</h1>
-          <p className="page-subtitle">{unread > 0 ? `${unread} unread` : 'All caught up.'}</p>
+          <h1 className="page-title">{t('n.title')}</h1>
+          <p className="page-subtitle">{unread > 0 ? `${unread} ${t('n.unread')}` : t('n.allRead')}</p>
         </div>
         {unread > 0 && (
           <form action={markAllRead}>
-            <button className="btn-secondary">Mark all read</button>
+            <button className="btn-secondary">{t('n.markAllRead')}</button>
           </form>
         )}
       </header>
 
       <ul className="space-y-2">
         {notifs.map((n) => {
-          const meta = META[n.type] || { label: n.type, tone: 'info' as const, icon: 'mail' as const };
+          const meta = META[n.type] || { key: 'n.' + n.type, tone: 'info' as const, icon: 'mail' as const };
           const tone = `chip ${meta.tone === 'warn' ? 'chip-warn' : meta.tone === 'danger' ? 'chip-danger' : meta.tone === 'ok' ? 'chip-ok' : ''}`;
           return (
             <li key={n.id} className={`card flex gap-3 ${n.isRead ? 'opacity-80' : 'border-karni-500 shadow-md'}`}>
@@ -76,9 +78,9 @@ export default async function NotificationsPage() {
                 </div>
                 {n.body && <p className="text-sm text-karni-700 mt-0.5">{n.body}</p>}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <span className={tone}>{meta.label}</span>
+                  <span className={tone}>{t(meta.key)}</span>
                   <span className="text-[11px] text-karni-700">{n.createdAt.toLocaleString()}</span>
-                  {!n.isRead && <span className="chip chip-ok">New</span>}
+                  {!n.isRead && <span className="chip chip-ok">{t('n.new')}</span>}
                 </div>
               </div>
             </li>
@@ -86,7 +88,7 @@ export default async function NotificationsPage() {
         })}
         {notifs.length === 0 && (
           <li className="card text-center py-10 text-karni-700">
-            <p className="text-sm">No notifications yet. Low-stock and new-order alerts will appear here.</p>
+            <p className="text-sm">{t('n.empty')}</p>
           </li>
         )}
       </ul>

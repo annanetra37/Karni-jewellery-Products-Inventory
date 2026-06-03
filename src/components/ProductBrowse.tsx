@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useT } from './I18nProvider';
 
 export type BrowseVariant = {
   id: string; sku: string; designName: string;
@@ -29,6 +30,7 @@ export function ProductBrowse({
   const [categories, setCategories] = useState<Tile[]>([]);
   const [variants, setVariants] = useState<BrowseVariant[]>([]);
   const [loading, setLoading] = useState(false);
+  const { t } = useT();
 
   useEffect(() => {
     setLoading(true);
@@ -75,12 +77,12 @@ export function ProductBrowse({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
           </svg>
-          Back
+          {t('c.back')}
         </button>
       )}
       <span className="text-karni-700">
-        {step === 'col' && 'Pick a collection'}
-        {step === 'cat' && <>{collection} <span className="text-karni-400">·</span> Pick a category</>}
+        {step === 'col' && t('b.pickCollection')}
+        {step === 'cat' && <>{collection} <span className="text-karni-400">·</span> {t('b.pickCategory')}</>}
         {step === 'var' && <>{collection} <span className="text-karni-400">·</span> {category}</>}
       </span>
     </div>
@@ -99,13 +101,13 @@ export function ProductBrowse({
                 <PhotoBox src={c.imageUrl} alt={c.name} />
                 <div className="p-3">
                   <p className="font-semibold text-karni-900">{c.name}</p>
-                  <p className="text-xs text-karni-700">{c.count} items</p>
+                  <p className="text-xs text-karni-700">{c.count} {t('c.items')}</p>
                 </div>
               </button>
             </li>
           ))}
           {!loading && collections.length === 0 && (
-            <li className="col-span-full text-center text-karni-700 text-sm py-8">No collections yet.</li>
+            <li className="col-span-full text-center text-karni-700 text-sm py-8">{t('b.noCollections')}</li>
           )}
         </ul>
       </div>
@@ -125,13 +127,13 @@ export function ProductBrowse({
                 <PhotoBox src={c.imageUrl} alt={c.name} />
                 <div className="p-3">
                   <p className="font-semibold text-karni-900">{c.name}</p>
-                  <p className="text-xs text-karni-700">{c.count} items</p>
+                  <p className="text-xs text-karni-700">{c.count} {t('c.items')}</p>
                 </div>
               </button>
             </li>
           ))}
           {!loading && categories.length === 0 && (
-            <li className="col-span-full text-center text-karni-700 text-sm py-8">No categories in this collection.</li>
+            <li className="col-span-full text-center text-karni-700 text-sm py-8">{t('b.noCategories')}</li>
           )}
         </ul>
       </div>
@@ -159,7 +161,7 @@ export function ProductBrowse({
       {loading && <p className="text-xs text-karni-700 text-center">Loading…</p>}
       {sizeKeys.map((k) => {
         const list = buckets.get(k)!;
-        const label = k ? k.charAt(0).toUpperCase() + k.slice(1) : (hasSizes ? 'One size' : '');
+        const label = k ? k.charAt(0).toUpperCase() + k.slice(1) : (hasSizes ? t('b.oneSize') : '');
         return (
           <section key={k || 'none'} className="space-y-2">
             {hasSizes && <h3 className="text-xs font-semibold uppercase tracking-wide text-karni-700">{label}</h3>}
@@ -167,8 +169,8 @@ export function ProductBrowse({
               {list.map((v) => {
                 const qty = v.quantity ?? 0;
                 const chip = hideStock ? null
-                  : qty <= 0 ? <span className="chip chip-danger">Out</span>
-                  : qty <= v.reorderPoint ? <span className="chip chip-warn">Low · {qty}</span>
+                  : qty <= 0 ? <span className="chip chip-danger">{t('c.outOfStock')}</span>
+                  : qty <= v.reorderPoint ? <span className="chip chip-warn">{t('c.low')} · {qty}</span>
                   : <span className="chip chip-ok">{qty}</span>;
                 return (
                   <li key={v.id}>

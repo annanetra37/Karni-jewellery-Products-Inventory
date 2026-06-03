@@ -1,13 +1,14 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useT } from './I18nProvider';
 
 const items = [
-  { href: '/sell', label: 'Sell', icon: 'sell' },
-  { href: '/browse', label: 'Catalog', icon: 'catalog' },
-  { href: '/receive', label: 'Receive', icon: 'receive' },
-  { href: '/kacca', label: 'Kacca', icon: 'kacca' },
-  { href: '/orders', label: 'Orders', icon: 'orders' },
+  { href: '/sell', key: 'nav.sell', icon: 'sell' },
+  { href: '/browse', key: 'nav.catalog', icon: 'catalog' },
+  { href: '/receive', key: 'nav.receive', icon: 'receive' },
+  { href: '/kacca', key: 'nav.kacca', icon: 'kacca' },
+  { href: '/orders', key: 'nav.orders', icon: 'orders' },
 ] as const;
 
 function Icon({ name, active }: { name: string; active: boolean }) {
@@ -33,6 +34,7 @@ function Icon({ name, active }: { name: string; active: boolean }) {
 
 export function BottomNav() {
   const pathname = usePathname();
+  const { t } = useT();
   return (
     <nav className="no-print fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-karni-100 z-30 shadow-[0_-2px_12px_rgba(60,35,12,0.05)]">
       <div className="mx-auto max-w-5xl grid grid-cols-5">
@@ -41,7 +43,7 @@ export function BottomNav() {
           return (
             <Link key={it.href} href={it.href} className={`navlink ${active ? 'navlink-active' : ''}`}>
               <Icon name={it.icon} active={active} />
-              <span>{it.label}</span>
+              <span>{t(it.key)}</span>
             </Link>
           );
         })}

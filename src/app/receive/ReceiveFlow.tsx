@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
 import { ProductBrowse } from '@/components/ProductBrowse';
+import { useT } from '@/components/I18nProvider';
 
 type SP = { id: string; name: string; type: string };
 type Line = { variantId: string; sku: string; designName: string; color: string | null; size: string | null; quantity: number; note: string };
@@ -16,6 +17,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+  const { t } = useT();
 
   async function submit() {
     setErr(''); setSubmitting(true);
@@ -32,7 +34,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
     <div className="space-y-3">
       <div className="card space-y-3">
         <div>
-          <label className="label">Selling point</label>
+          <label className="label">{t('c.sellingPoint')}</label>
           <select className="input" value={spId} onChange={(e) => setSpId(e.target.value)}>
             {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -44,11 +46,11 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
           <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
             <button type="button" onClick={() => setPickerMode('browse')}
               className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'browse' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
-              Browse
+              {t('s.browse')}
             </button>
             <button type="button" onClick={() => setPickerMode('search')}
               className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'search' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
-              Search & filter
+              {t('s.searchFilter')}
             </button>
           </div>
           {pickerMode === 'browse' ? (
@@ -65,12 +67,12 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
           )}
         </div>
       ) : (
-        <button className="btn-secondary w-full" onClick={() => setPicking(true)}>+ Add variant</button>
+        <button className="btn-secondary w-full" onClick={() => setPicking(true)}>{t('r.addVariant')}</button>
       )}
 
       {lines.length > 0 && (
         <div className="card space-y-3">
-          <p className="font-medium">Items to receive</p>
+          <p className="font-medium">{t('r.itemsToReceive')}</p>
           {lines.map((l, i) => (
             <div key={i} className="border-b border-karni-100 pb-2">
               <div className="flex justify-between items-start">
@@ -80,19 +82,19 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
                   <p className="text-[10px] font-mono text-karni-700">{l.sku}</p>
                 </div>
                 <button className="text-red-700 text-sm underline"
-                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
+                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>{t('c.remove')}</button>
               </div>
               <div className="flex gap-2 mt-2">
                 <input type="number" min={1} className="input w-24" value={l.quantity}
                   onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
-                <input className="input flex-1" placeholder="Note (optional)" value={l.note}
+                <input className="input flex-1" placeholder={t('c.noteOptional')} value={l.note}
                   onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, note: e.target.value } : x))} />
               </div>
             </div>
           ))}
           {err && <p className="text-sm text-red-700">{err}</p>}
           <button className="btn-primary w-full" disabled={submitting} onClick={submit}>
-            {submitting ? 'Saving…' : `Check in ${lines.reduce((s, l) => s + l.quantity, 0)} items`}
+            {submitting ? t('c.saving') : `${t('r.checkInN')} ${lines.reduce((s, l) => s + l.quantity, 0)} ${t('c.items')}`}
           </button>
         </div>
       )}
