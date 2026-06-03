@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { requireUser, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getT } from '@/lib/i18n-server';
 
 export default async function OrdersPage() {
   const user = await requireUser();
+  const { t } = await getT();
   const orders = await prisma.order.findMany({
     where: isAdmin(user) ? {} : { createdById: user.id },
     orderBy: { createdAt: 'desc' },
@@ -13,8 +15,8 @@ export default async function OrdersPage() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Orders</h1>
-        <Link href="/orders/new" className="btn-primary">+ New order</Link>
+        <h1 className="page-title">{t('o.title')}</h1>
+        <Link href="/orders/new" className="btn-primary">{t('o.new')}</Link>
       </div>
       <ul className="space-y-2">
         {orders.map((o) => (
@@ -56,7 +58,7 @@ export default async function OrdersPage() {
             {o.note && <p className="text-xs text-karni-700 mt-2 italic">{o.note}</p>}
           </li>
         ))}
-        {orders.length === 0 && <li className="text-karni-700 text-sm text-center py-6">No orders yet.</li>}
+        {orders.length === 0 && <li className="text-karni-700 text-sm text-center py-6">{t('o.noOrders')}</li>}
       </ul>
     </div>
   );

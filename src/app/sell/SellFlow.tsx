@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
 import { ProductBrowse } from '@/components/ProductBrowse';
+import { useT } from '@/components/I18nProvider';
 
 type SP = { id: string; name: string; type: string };
 type CartLine = {
@@ -33,6 +34,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+  const { t } = useT();
 
   useEffect(() => {
     if (!custQ) { setCustResults([]); return; }
@@ -105,8 +107,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
       {cart.length > 0 && (
         <div className="card space-y-3">
           <div className="flex justify-between items-baseline">
-            <p className="font-medium">Cart ({totalQty} {totalQty === 1 ? 'item' : 'items'})</p>
-            <button className="text-karni-700 underline text-sm" onClick={() => setCart([])}>Clear</button>
+            <p className="font-medium">{t('s.cart')} ({totalQty} {totalQty === 1 ? t('c.item') : t('c.items')})</p>
+            <button className="text-karni-700 underline text-sm" onClick={() => setCart([])}>{t('s.clear')}</button>
           </div>
           {cart.map((l) => (
             <div key={l.variantId} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
@@ -116,7 +118,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                   <p className="text-xs text-karni-700">{[l.color, l.size].filter(Boolean).join(' · ')}</p>
                   <p className="text-[10px] font-mono text-karni-700 truncate">{l.sku}</p>
                 </div>
-                <button className="text-red-700 text-sm underline" onClick={() => remove(l.variantId)}>Remove</button>
+                <button className="text-red-700 text-sm underline" onClick={() => remove(l.variantId)}>{t('c.remove')}</button>
               </div>
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-2">
@@ -129,7 +131,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
             </div>
           ))}
           <div className="flex justify-between font-bold text-lg pt-1 border-t border-karni-100">
-            <span>Subtotal</span>
+            <span>{t('s.subtotal')}</span>
             <span>{subtotal.toLocaleString()} ֏</span>
           </div>
         </div>
@@ -137,17 +139,17 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
 
       <details className="card" open={cart.length === 0}>
         <summary className="cursor-pointer font-medium select-none">
-          {cart.length === 0 ? 'Find a product' : '+ Add another item'}
+          {cart.length === 0 ? t('s.findProduct') : t('s.addAnother')}
         </summary>
         <div className="mt-3 space-y-3">
           <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
             <button type="button" onClick={() => setPickerMode('browse')}
               className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'browse' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
-              Browse
+              {t('s.browse')}
             </button>
             <button type="button" onClick={() => setPickerMode('search')}
               className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'search' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
-              Search & filter
+              {t('s.searchFilter')}
             </button>
           </div>
           {pickerMode === 'browse' ? (
@@ -167,43 +169,43 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
         <>
           <div className="card space-y-3">
             <div>
-              <label className="label">Selling point</label>
+              <label className="label">{t('c.sellingPoint')}</label>
               <select className="input" value={spId} onChange={(e) => setSpId(e.target.value)}>
                 {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Payment method</label>
+              <label className="label">{t('s.paymentMethod')}</label>
               <div className="grid grid-cols-4 gap-2">
                 {(['CASH', 'CARD', 'TRANSFER', 'OTHER'] as const).map((m) => (
                   <button key={m} type="button"
                     className={`btn ${paymentMethod === m ? 'bg-karni-600 text-white' : 'bg-karni-100 text-karni-900'}`}
-                    onClick={() => setPaymentMethod(m)}>{m}</button>
+                    onClick={() => setPaymentMethod(m)}>{t('s.pm' + m.charAt(0) + m.slice(1).toLowerCase())}</button>
                 ))}
               </div>
             </div>
           </div>
 
           <div className="card space-y-2">
-            <p className="font-medium">Customer</p>
+            <p className="font-medium">{t('s.customer')}</p>
             {customer ? (
               <div className="flex items-center justify-between">
                 <div>
                   <p>{customer.fullName}</p>
                   <p className="text-xs text-karni-700">{customer.phone || customer.email}</p>
                 </div>
-                <button className="text-karni-700 underline text-sm" onClick={() => setCustomer(null)}>Remove</button>
+                <button className="text-karni-700 underline text-sm" onClick={() => setCustomer(null)}>{t('c.remove')}</button>
               </div>
             ) : addNew ? (
               <div className="space-y-2">
-                <input className="input" placeholder="Full name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-                <input className="input" placeholder="Phone" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
-                <input className="input" placeholder="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-                <button className="text-karni-700 underline text-sm" onClick={() => setAddNew(false)}>Cancel</button>
+                <input className="input" placeholder={t('s.fullName')} value={newName} onChange={(e) => setNewName(e.target.value)} />
+                <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+                <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                <button className="text-karni-700 underline text-sm" onClick={() => setAddNew(false)}>{t('c.cancel')}</button>
               </div>
             ) : (
               <>
-                <input className="input" placeholder="Find by name / phone / email" value={custQ} onChange={(e) => setCustQ(e.target.value)} />
+                <input className="input" placeholder={t('s.findCustomer')} value={custQ} onChange={(e) => setCustQ(e.target.value)} />
                 <ul className="space-y-1">
                   {custResults.map((c) => (
                     <li key={c.id}>
@@ -214,8 +216,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                     </li>
                   ))}
                 </ul>
-                <button className="btn-ghost w-full" onClick={() => setAddNew(true)}>+ Add new customer</button>
-                <p className="text-xs text-karni-700">Or proceed as walk-in (no customer).</p>
+                <button className="btn-ghost w-full" onClick={() => setAddNew(true)}>{t('s.addCustomer')}</button>
+                <p className="text-xs text-karni-700">{t('s.walkIn')}</p>
               </>
             )}
           </div>
@@ -226,14 +228,14 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               <div>
-                <p className="font-semibold">Sale could not be saved</p>
+                <p className="font-semibold">{t('s.saleFailed')}</p>
                 <p>{err}</p>
               </div>
             </div>
           )}
 
           <button className="btn-primary w-full text-lg py-4" disabled={submitting || !spId || cart.length === 0} onClick={submit}>
-            {submitting ? 'Processing…' : `Confirm & Sell — ${subtotal.toLocaleString()} ֏`}
+            {submitting ? t('c.processing') : `${t('s.confirmSell')} — ${subtotal.toLocaleString()} ֏`}
           </button>
         </>
       )}

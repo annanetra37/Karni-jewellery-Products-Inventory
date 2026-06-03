@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { requireUser, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { BrowseCard } from '@/components/BrowseCard';
+import { getT } from '@/lib/i18n-server';
 
 export default async function BrowseCollectionsPage() {
   const user = await requireUser();
+  const { t } = await getT();
   const [rows, meta] = await Promise.all([
     prisma.variant.groupBy({
       by: ['collection'],
@@ -23,10 +25,10 @@ export default async function BrowseCollectionsPage() {
     <div className="space-y-4">
       <header className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="page-title">Browse the catalog</h1>
-          <p className="page-subtitle">Pick a collection.</p>
+          <h1 className="page-title">{t('b.title')}</h1>
+          <p className="page-subtitle">{t('b.pickCollection')}.</p>
         </div>
-        <Link href="/products" className="btn-link">Search & filter →</Link>
+        <Link href="/products" className="btn-link">{t('b.searchFilter')}</Link>
       </header>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -35,12 +37,12 @@ export default async function BrowseCollectionsPage() {
             key={c.name}
             href={`/browse/${encodeURIComponent(c.name)}`}
             title={c.name}
-            subtitle={`${c.count} ${c.count === 1 ? 'item' : 'items'}`}
+            subtitle={`${c.count} ${c.count === 1 ? t('c.item') : t('c.items')}`}
             imageUrl={photos.get(c.name) || null}
           />
         ))}
         {collections.length === 0 && (
-          <p className="text-karni-700 text-sm col-span-full text-center py-10">No collections yet.</p>
+          <p className="text-karni-700 text-sm col-span-full text-center py-10">{t('b.noCollections')}</p>
         )}
       </div>
 

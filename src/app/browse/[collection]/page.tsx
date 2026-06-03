@@ -3,9 +3,11 @@ import { notFound } from 'next/navigation';
 import { requireUser, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { BrowseCard } from '@/components/BrowseCard';
+import { getT } from '@/lib/i18n-server';
 
 export default async function BrowseCategoriesPage({ params }: { params: Promise<{ collection: string }> }) {
   const user = await requireUser();
+  const { t } = await getT();
   const { collection: encoded } = await params;
   const collection = decodeURIComponent(encoded);
 
@@ -27,10 +29,10 @@ export default async function BrowseCategoriesPage({ params }: { params: Promise
 
   return (
     <div className="space-y-4">
-      <Link href="/browse" className="btn-link">← All collections</Link>
+      <Link href="/browse" className="btn-link">{t('b.allCollections')}</Link>
       <header>
         <h1 className="page-title">{collection}</h1>
-        <p className="page-subtitle">Pick a category.</p>
+        <p className="page-subtitle">{t('b.pickCategory')}.</p>
       </header>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -39,12 +41,12 @@ export default async function BrowseCategoriesPage({ params }: { params: Promise
             key={c.name}
             href={`/browse/${encodeURIComponent(collection)}/${encodeURIComponent(c.name)}`}
             title={c.name}
-            subtitle={`${c.count} ${c.count === 1 ? 'item' : 'items'}`}
+            subtitle={`${c.count} ${c.count === 1 ? t('c.item') : t('c.items')}`}
             imageUrl={photos.get(c.name) || null}
           />
         ))}
         {categories.length === 0 && (
-          <p className="text-karni-700 text-sm col-span-full text-center py-10">No categories in this collection.</p>
+          <p className="text-karni-700 text-sm col-span-full text-center py-10">{t('b.noCategories')}</p>
         )}
       </div>
 

@@ -2,6 +2,7 @@ import { requireUser, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import Link from 'next/link';
+import { getT } from '@/lib/i18n-server';
 
 async function openShiftAction(formData: FormData) {
   'use server';
@@ -95,6 +96,7 @@ async function closeShiftAction(formData: FormData) {
 
 export default async function KaccaPage({ searchParams }: { searchParams: Promise<{ err?: string; by?: string }> }) {
   const user = await requireUser();
+  const { t } = await getT();
   const sp = await searchParams;
   const [sps, openShift, recentSessions] = await Promise.all([
     prisma.sellingPoint.findMany({ where: { isActive: true, type: { in: ['PHYSICAL', 'CONSIGNMENT'] } }, orderBy: { name: 'asc' } }),
@@ -111,43 +113,43 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold">Kacca — cash drawer</h1>
+      <h1 className="page-title">{t('k.title')}</h1>
 
       {sp.err === 'alreadyOpen' && (
         <div className="card bg-amber-50 border-amber-200 text-amber-900 text-sm">
-          A shift is already open at this selling point by <b>{sp.by}</b>. They must close it first.
+          {t('k.alreadyOpen')} <b>{sp.by}</b>. {t('k.mustClose')}
         </div>
       )}
 
       {openShift ? (
         <div className="card space-y-3 bg-emerald-50 border-emerald-200">
-          <p className="font-medium">Your shift is open</p>
-          <p className="text-sm">{openShift.sellingPoint.name} · opened {openShift.openingAt.toLocaleString()}</p>
-          <p className="text-sm">Opening count: <b>{formatAmd(Number(openShift.openingCountAmd))}</b></p>
+          <p className="font-medium">{t('k.shiftOpen')}</p>
+          <p className="text-sm">{openShift.sellingPoint.name} · {t('k.opened')} {openShift.openingAt.toLocaleString()}</p>
+          <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b></p>
           <form action={closeShiftAction} className="space-y-2">
             <input type="hidden" name="sessionId" value={openShift.id} />
-            <label className="label">Closing count (count the drawer)</label>
+            <label className="label">{t('k.closingCount')}</label>
             <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
-            <button className="btn-primary w-full" type="submit">End shift & hand over</button>
+            <button className="btn-primary w-full" type="submit">{t('k.endShift')}</button>
           </form>
         </div>
       ) : (
         <form action={openShiftAction} className="card space-y-3">
-          <p className="font-medium">Start a shift</p>
-          <label className="label">Selling point</label>
+          <p className="font-medium">{t('k.startShift')}</p>
+          <label className="label">{t('c.sellingPoint')}</label>
           <select name="sellingPointId" className="input" required>
-            <option value="">Pick one…</option>
+            <option value="">{t('k.pickPoint')}</option>
             {sps.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <label className="label">Opening count (count the drawer)</label>
+          <label className="label">{t('k.countDrawer')}</label>
           <input className="input" name="openingCountAmd" type="number" step="0.01" min="0" required />
-          <p className="text-xs text-karni-700">If your count differs from what the previous person left, both numbers are saved and admin is notified.</p>
-          <button className="btn-primary w-full" type="submit">Start shift</button>
+          <p className="text-xs text-karni-700">{t('k.handoverHint')}</p>
+          <button className="btn-primary w-full" type="submit">{t('k.startBtn')}</button>
         </form>
       )}
 
       <section className="card">
-        <p className="font-medium mb-2">Recent sessions</p>
+        <p className="font-medium mb-2">{t('k.recentSessions')}</p>
         <ul className="space-y-2 text-sm">
           {recentSessions.map((s) => (
             <li key={s.id} className="border-b border-karni-100 pb-2">
@@ -172,7 +174,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           {recentSessions.length === 0 && <li className="text-karni-700">None yet.</li>}
         </ul>
       </section>
-      {isAdmin(user) && <Link href="/admin/reports" className="btn-ghost w-full">All session reports →</Link>}
+      {isAdmin(user) && <Link href="/admin/reports" className="btn-ghost w-full">{t('k.allReports')}</Link>}
     </div>
   );
 }
