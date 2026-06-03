@@ -8,10 +8,10 @@ export default async function HomePage() {
   if (!user) {
     return (
       <div className="max-w-md mx-auto mt-12">
-        <div className="card text-center space-y-3">
-          <div className="mx-auto w-14 h-14 rounded-2xl text-white text-xl font-bold flex items-center justify-center shadow-lift" style={{ background: 'linear-gradient(135deg,#2d2520,#1a1612)' }}>K</div>
-          <h1 className="text-2xl font-bold tracking-tight">Karni Sales</h1>
-          <p className="text-karni-700 text-sm">Point-of-sale and inventory for Karni Jewellery.</p>
+        <div className="card text-center space-y-4">
+          <div className="mx-auto logo-mark w-16 h-16 text-2xl">K</div>
+          <h1 className="display text-3xl font-semibold tracking-tight" style={{ color: 'var(--brand-deep)' }}>Karni Sales</h1>
+          <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>Point-of-sale and inventory for Karni Jewellery.</p>
           <Link href="/login" className="btn-primary inline-flex">Sign in</Link>
         </div>
       </div>
@@ -32,7 +32,7 @@ export default async function HomePage() {
   return (
     <div className="space-y-4">
       <section>
-        <p className="text-sm text-karni-700">Welcome back,</p>
+        <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>Welcome back,</p>
         <h1 className="page-title">{user.fullName}</h1>
         <p className="page-subtitle">Signed in as {user.email} · <span className="chip">{user.role}</span></p>
       </section>
@@ -42,34 +42,34 @@ export default async function HomePage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <p className="text-sm font-semibold text-emerald-800">Shift open at {openShift.sellingPoint.name}</p>
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--success)' }}></span>
+                <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>Shift open at {openShift.sellingPoint.name}</p>
               </div>
-              <p className="text-xs text-karni-700">Opening count {formatAmd(Number(openShift.openingCountAmd))} · started {openShift.openingAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>Opening count {formatAmd(Number(openShift.openingCountAmd))} · started {openShift.openingAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
             </div>
-            <span className="text-karni-700">›</span>
+            <span style={{ color: 'var(--ink-soft)' }}>›</span>
           </div>
         </Link>
       ) : (
         <Link href="/kacca" className="card-interactive block">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-amber-900">No shift open</p>
-              <p className="text-xs text-karni-700 mt-0.5">Tap to start your kacca and begin selling.</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--accent-deep)' }}>No shift open</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--ink-soft)' }}>Tap to start your kacca and begin selling.</p>
             </div>
-            <span className="text-karni-700">›</span>
+            <span style={{ color: 'var(--ink-soft)' }}>›</span>
           </div>
         </Link>
       )}
 
       <section className="grid grid-cols-2 gap-3">
         <div className="card">
-          <p className="text-xs uppercase tracking-wide text-karni-700 font-semibold">Sales today</p>
-          <p className="text-3xl font-bold mt-1">{todaySalesCount}</p>
+          <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>Sales today</p>
+          <p className="display text-3xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{todaySalesCount}</p>
         </div>
         <div className="card">
-          <p className="text-xs uppercase tracking-wide text-karni-700 font-semibold">Revenue today</p>
-          <p className="text-3xl font-bold mt-1">{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
+          <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>Revenue today</p>
+          <p className="display text-2xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
         </div>
       </section>
 
