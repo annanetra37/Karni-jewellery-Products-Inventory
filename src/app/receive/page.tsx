@@ -7,9 +7,10 @@ import { getT } from '@/lib/i18n-server';
 export default async function ReceivePage() {
   const user = await requireUser();
   const { t } = await getT();
-  const [sps, openShift] = await Promise.all([
+  const [sps, openShift, megamall] = await Promise.all([
     prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
     prisma.cashDrawerSession.findFirst({ where: { userId: user.id, status: 'OPEN' } }),
+    prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } }),
   ]);
   const recent = await prisma.stockMovement.findMany({
     where: { type: 'CHECKIN' },
@@ -24,7 +25,7 @@ export default async function ReceivePage() {
       </header>
       <ReceiveFlow
         sellingPoints={sps.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
-        defaultSellingPointId={openShift?.sellingPointId || ''}
+        defaultSellingPointId={openShift?.sellingPointId || megamall?.id || ''}
       />
       <section className="card">
         <p className="font-semibold mb-3">{t('r.recent')}</p>
