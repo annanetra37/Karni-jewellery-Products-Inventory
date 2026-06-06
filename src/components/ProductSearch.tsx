@@ -25,6 +25,7 @@ export function ProductSearch({
 }) {
   const [q, setQ] = useState('');
   const [spId, setSpId] = useState(defaultSellingPointId || '');
+  const [collection, setCollection] = useState('');
   const [category, setCategory] = useState('');
   const [color, setColor] = useState('');
   const [size, setSize] = useState('');
@@ -34,27 +35,38 @@ export function ProductSearch({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [facets, setFacets] = useState<{ categories: string[]; sizes: string[]; subcollections: string[] }>({ categories: [], sizes: [], subcollections: [] });
+  const [facets, setFacets] = useState<{ categories: string[]; sizes: string[]; subcollections: string[]; colors: string[]; collections: string[] }>({ categories: [], sizes: [], subcollections: [], colors: [], collections: [] });
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useT();
 
-  // Load the real distinct categories / sizes from the catalog.
+  // Load distinct facet values from the catalog. Refetched when collection or
+  // category changes so colors / subcollections narrow to what's relevant.
   useEffect(() => {
-    fetch('/api/facets')
+    const u = new URLSearchParams();
+    if (collection) u.set('collection', collection);
+    if (category) u.set('category', category);
+    fetch(`/api/facets?${u.toString()}`)
       .then((r) => r.json())
-      .then((d) => setFacets({ categories: d.categories || [], sizes: d.sizes || [], subcollections: d.subcollections || [] }))
+      .then((d) => setFacets({
+        categories: d.categories || [],
+        sizes: d.sizes || [],
+        subcollections: d.subcollections || [],
+        colors: d.colors || [],
+        collections: d.collections || [],
+      }))
       .catch(() => {});
-  }, []);
+  }, [collection, category]);
 
-  const filtersActive = !!(q || spId || category || color || size || subcollection || stock !== 'all');
+  const filtersActive = !!(q || spId || collection || category || color || size || subcollection || stock !== 'all');
 
   // Reset to first page whenever a filter changes.
-  useEffect(() => { setPage(0); }, [q, spId, category, color, size, subcollection, stock]);
+  useEffect(() => { setPage(0); }, [q, spId, collection, category, color, size, subcollection, stock]);
 
   const url = useMemo(() => {
     const u = new URLSearchParams();
     if (q) u.set('q', q);
     if (spId) u.set('sellingPointId', spId);
+    if (collection) u.set('collection', collection);
     if (category) u.set('category', category);
     if (color) u.set('color', color);
     if (size) u.set('size', size);
@@ -63,7 +75,7 @@ export function ProductSearch({
     u.set('limit', String(LIMIT));
     u.set('offset', String(page * LIMIT));
     return `/api/search?${u.toString()}`;
-  }, [q, spId, category, color, size, subcollection, stock, page]);
+  }, [q, spId, collection, category, color, size, subcollection, stock, page]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -77,7 +89,7 @@ export function ProductSearch({
   }, [url]);
 
   function reset() {
-    setQ(''); setSpId(defaultSellingPointId || ''); setCategory(''); setColor(''); setSize(''); setSubcollection(''); setStock('all'); setPage(0);
+    setQ(''); setSpId(defaultSellingPointId || ''); setCollection(''); setCategory(''); setColor(''); setSize(''); setSubcollection(''); setStock('all'); setPage(0);
   }
 
   const start = total === 0 ? 0 : page * LIMIT + 1;
@@ -108,6 +120,10 @@ export function ProductSearch({
             <option value="">{t('c.allSellingPoints')}</option>
             {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
           </select>
+          <select className="input flex-1 min-w-[140px]" value={collection} onChange={(e) => setCollection(e.target.value)}>
+            <option value="">— {t('c.collection').toLowerCase()} —</option>
+            {facets.collections.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
           <select className="input flex-1 min-w-[140px]" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">{t('c.allCategories')}</option>
             {facets.categories.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -120,7 +136,10 @@ export function ProductSearch({
             <option value="">{t('c.anySize')}</option>
             {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input className="input flex-1 min-w-[110px]" placeholder={t('c.color')} value={color} onChange={(e) => setColor(e.target.value)} />
+          <select className="input flex-1 min-w-[140px]" value={color} onChange={(e) => setColor(e.target.value)}>
+            <option value="">— {t('c.color').toLowerCase()} —</option>
+            {facets.colors.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
           <select className="input flex-1 min-w-[140px]" value={stock} onChange={(e) => setStock(e.target.value as 'all' | 'in' | 'out')}>
             <option value="all">{t('c.stockAll')}</option>
             <option value="in">{t('c.stockIn')}</option>

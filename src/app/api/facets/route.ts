@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' },
     }),
     prisma.variant.findMany({
-      where: { ...base, color: { not: null } },
+      where: { ...scoped, color: { not: null } },
       distinct: ['color'], select: { color: true }, orderBy: { color: 'asc' },
     }),
   ]);

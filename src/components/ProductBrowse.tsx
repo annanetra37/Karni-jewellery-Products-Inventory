@@ -36,7 +36,7 @@ export function ProductBrowse({
   const [size, setSize] = useState('');
   const [color, setColor] = useState('');
   const [subcollection, setSubcollection] = useState('');
-  const [facets, setFacets] = useState<{ sizes: string[]; subcollections: string[] }>({ sizes: [], subcollections: [] });
+  const [facets, setFacets] = useState<{ sizes: string[]; subcollections: string[]; colors: string[] }>({ sizes: [], subcollections: [], colors: [] });
   const { t } = useT();
 
   const VAR_LIMIT = 24;
@@ -67,7 +67,7 @@ export function ProductBrowse({
     if (category) u.set('category', category);
     fetch(`/api/facets?${u.toString()}`)
       .then((r) => r.json())
-      .then((d) => setFacets({ sizes: d.sizes || [], subcollections: d.subcollections || [] }))
+      .then((d) => setFacets({ sizes: d.sizes || [], subcollections: d.subcollections || [], colors: d.colors || [] }))
       .catch(() => {});
   }, [step, collection, category]);
 
@@ -211,7 +211,10 @@ export function ProductBrowse({
             <option value="">{t('c.anySize')}</option>
             {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input className="input flex-1 min-w-[110px]" placeholder={t('c.color')} value={color} onChange={(e) => setColor(e.target.value)} />
+          <select className="input flex-1 min-w-[140px]" value={color} onChange={(e) => setColor(e.target.value)}>
+            <option value="">— {t('c.color').toLowerCase()} —</option>
+            {facets.colors.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
           <select className="input flex-1 min-w-[140px]" value={stock} onChange={(e) => setStock(e.target.value as 'all' | 'in' | 'out')}>
             <option value="all">{t('c.stockAll')}</option>
             <option value="in">{t('c.stockIn')}</option>
