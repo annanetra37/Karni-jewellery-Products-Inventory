@@ -1,9 +1,17 @@
+import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { PrintButton } from './PrintButton';
+
+// The browser shows the document title at the top of every printed page,
+// so the customer would otherwise see "Karni Sales" on their receipt.
+// Override it to the brand name.
+export const metadata: Metadata = {
+  title: 'Karni Jewellery',
+};
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
