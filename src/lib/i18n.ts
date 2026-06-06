@@ -195,6 +195,9 @@ const D: Record<string, Record<Locale, string>> = {
   'r.itemsToReceive': { en: 'Items to receive', hy: 'Ընդունվող ապրանքներ', ru: 'Товары к приёму' },
   'r.checkInN': { en: 'Check in', hy: 'Ընդունել', ru: 'Принять' },
   'r.recent': { en: 'Recent check-ins', hy: 'Վերջին ընդունումները', ru: 'Последние приёмы' },
+  'r.allCheckins': { en: 'All check-ins', hy: 'Բոլոր ընդունումները', ru: 'Все приёмы' },
+  'r.newestFirst': { en: 'Newest first', hy: 'Նորերն առաջ', ru: 'Сначала новые' },
+  'r.oldestFirst': { en: 'Oldest first', hy: 'Հները առաջ', ru: 'Сначала старые' },
   'r.noneYet': { en: 'None yet.', hy: 'Դեռ ոչինչ չկա։', ru: 'Пока ничего нет.' },
 
   // Kacca
