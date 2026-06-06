@@ -30,6 +30,7 @@ export function ProductBrowse({
   const [categories, setCategories] = useState<Tile[]>([]);
   const [variants, setVariants] = useState<BrowseVariant[]>([]);
   const [loading, setLoading] = useState(false);
+  const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
   const { t } = useT();
 
   useEffect(() => {
@@ -56,12 +57,13 @@ export function ProductBrowse({
     u.set('collection', collection);
     u.set('category', category);
     if (sellingPointId) u.set('sellingPointId', sellingPointId);
+    if (stock !== 'all') u.set('stock', stock);
     u.set('limit', '50');
     fetch(`/api/search?${u.toString()}`)
       .then((r) => r.json())
       .then((d) => setVariants(d.results || []))
       .finally(() => setLoading(false));
-  }, [step, collection, category, sellingPointId]);
+  }, [step, collection, category, sellingPointId, stock]);
 
   function pickCollection(name: string) { setCollection(name); setCategory(''); setStep('cat'); }
   function pickCategory(name: string) { setCategory(name); setStep('var'); }
@@ -158,7 +160,22 @@ export function ProductBrowse({
   return (
     <div className="space-y-4">
       {crumbs}
-      {loading && <p className="text-xs text-karni-700 text-center">Loading…</p>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-soft)' }}>{t('c.stock')}:</span>
+        {(['all', 'in', 'out'] as const).map((s) => (
+          <button key={s} type="button" onClick={() => setStock(s)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
+              stock === s
+                ? 'text-white shadow-soft'
+                : 'bg-white border border-karni-200 text-karni-700 hover:border-karni-400'
+            }`}
+            style={stock === s ? { background: 'var(--brand)' } : undefined}
+          >
+            {t(s === 'all' ? 'c.stockAll' : s === 'in' ? 'c.stockIn' : 'c.stockOut')}
+          </button>
+        ))}
+      </div>
+      {loading && <p className="text-xs text-karni-700 text-center">{t('c.loading')}</p>}
       {sizeKeys.map((k) => {
         const list = buckets.get(k)!;
         const label = k ? k.charAt(0).toUpperCase() + k.slice(1) : (hasSizes ? t('b.oneSize') : '');
