@@ -34,6 +34,7 @@ export default async function ReceivePage() {
               <Thumb src={m.variant.imageUrl} alt={m.variant.designName} size={12} />
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{m.variant.designName} <span className="text-xs text-karni-700">({m.variant.color || ''})</span></p>
+                <p className="text-[10px] font-mono text-karni-700 truncate opacity-80">{m.variant.sku}</p>
                 <p className="text-xs text-karni-700 truncate">{m.sellingPoint.name} · {t('o.by').toLowerCase()} {m.performedBy.fullName} · {m.createdAt.toLocaleDateString()}</p>
               </div>
               <span className="chip chip-ok">+{m.qtyDelta}</span>
