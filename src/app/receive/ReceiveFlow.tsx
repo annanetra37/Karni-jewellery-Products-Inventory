@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
 import { ProductBrowse } from '@/components/ProductBrowse';
@@ -17,7 +17,42 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const { t } = useT();
+
+  // Re-fetch current stock whenever the selling point or the SET of variants
+  // in the list changes (not on quantity tweaks).
+  const variantIdsKey = useMemo(
+    () => lines.map((l) => l.variantId).sort().join(','),
+    [lines],
+  );
+
+  async function refreshStock() {
+    if (!spId || lines.length === 0) { setStockMap({}); return; }
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/stock-levels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellingPointId: spId, variantIds: lines.map((l) => l.variantId) }),
+      });
+      const j = await res.json();
+      if (res.ok) {
+        setStockMap(j.stock || {});
+        setLastRefresh(new Date());
+      }
+    } catch {
+      /* best effort */
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshStock();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spId, variantIdsKey]);
 
   // Add a variant to the receive list. If it's already there, bump its qty
   // by 1 instead of duplicating — that way the salesperson can tap the same
@@ -43,7 +78,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
     });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || 'Check-in failed'); setSubmitting(false); return; }
-    router.refresh(); setLines([]); setSubmitting(false);
+    router.refresh(); setLines([]); setStockMap({}); setSubmitting(false);
   }
 
   return (
@@ -92,26 +127,54 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
 
       {lines.length > 0 && (
         <div className="card space-y-3">
-          <p className="font-medium">{t('r.itemsToReceive')}</p>
-          {lines.map((l, i) => (
-            <div key={i} className="border-b border-karni-100 pb-2">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-medium">{l.designName}</p>
-                  <p className="text-xs text-karni-700">{[l.color, l.size].filter(Boolean).join(' · ')}</p>
-                  <p className="text-[10px] font-mono text-karni-700">{l.sku}</p>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="font-medium">{t('r.itemsToReceive')}</p>
+            <button
+              type="button"
+              onClick={refreshStock}
+              disabled={refreshing || !spId}
+              className="btn-link inline-flex items-center gap-1.5 text-xs disabled:opacity-50"
+              aria-label={t('r.refreshStock')}
+              title={lastRefresh ? `${t('r.refreshStock')} · ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : t('r.refreshStock')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true" className={refreshing ? 'animate-spin' : ''}>
+                <path d="M21 12a9 9 0 1 1-3.07-6.79" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              {t('r.refreshStock')}
+            </button>
+          </div>
+          {lines.map((l, i) => {
+            const current = stockMap[l.variantId];
+            const projected = current != null ? current + l.quantity : null;
+            return (
+              <div key={i} className="border-b border-karni-100 pb-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium">{l.designName}</p>
+                    <p className="text-xs text-karni-700">{[l.color, l.size].filter(Boolean).join(' · ')}</p>
+                    <p className="text-[10px] font-mono text-karni-700">{l.sku}</p>
+                  </div>
+                  <button className="text-red-700 text-sm underline"
+                    onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>{t('c.remove')}</button>
                 </div>
-                <button className="text-red-700 text-sm underline"
-                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>{t('c.remove')}</button>
+                {current != null && (
+                  <p className="text-xs mt-1" style={{ color: 'var(--ink-soft)' }}>
+                    {t('r.currentStock')}: <b style={{ color: 'var(--ink)' }}>{current}</b>
+                    {' '}<span style={{ color: 'var(--ink-faint)' }}>→</span>{' '}
+                    {t('r.after')}: <b style={{ color: 'var(--brand)' }}>{projected}</b>
+                  </p>
+                )}
+                <div className="flex gap-2 mt-2">
+                  <input type="number" min={1} className="input w-24" value={l.quantity}
+                    onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
+                  <input className="input flex-1" placeholder={t('c.noteOptional')} value={l.note}
+                    onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, note: e.target.value } : x))} />
+                </div>
               </div>
-              <div className="flex gap-2 mt-2">
-                <input type="number" min={1} className="input w-24" value={l.quantity}
-                  onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
-                <input className="input flex-1" placeholder={t('c.noteOptional')} value={l.note}
-                  onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, note: e.target.value } : x))} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {err && <p className="text-sm text-red-700">{err}</p>}
           <button className="btn-primary w-full" disabled={submitting} onClick={submit}>
             {submitting ? t('c.saving') : `${t('r.checkInN')} ${lines.reduce((s, l) => s + l.quantity, 0)} ${t('c.items')}`}

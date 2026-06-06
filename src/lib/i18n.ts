@@ -199,6 +199,9 @@ const D: Record<string, Record<Locale, string>> = {
   'r.newestFirst': { en: 'Newest first', hy: 'Նորերն առաջ', ru: 'Сначала новые' },
   'r.oldestFirst': { en: 'Oldest first', hy: 'Հները առաջ', ru: 'Сначала старые' },
   'r.noneYet': { en: 'None yet.', hy: 'Դեռ ոչինչ չկա։', ru: 'Пока ничего нет.' },
+  'r.refreshStock': { en: 'Refresh stock', hy: 'Թարմացնել մնացորդը', ru: 'Обновить остаток' },
+  'r.currentStock': { en: 'Current stock', hy: 'Ընթացիկ մնացորդ', ru: 'Текущий остаток' },
+  'r.after': { en: 'after', hy: 'հետո', ru: 'после' },
 
   // Kacca
   'k.title': { en: 'Kacca — cash drawer', hy: 'Դրամարկղ', ru: 'Касса' },
