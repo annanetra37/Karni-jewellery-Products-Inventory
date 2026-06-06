@@ -1,32 +1,26 @@
 'use client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useTransition } from 'react';
 import { useT } from './I18nProvider';
 
+const ALL_SP = '_all';
+
 export function AnalyticsFilters({
-  categories, collections, subcollections, sizes, sellingPoints,
+  categories, collections, subcollections, sizes, colors, sellingPoints, defaultSellingPointId,
 }: {
   categories: string[];
   collections: string[];
   subcollections: string[];
   sizes: string[];
+  colors: string[];
   sellingPoints: { id: string; name: string }[];
+  /** Falls back to this when no sellingPointId is in the URL (e.g. Megamall). */
+  defaultSellingPointId: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const { t } = useT();
   const [pending, start] = useTransition();
-
-  // Color is a text input — debounce so each keystroke doesn't navigate.
-  const [color, setColor] = useState(params.get('color') || '');
-  const colorDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Keep local color state in sync if user clicks Clear or navigates back.
-  useEffect(() => {
-    const fromUrl = params.get('color') || '';
-    if (fromUrl !== color) setColor(fromUrl);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
 
   function push(next: URLSearchParams) {
     const qs = next.toString();
@@ -40,14 +34,15 @@ export function AnalyticsFilters({
     push(u);
   }
 
-  function updateColor(v: string) {
-    setColor(v);
-    if (colorDebounce.current) clearTimeout(colorDebounce.current);
-    colorDebounce.current = setTimeout(() => setParam('color', v.trim()), 300);
-  }
+  // What the selling-point select currently displays:
+  // - URL has _all → "All selling points"
+  // - URL has any other value → that value
+  // - URL empty → the default (Megamall)
+  const urlSp = params.get('sellingPointId') || '';
+  const spValue = urlSp === ALL_SP ? ALL_SP : (urlSp || defaultSellingPointId);
 
-  const keys = ['category', 'collection', 'subcollection', 'size', 'color', 'sellingPointId'] as const;
-  const anyActive = keys.some((k) => !!params.get(k));
+  const keys = ['category', 'collection', 'subcollection', 'size', 'color'] as const;
+  const anyActive = keys.some((k) => !!params.get(k)) || (urlSp && urlSp !== defaultSellingPointId);
 
   return (
     <div className="card space-y-3">
@@ -95,12 +90,15 @@ export function AnalyticsFilters({
         </div>
         <div>
           <label className="label">{t('c.color')}</label>
-          <input className="input" value={color} onChange={(e) => updateColor(e.target.value)} placeholder={t('c.color')} />
+          <select className="input" value={params.get('color') || ''} onChange={(e) => setParam('color', e.target.value)}>
+            <option value="">— {t('c.color').toLowerCase()} —</option>
+            {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div>
           <label className="label">{t('c.sellingPoint')}</label>
-          <select className="input" value={params.get('sellingPointId') || ''} onChange={(e) => setParam('sellingPointId', e.target.value)}>
-            <option value="">{t('c.allSellingPoints')}</option>
+          <select className="input" value={spValue} onChange={(e) => setParam('sellingPointId', e.target.value)}>
+            <option value={ALL_SP}>{t('c.allSellingPoints')}</option>
             {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
           </select>
         </div>

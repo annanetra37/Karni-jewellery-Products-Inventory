@@ -32,7 +32,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const subcollection = (sp.subcollection || '').trim();
   const size = (sp.size || '').trim();
   const color = (sp.color || '').trim();
-  const sellingPointId = (sp.sellingPointId || '').trim();
+  const rawSp = (sp.sellingPointId || '').trim();
+
+  // Megamall is the default selling-point filter when the URL is clean.
+  // `_all` is the sentinel for "explicit all selling points".
+  const megamall = await prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } });
+  const sellingPointId = rawSp === '_all' ? '' : (rawSp || megamall?.id || '');
 
   const rows = await prisma.inventoryItem.findMany({
     where: {
@@ -109,7 +114,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   // Facets for the filter dropdowns (unscoped — admin sees full catalog options)
   const facetsAll = await prisma.variant.findMany({
     where: { status: { not: 'ARCHIVED' } },
-    select: { category: true, collection: true, subcollection: true, size: true },
+    select: { category: true, collection: true, subcollection: true, size: true, color: true },
   });
   const distinct = (arr: (string | null)[]) =>
     Array.from(new Set(arr.filter(Boolean) as string[])).sort();
@@ -117,6 +122,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const allCollections = distinct(facetsAll.map((v) => v.collection));
   const allSubcollections = distinct(facetsAll.map((v) => v.subcollection));
   const allSizes = distinct(facetsAll.map((v) => v.size));
+  const allColors = distinct(facetsAll.map((v) => v.color));
   const sellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
 
   // Active filter chips (rendered server-side so the user sees the context clearly)
@@ -142,7 +148,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
         collections={allCollections}
         subcollections={allSubcollections}
         sizes={allSizes}
+        colors={allColors}
         sellingPoints={sellingPoints.map((s) => ({ id: s.id, name: s.name }))}
+        defaultSellingPointId={megamall?.id || ''}
       />
 
       {/* HERO summary — combined totals for the current filter set */}
