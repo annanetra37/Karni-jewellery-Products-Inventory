@@ -28,7 +28,7 @@ export function ProductSearch({
   const [category, setCategory] = useState('');
   const [color, setColor] = useState('');
   const [size, setSize] = useState('');
-  const [inStock, setInStock] = useState(false);
+  const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
   const [page, setPage] = useState(0);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -45,10 +45,10 @@ export function ProductSearch({
       .catch(() => {});
   }, []);
 
-  const filtersActive = !!(q || spId || category || color || size || inStock);
+  const filtersActive = !!(q || spId || category || color || size || stock !== 'all');
 
   // Reset to first page whenever a filter changes.
-  useEffect(() => { setPage(0); }, [q, spId, category, color, size, inStock]);
+  useEffect(() => { setPage(0); }, [q, spId, category, color, size, stock]);
 
   const url = useMemo(() => {
     const u = new URLSearchParams();
@@ -57,11 +57,11 @@ export function ProductSearch({
     if (category) u.set('category', category);
     if (color) u.set('color', color);
     if (size) u.set('size', size);
-    if (inStock) u.set('inStock', '1');
+    if (stock !== 'all') u.set('stock', stock);
     u.set('limit', String(LIMIT));
     u.set('offset', String(page * LIMIT));
     return `/api/search?${u.toString()}`;
-  }, [q, spId, category, color, size, inStock, page]);
+  }, [q, spId, category, color, size, stock, page]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -75,7 +75,7 @@ export function ProductSearch({
   }, [url]);
 
   function reset() {
-    setQ(''); setSpId(defaultSellingPointId || ''); setCategory(''); setColor(''); setSize(''); setInStock(false); setPage(0);
+    setQ(''); setSpId(defaultSellingPointId || ''); setCategory(''); setColor(''); setSize(''); setStock('all'); setPage(0);
   }
 
   const start = total === 0 ? 0 : page * LIMIT + 1;
@@ -115,10 +115,11 @@ export function ProductSearch({
             {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <input className="input flex-1 min-w-[110px]" placeholder={t('c.color')} value={color} onChange={(e) => setColor(e.target.value)} />
-          <label className="flex items-center gap-2 text-sm font-medium text-karni-900 px-3 py-2 rounded-xl bg-karni-100/60 cursor-pointer hover:bg-karni-100 transition whitespace-nowrap">
-            <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="accent-karni-600" />
-            {t('c.inStockOnly')}
-          </label>
+          <select className="input flex-1 min-w-[140px]" value={stock} onChange={(e) => setStock(e.target.value as 'all' | 'in' | 'out')}>
+            <option value="all">{t('c.stockAll')}</option>
+            <option value="in">{t('c.stockIn')}</option>
+            <option value="out">{t('c.stockOut')}</option>
+          </select>
         </div>
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-karni-700">
