@@ -23,6 +23,8 @@ const D: Record<string, Record<Locale, string>> = {
   'c.add': { en: 'Add', hy: 'Ավելացնել', ru: 'Добавить' },
   'c.edit': { en: 'Edit', hy: 'Խմբագրել', ru: 'Изменить' },
   'c.confirm': { en: 'Confirm', hy: 'Հաստատել', ru: 'Подтвердить' },
+  'c.done': { en: 'Done', hy: 'Ավարտել', ru: 'Готово' },
+  'c.selected': { en: 'selected', hy: 'ընտրված', ru: 'выбрано' },
   'c.back': { en: 'Back', hy: 'Հետ', ru: 'Назад' },
   'c.next': { en: 'Next', hy: 'Հաջորդ', ru: 'Далее' },
   'c.prev': { en: 'Prev', hy: 'Նախորդ', ru: 'Назад' },

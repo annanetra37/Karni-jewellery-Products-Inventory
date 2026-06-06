@@ -19,6 +19,22 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   const [err, setErr] = useState('');
   const { t } = useT();
 
+  // Add a variant to the receive list. If it's already there, bump its qty
+  // by 1 instead of duplicating — that way the salesperson can tap the same
+  // card a few times to receive several of the same item, or jump between
+  // different items without the picker closing on every tap.
+  function addLine(r: { id: string; sku: string; designName: string; color: string | null; size: string | null }) {
+    setLines((ls) => {
+      const existing = ls.find((l) => l.variantId === r.id);
+      if (existing) {
+        return ls.map((l) => l.variantId === r.id ? { ...l, quantity: l.quantity + 1 } : l);
+      }
+      return [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, color: r.color, size: r.size, quantity: 1, note: '' }];
+    });
+  }
+
+  const totalSelected = lines.reduce((s, l) => s + l.quantity, 0);
+
   async function submit() {
     setErr(''); setSubmitting(true);
     const r = await fetch('/api/stock-checkin', {
@@ -43,27 +59,31 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
 
       {picking ? (
         <div className="space-y-3">
-          <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
-            <button type="button" onClick={() => setPickerMode('browse')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'browse' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
-              {t('s.browse')}
-            </button>
-            <button type="button" onClick={() => setPickerMode('search')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'search' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
-              {t('s.searchFilter')}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
+              <button type="button" onClick={() => setPickerMode('browse')}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'browse' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+                {t('s.browse')}
+              </button>
+              <button type="button" onClick={() => setPickerMode('search')}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${pickerMode === 'search' ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+                {t('s.searchFilter')}
+              </button>
+            </div>
+            <button type="button" className="btn-primary" onClick={() => setPicking(false)}>
+              {t('c.done')}{totalSelected > 0 ? ` · ${totalSelected}` : ''}
             </button>
           </div>
+          {totalSelected > 0 && (
+            <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+              {totalSelected} {totalSelected === 1 ? t('c.item') : t('c.items')} {t('c.selected')}
+            </p>
+          )}
           {pickerMode === 'browse' ? (
-            <ProductBrowse sellingPointId={spId} onPick={(r) => {
-              setLines((ls) => [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, color: r.color, size: r.size, quantity: 1, note: '' }]);
-              setPicking(false);
-            }} />
+            <ProductBrowse sellingPointId={spId} onPick={(r) => addLine(r)} />
           ) : (
             <ProductSearch sellingPoints={sellingPoints} defaultSellingPointId={spId} autoFocus
-              onPick={(r) => {
-                setLines((ls) => [...ls, { variantId: r.id, sku: r.sku, designName: r.designName, color: r.color, size: r.size, quantity: 1, note: '' }]);
-                setPicking(false);
-              }} />
+              onPick={(r) => addLine(r)} />
           )}
         </div>
       ) : (
