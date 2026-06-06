@@ -136,6 +136,10 @@ const D: Record<string, Record<Locale, string>> = {
   'an.applyFilters': { en: 'Apply filters', hy: 'Կիրառել', ru: 'Применить' },
   'an.clearFilters': { en: 'Clear', hy: 'Մաքրել', ru: 'Сбросить' },
   'an.empty': { en: 'No in-stock items match these filters.', hy: 'Այս զտիչներով առկա ապրանքներ չկան։', ru: 'Нет товаров в наличии по этим фильтрам.' },
+  'an.allInventory': { en: 'All in-stock inventory', hy: 'Ամբողջ առկա պաշարը', ru: 'Все остатки в наличии' },
+  'an.filteredView': { en: 'Filtered view', hy: 'Զտված տեսք', ru: 'Отфильтрованный срез' },
+  'an.avgPrice': { en: 'Avg unit price', hy: 'Միջին գին', ru: 'Средняя цена' },
+  'an.estMargin': { en: 'Est. margin', hy: 'Մոտավոր մարժա', ru: 'Прогноз. маржа' },
 
   // Login
   'l.signInToContinue': { en: 'Sign in to continue.', hy: 'Մուտք գործեք՝ շարունակելու համար։', ru: 'Войдите, чтобы продолжить.' },

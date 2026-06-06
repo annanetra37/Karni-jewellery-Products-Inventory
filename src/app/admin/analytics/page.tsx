@@ -3,8 +3,8 @@ import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
 import { MetricCard, BarChart, DonutChart } from '@/components/Charts';
+import { AnalyticsFilters } from '@/components/AnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
-import Link from 'next/link';
 
 type Params = Promise<{
   category?: string;
@@ -34,8 +34,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const color = (sp.color || '').trim();
   const sellingPointId = (sp.sellingPointId || '').trim();
 
-  // Pull every in-stock InventoryItem row matching the filters and aggregate
-  // in JS. With ~5,000 max rows (474 variants × 10 SPs) this is fine.
   const rows = await prisma.inventoryItem.findMany({
     where: {
       quantity: { gt: 0 },
@@ -70,8 +68,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const bySize = new Map<string, { units: number; value: number }>();
   const byColor = new Map<string, { units: number; value: number }>();
   const bySp = new Map<string, { units: number; value: number }>();
-
-  // Per-variant aggregate for "top by value"
   const perVariant = new Map<string, { variant: typeof rows[number]['variant']; units: number; value: number }>();
 
   for (const r of rows) {
@@ -82,19 +78,20 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
     if (r.variant.costAmd) totalCost += Number(r.variant.costAmd) * r.quantity;
     if (r.quantity <= r.variant.reorderPoint) lowStockSkus++;
     variantSet.add(r.variant.id);
-
     bucket(byCategory, r.variant.category, r.quantity, lineValue);
     bucket(byCollection, r.variant.collection, r.quantity, lineValue);
     bucket(bySubcollection, r.variant.subcollection, r.quantity, lineValue);
     bucket(bySize, r.variant.size, r.quantity, lineValue);
     bucket(byColor, r.variant.color, r.quantity, lineValue);
     bucket(bySp, r.sellingPoint.name, r.quantity, lineValue);
-
     const pv = perVariant.get(r.variant.id) || { variant: r.variant, units: 0, value: 0 };
     pv.units += r.quantity;
     pv.value += lineValue;
     perVariant.set(r.variant.id, pv);
   }
+
+  const avgUnitPrice = totalUnits > 0 ? totalValue / totalUnits : 0;
+  const margin = totalCost > 0 && totalValue > 0 ? (totalValue - totalCost) / totalValue : null;
 
   const sortByUnits = (m: Map<string, { units: number; value: number }>) =>
     Array.from(m.entries()).map(([label, v]) => ({ label, value: v.units, sub: formatAmd(v.value) })).sort((a, b) => b.value - a.value);
@@ -109,8 +106,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const spData = sortByUnits(bySp);
   const top = Array.from(perVariant.values()).sort((a, b) => b.value - a.value).slice(0, 10);
 
-  // Filter facets — derive from current rows so admin only sees options that
-  // exist within the active filter set.
+  // Facets for the filter dropdowns (unscoped — admin sees full catalog options)
   const facetsAll = await prisma.variant.findMany({
     where: { status: { not: 'ARCHIVED' } },
     select: { category: true, collection: true, subcollection: true, size: true },
@@ -122,7 +118,17 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const allSubcollections = distinct(facetsAll.map((v) => v.subcollection));
   const allSizes = distinct(facetsAll.map((v) => v.size));
   const sellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
-  const hasFilters = !!(category || collection || subcollection || size || color || sellingPointId);
+
+  // Active filter chips (rendered server-side so the user sees the context clearly)
+  const sellingPointName = sellingPointId ? sellingPoints.find((s) => s.id === sellingPointId)?.name : '';
+  const activeChips: { label: string; value: string }[] = [
+    category && { label: t('c.category'), value: category },
+    collection && { label: t('c.collection'), value: collection },
+    subcollection && { label: t('c.subcollection'), value: subcollection },
+    size && { label: t('c.size'), value: size },
+    color && { label: t('c.color'), value: color },
+    sellingPointName && { label: t('c.sellingPoint'), value: sellingPointName },
+  ].filter(Boolean) as { label: string; value: string }[];
 
   return (
     <div className="space-y-5">
@@ -131,64 +137,65 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
         <p className="page-subtitle">{t('an.subtitle')}</p>
       </header>
 
-      {/* Filters */}
-      <form className="card space-y-3" method="get" action="/admin/analytics">
-        <p className="font-semibold text-sm" style={{ color: 'var(--brand-deep)' }}>{t('an.filters')}</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <div>
-            <label className="label">{t('c.category')}</label>
-            <select className="input" name="category" defaultValue={category}>
-              <option value="">{t('c.allCategories')}</option>
-              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('c.collection')}</label>
-            <select className="input" name="collection" defaultValue={collection}>
-              <option value="">—</option>
-              {allCollections.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('c.subcollection')}</label>
-            <select className="input" name="subcollection" defaultValue={subcollection}>
-              <option value="">{t('c.anySubcollection')}</option>
-              {allSubcollections.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('c.size')}</label>
-            <select className="input" name="size" defaultValue={size}>
-              <option value="">{t('c.anySize')}</option>
-              {allSizes.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('c.color')}</label>
-            <input className="input" name="color" defaultValue={color} placeholder={t('c.color')} />
-          </div>
-          <div>
-            <label className="label">{t('c.sellingPoint')}</label>
-            <select className="input" name="sellingPointId" defaultValue={sellingPointId}>
-              <option value="">{t('c.allSellingPoints')}</option>
-              {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          {hasFilters && <Link href="/admin/analytics" className="btn-secondary">{t('an.clearFilters')}</Link>}
-          <button type="submit" className="btn-primary">{t('an.applyFilters')}</button>
-        </div>
-      </form>
+      <AnalyticsFilters
+        categories={allCategories}
+        collections={allCollections}
+        subcollections={allSubcollections}
+        sizes={allSizes}
+        sellingPoints={sellingPoints.map((s) => ({ id: s.id, name: s.name }))}
+      />
 
-      {/* Metric cards */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <MetricCard label={t('an.unitsInStock')} value={totalUnits.toLocaleString()} />
-        <MetricCard label={t('an.totalValue')} value={formatAmd(totalValue)}
-          sub={totalCost > 0 ? `cost ${formatAmd(totalCost)}` : undefined} />
-        <MetricCard label={t('an.variantsInStock')} value={variantSet.size.toLocaleString()} />
-        <MetricCard label={t('an.lowStock')} value={lowStockSkus.toLocaleString()} />
+      {/* HERO summary — combined totals for the current filter set */}
+      <section className="rounded-2xl p-5 shadow-lift border" style={{ background: 'var(--brand)', color: '#f4ecd9', borderColor: 'var(--brand-deep)' }}>
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>
+            {activeChips.length > 0 ? t('an.filteredView') : t('an.allInventory')}
+          </span>
+          {activeChips.map((c) => (
+            <span key={c.label + c.value}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              <span style={{ opacity: 0.7 }}>{c.label}:</span> {c.value}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('an.unitsInStock')}</p>
+            <p className="display text-4xl font-semibold mt-1">{totalUnits.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('an.totalValue')}</p>
+            <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalValue)}</p>
+            {totalCost > 0 && (
+              <p className="text-[11px] mt-1" style={{ color: 'rgba(244,236,217,0.7)' }}>
+                {t('c.cost').toLowerCase()} {formatAmd(totalCost)}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('an.variantsInStock')}</p>
+            <p className="display text-3xl font-semibold mt-1">{variantSet.size.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('an.lowStock')}</p>
+            <p className="display text-3xl font-semibold mt-1">{lowStockSkus.toLocaleString()}</p>
+          </div>
+        </div>
       </section>
+
+      {/* Secondary detail row */}
+      {totalUnits > 0 && (
+        <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <MetricCard label={t('an.avgPrice')} value={formatAmd(avgUnitPrice)} />
+          {margin !== null && (
+            <MetricCard label={t('an.estMargin')} value={`${(margin * 100).toFixed(1)}%`}
+              sub={formatAmd(totalValue - totalCost)} />
+          )}
+          <MetricCard label={t('h.products')} value={variantSet.size.toLocaleString()}
+            sub={`${rows.length} ${t('c.items')}`} />
+        </section>
+      )}
 
       {totalUnits === 0 ? (
         <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>
@@ -196,7 +203,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
         </div>
       ) : (
         <>
-          {/* Category + Selling point */}
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
               <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.byCategory')}</p>
@@ -208,11 +214,10 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
             </div>
           </section>
 
-          {/* Value by collection (donut) + size (bars) */}
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
               <p className="font-semibold mb-3">{t('an.valueBy')} {t('an.byCollection')}</p>
-              <DonutChart slices={collData} total={collData.reduce((s, d) => s + d.value, 0)} label={t('h.collectionPhotos').split(' ')[0].toLowerCase().includes('collection') ? '' : ''} />
+              <DonutChart slices={collData} total={collData.reduce((s, d) => s + d.value, 0)} />
             </div>
             <div className="card">
               <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.bySize')}</p>
@@ -220,7 +225,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
             </div>
           </section>
 
-          {/* Color + Subcollection */}
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
               <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.byColor')}</p>
@@ -232,7 +236,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
             </div>
           </section>
 
-          {/* Top items table */}
           <section className="card">
             <p className="font-semibold mb-3">{t('an.topValue')}</p>
             <ul className="space-y-2">
