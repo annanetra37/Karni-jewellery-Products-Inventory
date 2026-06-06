@@ -28,12 +28,13 @@ export function ProductSearch({
   const [category, setCategory] = useState('');
   const [color, setColor] = useState('');
   const [size, setSize] = useState('');
+  const [subcollection, setSubcollection] = useState('');
   const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
   const [page, setPage] = useState(0);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [facets, setFacets] = useState<{ categories: string[]; sizes: string[] }>({ categories: [], sizes: [] });
+  const [facets, setFacets] = useState<{ categories: string[]; sizes: string[]; subcollections: string[] }>({ categories: [], sizes: [], subcollections: [] });
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useT();
 
@@ -41,14 +42,14 @@ export function ProductSearch({
   useEffect(() => {
     fetch('/api/facets')
       .then((r) => r.json())
-      .then((d) => setFacets({ categories: d.categories || [], sizes: d.sizes || [] }))
+      .then((d) => setFacets({ categories: d.categories || [], sizes: d.sizes || [], subcollections: d.subcollections || [] }))
       .catch(() => {});
   }, []);
 
-  const filtersActive = !!(q || spId || category || color || size || stock !== 'all');
+  const filtersActive = !!(q || spId || category || color || size || subcollection || stock !== 'all');
 
   // Reset to first page whenever a filter changes.
-  useEffect(() => { setPage(0); }, [q, spId, category, color, size, stock]);
+  useEffect(() => { setPage(0); }, [q, spId, category, color, size, subcollection, stock]);
 
   const url = useMemo(() => {
     const u = new URLSearchParams();
@@ -57,11 +58,12 @@ export function ProductSearch({
     if (category) u.set('category', category);
     if (color) u.set('color', color);
     if (size) u.set('size', size);
+    if (subcollection) u.set('subcollection', subcollection);
     if (stock !== 'all') u.set('stock', stock);
     u.set('limit', String(LIMIT));
     u.set('offset', String(page * LIMIT));
     return `/api/search?${u.toString()}`;
-  }, [q, spId, category, color, size, stock, page]);
+  }, [q, spId, category, color, size, subcollection, stock, page]);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -75,7 +77,7 @@ export function ProductSearch({
   }, [url]);
 
   function reset() {
-    setQ(''); setSpId(defaultSellingPointId || ''); setCategory(''); setColor(''); setSize(''); setStock('all'); setPage(0);
+    setQ(''); setSpId(defaultSellingPointId || ''); setCategory(''); setColor(''); setSize(''); setSubcollection(''); setStock('all'); setPage(0);
   }
 
   const start = total === 0 ? 0 : page * LIMIT + 1;
@@ -109,6 +111,10 @@ export function ProductSearch({
           <select className="input flex-1 min-w-[140px]" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">{t('c.allCategories')}</option>
             {facets.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className="input flex-1 min-w-[140px]" value={subcollection} onChange={(e) => setSubcollection(e.target.value)}>
+            <option value="">{t('c.anySubcollection')}</option>
+            {facets.subcollections.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
             <option value="">{t('c.anySize')}</option>

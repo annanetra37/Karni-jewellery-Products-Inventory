@@ -42,6 +42,8 @@ const D: Record<string, Record<Locale, string>> = {
   'c.color': { en: 'Color', hy: 'Գույն', ru: 'Цвет' },
   'c.category': { en: 'Category', hy: 'Կատեգորիա', ru: 'Категория' },
   'c.collection': { en: 'Collection', hy: 'Հավաքածու', ru: 'Коллекция' },
+  'c.subcollection': { en: 'Subcollection', hy: 'Ենթահավաքածու', ru: 'Подколлекция' },
+  'c.anySubcollection': { en: 'Any subcollection', hy: 'Ցանկացած ենթահավաքածու', ru: 'Любая подколлекция' },
   'c.allCategories': { en: 'All categories', hy: 'Բոլոր կատեգորիաները', ru: 'Все категории' },
   'c.anySize': { en: 'Any size', hy: 'Ցանկացած չափս', ru: 'Любой размер' },
   'c.allSellingPoints': { en: 'All selling points', hy: 'Բոլոր վաճառակետերը', ru: 'Все точки продаж' },

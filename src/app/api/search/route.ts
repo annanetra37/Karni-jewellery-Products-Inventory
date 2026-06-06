@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const sellingPointId = sp.get('sellingPointId') || '';
   const category = sp.get('category') || '';
   const collection = sp.get('collection') || '';
+  const subcollection = sp.get('subcollection') || '';
   const color = sp.get('color') || '';
   const size = sp.get('size') || '';
 
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
         AND ($3 = '' OR v.collection = $3)
         AND ($4 = '' OR v.color = $4)
         AND ($5 = '' OR v.size = $5)
+        AND ($11 = '' OR v.subcollection = $11)
         AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
         AND ($8 = 'all'
              OR ($8 = 'in' AND COALESCE(ii.quantity, 0) > 0)
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
                v."designName" ASC
       LIMIT $9 OFFSET $10
       `,
-      sellingPointId, category, collection, color, size, like, q, stock, limit, offset
+      sellingPointId, category, collection, color, size, like, q, stock, limit, offset, subcollection
     );
     totalRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `
@@ -80,12 +82,13 @@ export async function GET(req: NextRequest) {
         AND ($3 = '' OR v.collection = $3)
         AND ($4 = '' OR v.color = $4)
         AND ($5 = '' OR v.size = $5)
+        AND ($9 = '' OR v.subcollection = $9)
         AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
         AND ($8 = 'all'
              OR ($8 = 'in' AND COALESCE(ii.quantity, 0) > 0)
              OR ($8 = 'out' AND COALESCE(ii.quantity, 0) = 0))
       `,
-      sellingPointId, category, collection, color, size, like, q, stock
+      sellingPointId, category, collection, color, size, like, q, stock, subcollection
     );
   } else {
     rows = await prisma.$queryRawUnsafe<Row[]>(
@@ -103,13 +106,14 @@ export async function GET(req: NextRequest) {
         AND ($3 = '' OR v.collection = $3)
         AND ($4 = '' OR v.color = $4)
         AND ($5 = '' OR v.size = $5)
+        AND ($9 = '' OR v.subcollection = $9)
         AND ($6 = 'all'
              OR ($6 = 'in' AND COALESCE(ii.quantity, 0) > 0)
              OR ($6 = 'out' AND COALESCE(ii.quantity, 0) = 0))
       ORDER BY v."designName" ASC
       LIMIT $7 OFFSET $8
       `,
-      sellingPointId, category, collection, color, size, stock, limit, offset
+      sellingPointId, category, collection, color, size, stock, limit, offset, subcollection
     );
     totalRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `
@@ -123,11 +127,12 @@ export async function GET(req: NextRequest) {
         AND ($3 = '' OR v.collection = $3)
         AND ($4 = '' OR v.color = $4)
         AND ($5 = '' OR v.size = $5)
+        AND ($7 = '' OR v.subcollection = $7)
         AND ($6 = 'all'
              OR ($6 = 'in' AND COALESCE(ii.quantity, 0) > 0)
              OR ($6 = 'out' AND COALESCE(ii.quantity, 0) = 0))
       `,
-      sellingPointId, category, collection, color, size, stock
+      sellingPointId, category, collection, color, size, stock, subcollection
     );
   }
 
