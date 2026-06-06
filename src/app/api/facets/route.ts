@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     ...(category ? { category } : {}),
   };
 
-  const [cats, sizes, collections, subs] = await Promise.all([
+  const [cats, sizes, collections, subs, colors] = await Promise.all([
     prisma.variant.findMany({
       where: { ...base, category: { not: null } },
       distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' },
@@ -33,6 +33,10 @@ export async function GET(req: NextRequest) {
       where: { ...scoped, subcollection: { not: null } },
       distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' },
     }),
+    prisma.variant.findMany({
+      where: { ...base, color: { not: null } },
+      distinct: ['color'], select: { color: true }, orderBy: { color: 'asc' },
+    }),
   ]);
 
   return NextResponse.json({
@@ -40,5 +44,6 @@ export async function GET(req: NextRequest) {
     sizes: sizes.map((s) => s.size).filter(Boolean),
     collections: collections.map((c) => c.collection).filter(Boolean),
     subcollections: subs.map((s) => s.subcollection).filter(Boolean),
+    colors: colors.map((c) => c.color).filter(Boolean),
   });
 }
