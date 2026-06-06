@@ -35,7 +35,8 @@ export function ProductBrowse({
   const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
   const [size, setSize] = useState('');
   const [color, setColor] = useState('');
-  const [facets, setFacets] = useState<{ sizes: string[] }>({ sizes: [] });
+  const [subcollection, setSubcollection] = useState('');
+  const [facets, setFacets] = useState<{ sizes: string[]; subcollections: string[] }>({ sizes: [], subcollections: [] });
   const { t } = useT();
 
   const VAR_LIMIT = 24;
@@ -57,13 +58,24 @@ export function ProductBrowse({
       .finally(() => setLoading(false));
   }, [step, collection]);
 
-  // Load size facets once.
+  // Load subcollections scoped to the current collection + category so the list
+  // only shows letters/labels that actually have variants here.
   useEffect(() => {
-    fetch('/api/facets').then((r) => r.json()).then((d) => setFacets({ sizes: d.sizes || [] })).catch(() => {});
-  }, []);
+    if (step !== 'var') return;
+    const u = new URLSearchParams();
+    if (collection) u.set('collection', collection);
+    if (category) u.set('category', category);
+    fetch(`/api/facets?${u.toString()}`)
+      .then((r) => r.json())
+      .then((d) => setFacets({ sizes: d.sizes || [], subcollections: d.subcollections || [] }))
+      .catch(() => {});
+  }, [step, collection, category]);
 
   // Reset to first page when any filter changes.
-  useEffect(() => { setPage(0); }, [collection, category, stock, size, color]);
+  useEffect(() => { setPage(0); }, [collection, category, stock, size, color, subcollection]);
+
+  // Clear subcollection when leaving the variant step.
+  useEffect(() => { if (step !== 'var') setSubcollection(''); }, [step]);
 
   useEffect(() => {
     if (step !== 'var') return;
@@ -75,15 +87,16 @@ export function ProductBrowse({
     if (stock !== 'all') u.set('stock', stock);
     if (size) u.set('size', size);
     if (color) u.set('color', color);
+    if (subcollection) u.set('subcollection', subcollection);
     u.set('limit', String(VAR_LIMIT));
     u.set('offset', String(page * VAR_LIMIT));
     fetch(`/api/search?${u.toString()}`)
       .then((r) => r.json())
       .then((d) => { setVariants(d.results || []); setTotal(d.total || 0); })
       .finally(() => setLoading(false));
-  }, [step, collection, category, sellingPointId, stock, size, color, page]);
+  }, [step, collection, category, sellingPointId, stock, size, color, subcollection, page]);
 
-  function resetFilters() { setStock('all'); setSize(''); setColor(''); setPage(0); }
+  function resetFilters() { setStock('all'); setSize(''); setColor(''); setSubcollection(''); setPage(0); }
 
   function pickCollection(name: string) { setCollection(name); setCategory(''); setStep('cat'); }
   function pickCategory(name: string) { setCategory(name); setStep('var'); }
@@ -180,7 +193,7 @@ export function ProductBrowse({
   const start = total === 0 ? 0 : page * VAR_LIMIT + 1;
   const end = Math.min(total, (page + 1) * VAR_LIMIT);
   const lastPage = Math.max(0, Math.ceil(total / VAR_LIMIT) - 1);
-  const filtersActive = stock !== 'all' || !!size || !!color;
+  const filtersActive = stock !== 'all' || !!size || !!color || !!subcollection;
 
   return (
     <div className="space-y-4">
@@ -188,6 +201,12 @@ export function ProductBrowse({
 
       <div className="card space-y-3">
         <div className="flex flex-wrap gap-2">
+          {facets.subcollections.length > 0 && (
+            <select className="input flex-1 min-w-[140px]" value={subcollection} onChange={(e) => setSubcollection(e.target.value)}>
+              <option value="">{t('c.anySubcollection')}</option>
+              {facets.subcollections.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
             <option value="">{t('c.anySize')}</option>
             {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
