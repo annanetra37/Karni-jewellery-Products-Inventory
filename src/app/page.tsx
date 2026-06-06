@@ -92,6 +92,7 @@ export default async function HomePage() {
             <Link href="/admin/users" className="btn-secondary">{t('h.users')}</Link>
             <Link href="/admin/products" className="btn-secondary">{t('h.products')}</Link>
             <Link href="/admin/inventory" className="btn-secondary">{t('h.inventory')}</Link>
+            <Link href="/admin/analytics" className="btn-accent">{t('h.analytics')}</Link>
             <Link href="/admin/collections" className="btn-secondary">{t('h.collectionPhotos')}</Link>
             <Link href="/admin/categories" className="btn-secondary">{t('h.categoryPhotos')}</Link>
             <Link href="/admin/reports" className="btn-secondary">{t('h.reports')}</Link>

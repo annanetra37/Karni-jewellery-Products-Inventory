@@ -110,6 +110,32 @@ const D: Record<string, Record<Locale, string>> = {
   'h.collectionPhotos': { en: 'Collection photos', hy: 'Հավաքածուի լուսանկարներ', ru: 'Фото коллекций' },
   'h.categoryPhotos': { en: 'Category photos', hy: 'Կատեգորիայի լուսանկարներ', ru: 'Фото категорий' },
   'h.reports': { en: 'Reports', hy: 'Հաշվետվություններ', ru: 'Отчёты' },
+  'h.analytics': { en: 'Analytics', hy: 'Վերլուծություն', ru: 'Аналитика' },
+
+  // Analytics
+  'an.title': { en: 'In-stock analytics', hy: 'Մնացորդի վերլուծություն', ru: 'Аналитика остатков' },
+  'an.subtitle': {
+    en: "Live breakdown of what's on hand right now. Filter to drill in.",
+    hy: 'Ընթացիկ մնացորդի ինտերակտիվ վերլուծություն։ Կիրառեք զտիչներ խորանալու համար։',
+    ru: 'Интерактивный разрез текущих остатков. Применяйте фильтры, чтобы детализировать.',
+  },
+  'an.unitsInStock': { en: 'Units in stock', hy: 'Միավորներ առկա', ru: 'Единиц в наличии' },
+  'an.totalValue': { en: 'Stock value', hy: 'Մնացորդի արժեք', ru: 'Стоимость остатков' },
+  'an.variantsInStock': { en: 'Variants in stock', hy: 'Տարբերակներ առկա', ru: 'Вариантов в наличии' },
+  'an.lowStock': { en: 'Low-stock SKUs', hy: 'Քիչ մնացորդով', ru: 'Низкий остаток (SKU)' },
+  'an.unitsBy': { en: 'Units by', hy: 'Միավորներ ըստ', ru: 'Единицы по' },
+  'an.valueBy': { en: 'Value by', hy: 'Արժեք ըստ', ru: 'Стоимость по' },
+  'an.byCategory': { en: 'category', hy: 'կատեգորիայի', ru: 'категорий' },
+  'an.byCollection': { en: 'collection', hy: 'հավաքածուի', ru: 'коллекций' },
+  'an.bySubcollection': { en: 'subcollection', hy: 'ենթահավաքածուի', ru: 'подколлекций' },
+  'an.bySize': { en: 'size', hy: 'չափսի', ru: 'размеров' },
+  'an.byColor': { en: 'color', hy: 'գույնի', ru: 'цветов' },
+  'an.bySellingPoint': { en: 'selling point', hy: 'վաճառակետի', ru: 'точек продаж' },
+  'an.topValue': { en: 'Top items by total value', hy: 'Ամենաթանկ ապրանքները', ru: 'Топ позиций по стоимости' },
+  'an.filters': { en: 'Filters', hy: 'Զտիչներ', ru: 'Фильтры' },
+  'an.applyFilters': { en: 'Apply filters', hy: 'Կիրառել', ru: 'Применить' },
+  'an.clearFilters': { en: 'Clear', hy: 'Մաքրել', ru: 'Сбросить' },
+  'an.empty': { en: 'No in-stock items match these filters.', hy: 'Այս զտիչներով առկա ապրանքներ չկան։', ru: 'Нет товаров в наличии по этим фильтрам.' },
 
   // Login
   'l.signInToContinue': { en: 'Sign in to continue.', hy: 'Մուտք գործեք՝ շարունակելու համար։', ru: 'Войдите, чтобы продолжить.' },
