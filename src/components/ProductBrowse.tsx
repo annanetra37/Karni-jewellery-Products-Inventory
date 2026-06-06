@@ -29,9 +29,16 @@ export function ProductBrowse({
   const [collections, setCollections] = useState<Tile[]>([]);
   const [categories, setCategories] = useState<Tile[]>([]);
   const [variants, setVariants] = useState<BrowseVariant[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
+  const [size, setSize] = useState('');
+  const [color, setColor] = useState('');
+  const [facets, setFacets] = useState<{ sizes: string[] }>({ sizes: [] });
   const { t } = useT();
+
+  const VAR_LIMIT = 24;
 
   useEffect(() => {
     setLoading(true);
@@ -50,6 +57,14 @@ export function ProductBrowse({
       .finally(() => setLoading(false));
   }, [step, collection]);
 
+  // Load size facets once.
+  useEffect(() => {
+    fetch('/api/facets').then((r) => r.json()).then((d) => setFacets({ sizes: d.sizes || [] })).catch(() => {});
+  }, []);
+
+  // Reset to first page when any filter changes.
+  useEffect(() => { setPage(0); }, [collection, category, stock, size, color]);
+
   useEffect(() => {
     if (step !== 'var') return;
     setLoading(true);
@@ -58,12 +73,17 @@ export function ProductBrowse({
     u.set('category', category);
     if (sellingPointId) u.set('sellingPointId', sellingPointId);
     if (stock !== 'all') u.set('stock', stock);
-    u.set('limit', '50');
+    if (size) u.set('size', size);
+    if (color) u.set('color', color);
+    u.set('limit', String(VAR_LIMIT));
+    u.set('offset', String(page * VAR_LIMIT));
     fetch(`/api/search?${u.toString()}`)
       .then((r) => r.json())
-      .then((d) => setVariants(d.results || []))
+      .then((d) => { setVariants(d.results || []); setTotal(d.total || 0); })
       .finally(() => setLoading(false));
-  }, [step, collection, category, sellingPointId, stock]);
+  }, [step, collection, category, sellingPointId, stock, size, color, page]);
+
+  function resetFilters() { setStock('all'); setSize(''); setColor(''); setPage(0); }
 
   function pickCollection(name: string) { setCollection(name); setCategory(''); setStep('cat'); }
   function pickCategory(name: string) { setCategory(name); setStep('var'); }
@@ -157,25 +177,39 @@ export function ProductBrowse({
   });
   const hasSizes = sizeKeys.filter((k) => k !== '').length > 1;
 
+  const start = total === 0 ? 0 : page * VAR_LIMIT + 1;
+  const end = Math.min(total, (page + 1) * VAR_LIMIT);
+  const lastPage = Math.max(0, Math.ceil(total / VAR_LIMIT) - 1);
+  const filtersActive = stock !== 'all' || !!size || !!color;
+
   return (
     <div className="space-y-4">
       {crumbs}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-soft)' }}>{t('c.stock')}:</span>
-        {(['all', 'in', 'out'] as const).map((s) => (
-          <button key={s} type="button" onClick={() => setStock(s)}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-              stock === s
-                ? 'text-white shadow-soft'
-                : 'bg-white border border-karni-200 text-karni-700 hover:border-karni-400'
-            }`}
-            style={stock === s ? { background: 'var(--brand)' } : undefined}
-          >
-            {t(s === 'all' ? 'c.stockAll' : s === 'in' ? 'c.stockIn' : 'c.stockOut')}
+
+      <div className="card space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
+            <option value="">{t('c.anySize')}</option>
+            {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input className="input flex-1 min-w-[110px]" placeholder={t('c.color')} value={color} onChange={(e) => setColor(e.target.value)} />
+          <select className="input flex-1 min-w-[140px]" value={stock} onChange={(e) => setStock(e.target.value as 'all' | 'in' | 'out')}>
+            <option value="all">{t('c.stockAll')}</option>
+            <option value="in">{t('c.stockIn')}</option>
+            <option value="out">{t('c.stockOut')}</option>
+          </select>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-karni-700">
+            {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
+          </p>
+          <button type="button" onClick={resetFilters} disabled={!filtersActive}
+            className="btn-link disabled:opacity-40 disabled:cursor-not-allowed">
+            {t('c.reset')}
           </button>
-        ))}
+        </div>
       </div>
-      {loading && <p className="text-xs text-karni-700 text-center">{t('c.loading')}</p>}
+
       {sizeKeys.map((k) => {
         const list = buckets.get(k)!;
         const label = k ? k.charAt(0).toUpperCase() + k.slice(1) : (hasSizes ? t('b.oneSize') : '');
@@ -211,7 +245,21 @@ export function ProductBrowse({
         );
       })}
       {!loading && variants.length === 0 && (
-        <p className="text-center text-karni-700 text-sm py-6">No items.</p>
+        <p className="text-center text-karni-700 text-sm py-6">{t('c.noResults')}</p>
+      )}
+
+      {total > VAR_LIMIT && (
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <button type="button" className="btn-secondary" disabled={page <= 0 || loading}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            ← {t('c.prev')}
+          </button>
+          <span className="text-sm text-karni-700">{t('c.page')} {page + 1} {t('c.of')} {lastPage + 1}</span>
+          <button type="button" className="btn-secondary" disabled={page >= lastPage || loading}
+            onClick={() => setPage((p) => Math.min(lastPage, p + 1))}>
+            {t('c.next')} →
+          </button>
+        </div>
       )}
     </div>
   );
