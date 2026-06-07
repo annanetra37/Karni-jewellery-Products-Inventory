@@ -1,24 +1,42 @@
 import { prisma } from './db';
 
+// Category abbreviations match the existing SKU pattern in the catalog.
+// Keyed by lowercase so the lookup is case-insensitive.
 const CATEGORY_ABBR: Record<string, string> = {
-  Pendant: 'PEND',
-  Earring: 'EARRNG',
-  Ring: 'RING',
-  Bracelet: 'BRAC',
-  Necklace: 'NECK',
-  Brooch: 'BROCH',
+  pendant: 'PEND',
+  earring: 'EARRNG',
+  'earrings 2 pcs.': 'EARRNG2',
+  'earrings 2 pcs': 'EARRNG2',
+  ring: 'RING',
+  'ring twin': 'RINGTWIN',
+  bracelet: 'BRAC',
+  'chain bracelet': 'CHBRAC',
+  necklace: 'NECK',
+  'chain necklace': 'CHNECK',
+  brooch: 'BROCH',
 };
 
-function clean(s: string | null | undefined): string {
+const SIZE_ABBR: Record<string, string> = { SMALL: 'S', MEDIUM: 'M', LARGE: 'L' };
+
+/** Collapse to ASCII-uppercase letters/digits (drops spaces, hyphens, accents, non-Latin). */
+function cleanToken(s: string | null | undefined): string {
   if (!s) return '';
   return s
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '') // strip accents
+    .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '');
 }
 
-const SIZE_ABBR: Record<string, string> = { SMALL: 'S', MEDIUM: 'M', LARGE: 'L' };
+/**
+ * Split a multi-tone color on dashes / slashes / commas / whitespace and
+ * clean each segment. So "white-blue-red" -> ["WHITE","BLUE","RED"], matching
+ * the existing catalog convention (KARNI-PEND-MARASH-L-WHITE-BORDEAUX).
+ */
+function colorTokens(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return s.split(/[-/,\s]+/).map(cleanToken).filter(Boolean);
+}
 
 export function proposeSku(parts: {
   category?: string | null;
@@ -28,13 +46,13 @@ export function proposeSku(parts: {
   color?: string | null;
   designName?: string | null;
 }): string {
-  const catRaw = (parts.category || '').trim();
-  const catCode = CATEGORY_ABBR[catRaw] || clean(catRaw).slice(0, 5) || 'ITEM';
-  const collection = clean(parts.collection) || clean(parts.designName);
-  const sub = clean(parts.subcollection);
-  const size = parts.size ? (SIZE_ABBR[clean(parts.size)] || clean(parts.size).slice(0, 1)) : '';
-  const color = clean(parts.color);
-  const tokens = ['KARNI', catCode, collection, sub, size, color].filter(Boolean);
+  const catRaw = (parts.category || '').trim().toLowerCase();
+  const catCode = CATEGORY_ABBR[catRaw] || cleanToken(catRaw).slice(0, 7) || 'ITEM';
+  const collection = cleanToken(parts.collection) || cleanToken(parts.designName);
+  const sub = cleanToken(parts.subcollection);
+  const size = parts.size ? (SIZE_ABBR[cleanToken(parts.size)] || cleanToken(parts.size).slice(0, 1)) : '';
+  const colors = colorTokens(parts.color);
+  const tokens = ['KARNI', catCode, collection, sub, size, ...colors].filter(Boolean);
   return tokens.join('-');
 }
 
