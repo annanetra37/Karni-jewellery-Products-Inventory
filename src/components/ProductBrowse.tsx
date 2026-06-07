@@ -119,6 +119,18 @@ export function ProductBrowse({
   function resetFilters() { setStock('all'); setSize(''); setColor(''); setSubcollection(''); setPage(0); }
   function refresh() { setRefreshNonce((n) => n + 1); }
 
+  // If a stale filter (carried over via URL from another navigation) is no
+  // longer in the scoped facet list, drop it silently — otherwise the user
+  // ends up at "No matches" until they hit Reset. The fetch returns [] when
+  // the dimension has no options at all under this filter set; we only prune
+  // when the list is non-empty and missing the current value.
+  useEffect(() => {
+    if (step !== 'var') return;
+    if (size && facets.sizes.length > 0 && !facets.sizes.includes(size)) setSize('');
+    if (color && facets.colors.length > 0 && !facets.colors.includes(color)) setColor('');
+    if (subcollection && facets.subcollections.length > 0 && !facets.subcollections.includes(subcollection)) setSubcollection('');
+  }, [step, facets.sizes, facets.colors, facets.subcollections, size, color, subcollection]);
+
   // Mirror state into URL (history.replaceState — no server re-render).
   useEffect(() => {
     if (!urlSync) return;
