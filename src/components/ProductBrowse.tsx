@@ -74,18 +74,22 @@ export function ProductBrowse({
       .finally(() => setLoading(false));
   }, [step, collection, refreshNonce]);
 
-  // Load subcollections scoped to the current collection + category so the list
-  // only shows letters/labels that actually have variants here.
+  // Load subcollections / sizes / colors scoped by every currently selected
+  // filter ("leave one out"): change any filter and the other dropdowns
+  // narrow to values that still have matching variants.
   useEffect(() => {
     if (step !== 'var') return;
     const u = new URLSearchParams();
     if (collection) u.set('collection', collection);
     if (category) u.set('category', category);
+    if (subcollection) u.set('subcollection', subcollection);
+    if (size) u.set('size', size);
+    if (color) u.set('color', color);
     fetch(`/api/facets?${u.toString()}`)
       .then((r) => r.json())
       .then((d) => setFacets({ sizes: d.sizes || [], subcollections: d.subcollections || [], colors: d.colors || [] }))
       .catch(() => {});
-  }, [step, collection, category, refreshNonce]);
+  }, [step, collection, category, subcollection, size, color, refreshNonce]);
 
   // Reset to first page when any filter changes.
   useEffect(() => { setPage(0); }, [collection, category, stock, size, color, subcollection]);

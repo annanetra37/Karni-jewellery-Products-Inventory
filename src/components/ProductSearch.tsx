@@ -46,12 +46,16 @@ export function ProductSearch({
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useT();
 
-  // Load distinct facet values from the catalog. Refetched when collection or
-  // category changes so colors / subcollections narrow to what's relevant.
+  // Load distinct facet values from the catalog, scoped by every other
+  // active filter ("leave one out") so each dropdown only offers values
+  // that still have matching variants.
   useEffect(() => {
     const u = new URLSearchParams();
     if (collection) u.set('collection', collection);
     if (category) u.set('category', category);
+    if (subcollection) u.set('subcollection', subcollection);
+    if (size) u.set('size', size);
+    if (color) u.set('color', color);
     fetch(`/api/facets?${u.toString()}`)
       .then((r) => r.json())
       .then((d) => setFacets({
@@ -62,7 +66,7 @@ export function ProductSearch({
         collections: d.collections || [],
       }))
       .catch(() => {});
-  }, [collection, category]);
+  }, [collection, category, subcollection, size, color]);
 
   const filtersActive = !!(q || spId || collection || category || color || size || subcollection || stock !== 'all');
 
