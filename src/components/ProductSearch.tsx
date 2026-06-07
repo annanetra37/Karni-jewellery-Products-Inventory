@@ -119,6 +119,17 @@ export function ProductSearch({
     setQ(''); setSpId(defaultSellingPointId || ''); setCollection(''); setCategory(''); setColor(''); setSize(''); setSubcollection(''); setStock('all'); setPage(0);
   }
 
+  // If a stale filter (carried over via URL from another navigation) is no
+  // longer in the scoped facet list, drop it silently — otherwise the user
+  // ends up stuck at "No matches" until they hit Reset.
+  useEffect(() => {
+    if (collection && facets.collections.length > 0 && !facets.collections.includes(collection)) setCollection('');
+    if (category && facets.categories.length > 0 && !facets.categories.includes(category)) setCategory('');
+    if (subcollection && facets.subcollections.length > 0 && !facets.subcollections.includes(subcollection)) setSubcollection('');
+    if (size && facets.sizes.length > 0 && !facets.sizes.includes(size)) setSize('');
+    if (color && facets.colors.length > 0 && !facets.colors.includes(color)) setColor('');
+  }, [facets.collections, facets.categories, facets.subcollections, facets.sizes, facets.colors, collection, category, subcollection, size, color]);
+
   const start = total === 0 ? 0 : page * LIMIT + 1;
   const end = Math.min(total, (page + 1) * LIMIT);
   const lastPage = Math.max(0, Math.ceil(total / LIMIT) - 1);
