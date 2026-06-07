@@ -37,6 +37,9 @@ export function ProductBrowse({
   const [color, setColor] = useState('');
   const [subcollection, setSubcollection] = useState('');
   const [facets, setFacets] = useState<{ sizes: string[]; subcollections: string[]; colors: string[] }>({ sizes: [], subcollections: [], colors: [] });
+  // Bumped on Refresh — every fetch in this component watches it so a click
+  // re-pulls collections / categories / variants without a full page reload.
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const { t } = useT();
 
   const VAR_LIMIT = 24;
@@ -47,7 +50,7 @@ export function ProductBrowse({
       .then((r) => r.json())
       .then((d) => setCollections(d.items || []))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshNonce]);
 
   useEffect(() => {
     if (step !== 'cat') return;
@@ -56,7 +59,7 @@ export function ProductBrowse({
       .then((r) => r.json())
       .then((d) => setCategories(d.items || []))
       .finally(() => setLoading(false));
-  }, [step, collection]);
+  }, [step, collection, refreshNonce]);
 
   // Load subcollections scoped to the current collection + category so the list
   // only shows letters/labels that actually have variants here.
@@ -69,7 +72,7 @@ export function ProductBrowse({
       .then((r) => r.json())
       .then((d) => setFacets({ sizes: d.sizes || [], subcollections: d.subcollections || [], colors: d.colors || [] }))
       .catch(() => {});
-  }, [step, collection, category]);
+  }, [step, collection, category, refreshNonce]);
 
   // Reset to first page when any filter changes.
   useEffect(() => { setPage(0); }, [collection, category, stock, size, color, subcollection]);
@@ -94,9 +97,10 @@ export function ProductBrowse({
       .then((r) => r.json())
       .then((d) => { setVariants(d.results || []); setTotal(d.total || 0); })
       .finally(() => setLoading(false));
-  }, [step, collection, category, sellingPointId, stock, size, color, subcollection, page]);
+  }, [step, collection, category, sellingPointId, stock, size, color, subcollection, page, refreshNonce]);
 
   function resetFilters() { setStock('all'); setSize(''); setColor(''); setSubcollection(''); setPage(0); }
+  function refresh() { setRefreshNonce((n) => n + 1); }
 
   function pickCollection(name: string) { setCollection(name); setCategory(''); setStep('cat'); }
   function pickCategory(name: string) { setCategory(name); setStep('var'); }
@@ -106,20 +110,34 @@ export function ProductBrowse({
   }
 
   const crumbs = (
-    <div className="flex items-center gap-2 text-sm">
-      {step !== 'col' && (
-        <button type="button" onClick={back} className="btn-link inline-flex items-center gap-1">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <div className="flex items-center gap-2 min-w-0">
+        {step !== 'col' && (
+          <button type="button" onClick={back} className="btn-link inline-flex items-center gap-1 shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
+            </svg>
+            {t('c.back')}
+          </button>
+        )}
+        <span className="text-karni-700 truncate">
+          {step === 'col' && t('b.pickCollection')}
+          {step === 'cat' && <>{collection} <span className="text-karni-400">·</span> {t('b.pickCategory')}</>}
+          {step === 'var' && <>{collection} <span className="text-karni-400">·</span> {category}</>}
+        </span>
+      </div>
+      {step !== 'var' && (
+        <button type="button" onClick={refresh} disabled={loading}
+          className="btn-link inline-flex items-center gap-1.5 text-xs disabled:opacity-50 shrink-0"
+          aria-label={t('c.refresh')}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+            aria-hidden="true" className={loading ? 'animate-spin' : ''}>
+            <path d="M21 12a9 9 0 1 1-3.07-6.79" />
+            <path d="M21 3v6h-6" />
           </svg>
-          {t('c.back')}
+          {t('c.refresh')}
         </button>
       )}
-      <span className="text-karni-700">
-        {step === 'col' && t('b.pickCollection')}
-        {step === 'cat' && <>{collection} <span className="text-karni-400">·</span> {t('b.pickCategory')}</>}
-        {step === 'var' && <>{collection} <span className="text-karni-400">·</span> {category}</>}
-      </span>
     </div>
   );
 
@@ -225,10 +243,22 @@ export function ProductBrowse({
           <p className="text-xs text-karni-700">
             {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
           </p>
-          <button type="button" onClick={resetFilters} disabled={!filtersActive}
-            className="btn-link disabled:opacity-40 disabled:cursor-not-allowed">
-            {t('c.reset')}
-          </button>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={refresh} disabled={loading}
+              className="btn-link inline-flex items-center gap-1.5 text-xs disabled:opacity-50"
+              aria-label={t('c.refresh')}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true" className={loading ? 'animate-spin' : ''}>
+                <path d="M21 12a9 9 0 1 1-3.07-6.79" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              {t('c.refresh')}
+            </button>
+            <button type="button" onClick={resetFilters} disabled={!filtersActive}
+              className="btn-link disabled:opacity-40 disabled:cursor-not-allowed">
+              {t('c.reset')}
+            </button>
+          </div>
         </div>
       </div>
 
