@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useT } from './I18nProvider';
+import { readUrlParam, syncUrlParams } from '@/lib/urlSync';
 
 export type BrowseVariant = {
   id: string; sku: string; designName: string;
@@ -17,25 +18,37 @@ export function ProductBrowse({
   sellingPointId,
   onPick,
   hideStock = false,
+  urlSync = false,
 }: {
   sellingPointId?: string;
   onPick?: (v: BrowseVariant) => void;
   hideStock?: boolean;
+  /** When true, drill-down + filter state is mirrored into the URL so a
+   *  page refresh restores the user to the same place. */
+  urlSync?: boolean;
 }) {
-  const [step, setStep] = useState<'col' | 'cat' | 'var'>('col');
-  const [collection, setCollection] = useState('');
-  const [category, setCategory] = useState('');
+  // Initial state — when urlSync is on, hydrate from URL so refresh restores.
+  const initCol = urlSync ? readUrlParam('bcol') : '';
+  const initCat = urlSync ? readUrlParam('bcat') : '';
+  const [collection, setCollection] = useState(initCol);
+  const [category, setCategory] = useState(initCat);
+  // Derive the displayed step from coll/cat presence.
+  const [step, setStep] = useState<'col' | 'cat' | 'var'>(initCat ? 'var' : initCol ? 'cat' : 'col');
 
   const [collections, setCollections] = useState<Tile[]>([]);
   const [categories, setCategories] = useState<Tile[]>([]);
   const [variants, setVariants] = useState<BrowseVariant[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(urlSync ? (Number(readUrlParam('bpg', '0')) || 0) : 0);
   const [loading, setLoading] = useState(false);
-  const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
-  const [size, setSize] = useState('');
-  const [color, setColor] = useState('');
-  const [subcollection, setSubcollection] = useState('');
+  const [stock, setStock] = useState<'all' | 'in' | 'out'>(
+    urlSync && (['in', 'out'] as const).includes(readUrlParam('bstk') as 'in' | 'out')
+      ? (readUrlParam('bstk') as 'in' | 'out')
+      : 'all'
+  );
+  const [size, setSize] = useState(urlSync ? readUrlParam('bsiz') : '');
+  const [color, setColor] = useState(urlSync ? readUrlParam('bclr') : '');
+  const [subcollection, setSubcollection] = useState(urlSync ? readUrlParam('bsub') : '');
   const [facets, setFacets] = useState<{ sizes: string[]; subcollections: string[]; colors: string[] }>({ sizes: [], subcollections: [], colors: [] });
   // Bumped on Refresh — every fetch in this component watches it so a click
   // re-pulls collections / categories / variants without a full page reload.
@@ -101,6 +114,20 @@ export function ProductBrowse({
 
   function resetFilters() { setStock('all'); setSize(''); setColor(''); setSubcollection(''); setPage(0); }
   function refresh() { setRefreshNonce((n) => n + 1); }
+
+  // Mirror state into URL (history.replaceState — no server re-render).
+  useEffect(() => {
+    if (!urlSync) return;
+    syncUrlParams({
+      bcol: collection,
+      bcat: category,
+      bsub: subcollection,
+      bsiz: size,
+      bclr: color,
+      bstk: stock === 'all' ? '' : stock,
+      bpg: page === 0 ? '' : page,
+    });
+  }, [urlSync, collection, category, subcollection, size, color, stock, page]);
 
   function pickCollection(name: string) { setCollection(name); setCategory(''); setStep('cat'); }
   function pickCategory(name: string) { setCategory(name); setStep('var'); }

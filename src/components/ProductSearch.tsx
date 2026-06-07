@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from './I18nProvider';
+import { readUrlParam, syncUrlParams } from '@/lib/urlSync';
 
 type SearchResult = {
   id: string; sku: string; designName: string; category: string | null;
@@ -14,7 +15,7 @@ type SellingPoint = { id: string; name: string; type: string };
 const LIMIT = 24;
 
 export function ProductSearch({
-  sellingPoints, defaultSellingPointId, onPick, hideStock = false, autoFocus = false, linkBase,
+  sellingPoints, defaultSellingPointId, onPick, hideStock = false, autoFocus = false, linkBase, urlSync = false,
 }: {
   sellingPoints: SellingPoint[];
   defaultSellingPointId?: string;
@@ -22,16 +23,22 @@ export function ProductSearch({
   hideStock?: boolean;
   autoFocus?: boolean;
   linkBase?: string;
+  /** Mirror state into URL so a refresh restores filters / page / query. */
+  urlSync?: boolean;
 }) {
-  const [q, setQ] = useState('');
-  const [spId, setSpId] = useState(defaultSellingPointId || '');
-  const [collection, setCollection] = useState('');
-  const [category, setCategory] = useState('');
-  const [color, setColor] = useState('');
-  const [size, setSize] = useState('');
-  const [subcollection, setSubcollection] = useState('');
-  const [stock, setStock] = useState<'all' | 'in' | 'out'>('all');
-  const [page, setPage] = useState(0);
+  const [q, setQ] = useState(urlSync ? readUrlParam('sq') : '');
+  const [spId, setSpId] = useState(urlSync ? (readUrlParam('ssp') || defaultSellingPointId || '') : (defaultSellingPointId || ''));
+  const [collection, setCollection] = useState(urlSync ? readUrlParam('scol') : '');
+  const [category, setCategory] = useState(urlSync ? readUrlParam('scat') : '');
+  const [color, setColor] = useState(urlSync ? readUrlParam('sclr') : '');
+  const [size, setSize] = useState(urlSync ? readUrlParam('ssiz') : '');
+  const [subcollection, setSubcollection] = useState(urlSync ? readUrlParam('ssub') : '');
+  const [stock, setStock] = useState<'all' | 'in' | 'out'>(
+    urlSync && (['in', 'out'] as const).includes(readUrlParam('sstk') as 'in' | 'out')
+      ? (readUrlParam('sstk') as 'in' | 'out')
+      : 'all'
+  );
+  const [page, setPage] = useState(urlSync ? (Number(readUrlParam('spg', '0')) || 0) : 0);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -87,6 +94,22 @@ export function ProductSearch({
         .finally(() => setLoading(false));
     }, 180);
   }, [url]);
+
+  // Mirror state into URL without triggering a Next.js server re-render.
+  useEffect(() => {
+    if (!urlSync) return;
+    syncUrlParams({
+      sq: q,
+      ssp: spId === (defaultSellingPointId || '') ? '' : spId,
+      scol: collection,
+      scat: category,
+      ssub: subcollection,
+      ssiz: size,
+      sclr: color,
+      sstk: stock === 'all' ? '' : stock,
+      spg: page === 0 ? '' : page,
+    });
+  }, [urlSync, q, spId, defaultSellingPointId, collection, category, subcollection, size, color, stock, page]);
 
   function reset() {
     setQ(''); setSpId(defaultSellingPointId || ''); setCollection(''); setCategory(''); setColor(''); setSize(''); setSubcollection(''); setStock('all'); setPage(0);

@@ -5,16 +5,28 @@ import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
 import { ProductBrowse } from '@/components/ProductBrowse';
 import { useT } from '@/components/I18nProvider';
+import { readUrlParam, syncUrlParams } from '@/lib/urlSync';
 
 type SP = { id: string; name: string; type: string };
 type Line = { variantId: string; sku: string; designName: string; color: string | null; size: string | null; quantity: number; note: string };
 
 export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingPoints: SP[]; defaultSellingPointId: string }) {
   const router = useRouter();
-  const [spId, setSpId] = useState(defaultSellingPointId || sellingPoints[0]?.id || '');
+  // Hydrate from URL so a refresh restores selling point / picker state /
+  // mode. The receive lines themselves stay in component state.
+  const [spId, setSpId] = useState(() => readUrlParam('sp') || defaultSellingPointId || sellingPoints[0]?.id || '');
   const [lines, setLines] = useState<Line[]>([]);
-  const [picking, setPicking] = useState(false);
-  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
+  const [picking, setPicking] = useState(() => readUrlParam('pk') === '1');
+  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>(() => readUrlParam('mode') === 'search' ? 'search' : 'browse');
+
+  // Mirror back into URL.
+  useEffect(() => {
+    syncUrlParams({
+      sp: spId === (defaultSellingPointId || '') ? '' : spId,
+      pk: picking ? '1' : '',
+      mode: pickerMode === 'browse' ? '' : pickerMode,
+    });
+  }, [spId, defaultSellingPointId, picking, pickerMode]);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
@@ -115,9 +127,9 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
             </p>
           )}
           {pickerMode === 'browse' ? (
-            <ProductBrowse sellingPointId={spId} onPick={(r) => addLine(r)} />
+            <ProductBrowse urlSync sellingPointId={spId} onPick={(r) => addLine(r)} />
           ) : (
-            <ProductSearch sellingPoints={sellingPoints} defaultSellingPointId={spId} autoFocus
+            <ProductSearch urlSync sellingPoints={sellingPoints} defaultSellingPointId={spId} autoFocus
               onPick={(r) => addLine(r)} />
           )}
         </div>
