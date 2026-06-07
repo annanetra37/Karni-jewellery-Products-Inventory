@@ -2,8 +2,12 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTransition } from 'react';
 import { useT } from './I18nProvider';
+import { MultiSelectDropdown } from './MultiSelectDropdown';
 
 const ALL_SP = '_all';
+
+const splitParam = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);
+const joinValues = (vs: string[]) => vs.join(',');
 
 export function AnalyticsFilters({
   categories, collections, subcollections, sizes, colors, sellingPoints, defaultSellingPointId,
@@ -27,19 +31,28 @@ export function AnalyticsFilters({
     start(() => router.replace(qs ? `/admin/analytics?${qs}` : '/admin/analytics', { scroll: false }));
   }
 
-  function setParam(name: string, value: string) {
+  function setMulti(name: string, values: string[]) {
+    const u = new URLSearchParams(params.toString());
+    if (values.length > 0) u.set(name, joinValues(values));
+    else u.delete(name);
+    push(u);
+  }
+
+  function setSingle(name: string, value: string) {
     const u = new URLSearchParams(params.toString());
     if (value) u.set(name, value);
     else u.delete(name);
     push(u);
   }
 
-  // What the selling-point select currently displays:
-  // - URL has _all → "All selling points"
-  // - URL has any other value → that value
-  // - URL empty → the default (Megamall)
   const urlSp = params.get('sellingPointId') || '';
   const spValue = urlSp === ALL_SP ? ALL_SP : (urlSp || defaultSellingPointId);
+
+  const selectedCats = splitParam(params.get('category'));
+  const selectedColls = splitParam(params.get('collection'));
+  const selectedSubs = splitParam(params.get('subcollection'));
+  const selectedSizes = splitParam(params.get('size'));
+  const selectedColors = splitParam(params.get('color'));
 
   const keys = ['category', 'collection', 'subcollection', 'size', 'color'] as const;
   const anyActive = keys.some((k) => !!params.get(k)) || (urlSp && urlSp !== defaultSellingPointId);
@@ -59,45 +72,60 @@ export function AnalyticsFilters({
           </button>
         )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
           <label className="label">{t('c.category')}</label>
-          <select className="input" value={params.get('category') || ''} onChange={(e) => setParam('category', e.target.value)}>
-            <option value="">{t('c.allCategories')}</option>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <MultiSelectDropdown
+            options={categories}
+            value={selectedCats}
+            onChange={(v) => setMulti('category', v)}
+            placeholder={t('c.allCategories')}
+            allLabel={t('c.allCategories')}
+          />
         </div>
         <div>
           <label className="label">{t('c.collection')}</label>
-          <select className="input" value={params.get('collection') || ''} onChange={(e) => setParam('collection', e.target.value)}>
-            <option value="">—</option>
-            {collections.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <MultiSelectDropdown
+            options={collections}
+            value={selectedColls}
+            onChange={(v) => setMulti('collection', v)}
+            placeholder="—"
+            allLabel="—"
+          />
         </div>
         <div>
           <label className="label">{t('c.subcollection')}</label>
-          <select className="input" value={params.get('subcollection') || ''} onChange={(e) => setParam('subcollection', e.target.value)}>
-            <option value="">{t('c.anySubcollection')}</option>
-            {subcollections.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <MultiSelectDropdown
+            options={subcollections}
+            value={selectedSubs}
+            onChange={(v) => setMulti('subcollection', v)}
+            placeholder={t('c.anySubcollection')}
+            allLabel={t('c.anySubcollection')}
+          />
         </div>
         <div>
           <label className="label">{t('c.size')}</label>
-          <select className="input" value={params.get('size') || ''} onChange={(e) => setParam('size', e.target.value)}>
-            <option value="">{t('c.anySize')}</option>
-            {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <MultiSelectDropdown
+            options={sizes}
+            value={selectedSizes}
+            onChange={(v) => setMulti('size', v)}
+            placeholder={t('c.anySize')}
+            allLabel={t('c.anySize')}
+          />
         </div>
         <div>
           <label className="label">{t('c.color')}</label>
-          <select className="input" value={params.get('color') || ''} onChange={(e) => setParam('color', e.target.value)}>
-            <option value="">— {t('c.color').toLowerCase()} —</option>
-            {colors.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <MultiSelectDropdown
+            options={colors}
+            value={selectedColors}
+            onChange={(v) => setMulti('color', v)}
+            placeholder={`— ${t('c.color').toLowerCase()} —`}
+            allLabel={`— ${t('c.color').toLowerCase()} —`}
+          />
         </div>
         <div>
           <label className="label">{t('c.sellingPoint')}</label>
-          <select className="input" value={spValue} onChange={(e) => setParam('sellingPointId', e.target.value)}>
+          <select className="input" value={spValue} onChange={(e) => setSingle('sellingPointId', e.target.value)}>
             <option value={ALL_SP}>{t('c.allSellingPoints')}</option>
             {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
           </select>

@@ -27,11 +27,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   await requireAdmin();
   const { t } = await getT();
   const sp = await searchParams;
-  const category = (sp.category || '').trim();
-  const collection = (sp.collection || '').trim();
-  const subcollection = (sp.subcollection || '').trim();
-  const size = (sp.size || '').trim();
-  const color = (sp.color || '').trim();
+  const split = (v: string | undefined) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
+  const categories = split(sp.category);
+  const collections = split(sp.collection);
+  const subcollections = split(sp.subcollection);
+  const sizes = split(sp.size);
+  const colors = split(sp.color);
   const rawSp = (sp.sellingPointId || '').trim();
 
   // Megamall is the default selling-point filter when the URL is clean.
@@ -39,17 +40,19 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const megamall = await prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } });
   const sellingPointId = rawSp === '_all' ? '' : (rawSp || megamall?.id || '');
 
+  const inArr = <T,>(arr: T[]) => (arr.length > 0 ? { in: arr } : undefined);
+
   const rows = await prisma.inventoryItem.findMany({
     where: {
       quantity: { gt: 0 },
       ...(sellingPointId ? { sellingPointId } : {}),
       variant: {
         status: { not: 'ARCHIVED' },
-        ...(category ? { category } : {}),
-        ...(collection ? { collection } : {}),
-        ...(subcollection ? { subcollection } : {}),
-        ...(size ? { size } : {}),
-        ...(color ? { color: { contains: color, mode: 'insensitive' } } : {}),
+        ...(categories.length ? { category: { in: categories } } : {}),
+        ...(collections.length ? { collection: { in: collections } } : {}),
+        ...(subcollections.length ? { subcollection: { in: subcollections } } : {}),
+        ...(sizes.length ? { size: { in: sizes } } : {}),
+        ...(colors.length ? { color: { in: colors } } : {}),
       },
     },
     include: {
@@ -117,11 +120,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const baseStatus = { status: { not: 'ARCHIVED' as const } };
   const facetWhere = (excluded: 'category' | 'collection' | 'subcollection' | 'size' | 'color') => ({
     ...baseStatus,
-    ...(excluded !== 'category' && category ? { category } : {}),
-    ...(excluded !== 'collection' && collection ? { collection } : {}),
-    ...(excluded !== 'subcollection' && subcollection ? { subcollection } : {}),
-    ...(excluded !== 'size' && size ? { size } : {}),
-    ...(excluded !== 'color' && color ? { color } : {}),
+    ...(excluded !== 'category' && categories.length ? { category: { in: categories } } : {}),
+    ...(excluded !== 'collection' && collections.length ? { collection: { in: collections } } : {}),
+    ...(excluded !== 'subcollection' && subcollections.length ? { subcollection: { in: subcollections } } : {}),
+    ...(excluded !== 'size' && sizes.length ? { size: { in: sizes } } : {}),
+    ...(excluded !== 'color' && colors.length ? { color: { in: colors } } : {}),
   });
   const [catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw] = await Promise.all([
     prisma.variant.findMany({ where: { ...facetWhere('category'), category: { not: null } }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
@@ -139,12 +142,13 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
 
   // Active filter chips (rendered server-side so the user sees the context clearly)
   const sellingPointName = sellingPointId ? sellingPoints.find((s) => s.id === sellingPointId)?.name : '';
+  const joinShort = (vs: string[]) => vs.length <= 2 ? vs.join(', ') : `${vs[0]} +${vs.length - 1}`;
   const activeChips: { label: string; value: string }[] = [
-    category && { label: t('c.category'), value: category },
-    collection && { label: t('c.collection'), value: collection },
-    subcollection && { label: t('c.subcollection'), value: subcollection },
-    size && { label: t('c.size'), value: size },
-    color && { label: t('c.color'), value: color },
+    categories.length > 0 && { label: t('c.category'), value: joinShort(categories) },
+    collections.length > 0 && { label: t('c.collection'), value: joinShort(collections) },
+    subcollections.length > 0 && { label: t('c.subcollection'), value: joinShort(subcollections) },
+    sizes.length > 0 && { label: t('c.size'), value: joinShort(sizes) },
+    colors.length > 0 && { label: t('c.color'), value: joinShort(colors) },
     sellingPointName && { label: t('c.sellingPoint'), value: sellingPointName },
   ].filter(Boolean) as { label: string; value: string }[];
 
