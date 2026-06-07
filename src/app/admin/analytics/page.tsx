@@ -111,18 +111,30 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const spData = sortByUnits(bySp);
   const top = Array.from(perVariant.values()).sort((a, b) => b.value - a.value).slice(0, 10);
 
-  // Facets for the filter dropdowns (unscoped — admin sees full catalog options)
-  const facetsAll = await prisma.variant.findMany({
-    where: { status: { not: 'ARCHIVED' } },
-    select: { category: true, collection: true, subcollection: true, size: true, color: true },
+  // Facets for the filter dropdowns — "leave one out" scoped so each
+  // dropdown only offers values that still have matching variants under
+  // the other active filters.
+  const baseStatus = { status: { not: 'ARCHIVED' as const } };
+  const facetWhere = (excluded: 'category' | 'collection' | 'subcollection' | 'size' | 'color') => ({
+    ...baseStatus,
+    ...(excluded !== 'category' && category ? { category } : {}),
+    ...(excluded !== 'collection' && collection ? { collection } : {}),
+    ...(excluded !== 'subcollection' && subcollection ? { subcollection } : {}),
+    ...(excluded !== 'size' && size ? { size } : {}),
+    ...(excluded !== 'color' && color ? { color } : {}),
   });
-  const distinct = (arr: (string | null)[]) =>
-    Array.from(new Set(arr.filter(Boolean) as string[])).sort();
-  const allCategories = distinct(facetsAll.map((v) => v.category));
-  const allCollections = distinct(facetsAll.map((v) => v.collection));
-  const allSubcollections = distinct(facetsAll.map((v) => v.subcollection));
-  const allSizes = distinct(facetsAll.map((v) => v.size));
-  const allColors = distinct(facetsAll.map((v) => v.color));
+  const [catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw] = await Promise.all([
+    prisma.variant.findMany({ where: { ...facetWhere('category'), category: { not: null } }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('collection'), collection: { not: null } }, distinct: ['collection'], select: { collection: true }, orderBy: { collection: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('subcollection'), subcollection: { not: null } }, distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('size'), size: { not: null } }, distinct: ['size'], select: { size: true }, orderBy: { size: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('color'), color: { not: null } }, distinct: ['color'], select: { color: true }, orderBy: { color: 'asc' } }),
+  ]);
+  const allCategories = catsRaw.map((v) => v.category!).filter(Boolean);
+  const allCollections = collsRaw.map((v) => v.collection!).filter(Boolean);
+  const allSubcollections = subsRaw.map((v) => v.subcollection!).filter(Boolean);
+  const allSizes = sizesRaw.map((v) => v.size!).filter(Boolean);
+  const allColors = colorsRaw.map((v) => v.color!).filter(Boolean);
   const sellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
 
   // Active filter chips (rendered server-side so the user sees the context clearly)
