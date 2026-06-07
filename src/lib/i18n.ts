@@ -33,6 +33,7 @@ const D: Record<string, Record<Locale, string>> = {
   'c.processing': { en: 'Processing…', hy: 'Կատարվում է…', ru: 'Обработка…' },
   'c.saving': { en: 'Saving…', hy: 'Պահպանվում է…', ru: 'Сохранение…' },
   'c.reset': { en: 'Reset filters', hy: 'Մաքրել զտիչները', ru: 'Сбросить фильтры' },
+  'c.refresh': { en: 'Refresh', hy: 'Թարմացնել', ru: 'Обновить' },
   'c.note': { en: 'Note', hy: 'Նշում', ru: 'Заметка' },
   'c.noteOptional': { en: 'Note (optional)', hy: 'Նշում (ոչ պարտադիր)', ru: 'Заметка (необязательно)' },
   'c.quantity': { en: 'Quantity', hy: 'Քանակ', ru: 'Количество' },
