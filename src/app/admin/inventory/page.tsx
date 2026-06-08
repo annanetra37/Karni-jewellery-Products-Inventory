@@ -81,19 +81,21 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   });
 
   // Status split across the full attribute-filtered set (ignores the stock tab,
-  // so the breakdown card always shows the whole picture).
+  // so the breakdown card always shows the whole picture). "In stock" means
+  // qty > 0 — exactly like the analytics page — and low-stock is a SUBSET of
+  // in-stock (so inCount + outCount = total variants).
   let inCount = 0, lowCount = 0, outCount = 0;
   for (const c of computed) {
-    if (c.status === 'in') inCount++;
-    else if (c.status === 'low') lowCount++;
-    else outCount++;
+    if (c.qty <= 0) { outCount++; continue; }
+    inCount++;
+    if (c.status === 'low') lowCount++;
   }
 
-  // The stock tab scopes everything below.
+  // The stock tab scopes everything below. "In stock" = qty > 0 (includes low).
   const visible = computed.filter((c) =>
-    stock === 'in' ? c.status === 'in'
+    stock === 'in' ? c.qty > 0
     : stock === 'low' ? c.status === 'low'
-    : stock === 'out' ? c.status === 'out'
+    : stock === 'out' ? c.qty <= 0
     : true);
 
   let totalUnits = 0;
@@ -246,7 +248,7 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
           <div className="flex items-baseline justify-between mb-3 gap-2">
             <p className="font-semibold">{t('inv.byStatus')}</p>
             <span className="text-xs tabular-nums" style={{ color: 'var(--ink-soft)' }}>
-              {(inCount + lowCount + outCount).toLocaleString()} {t('inv.variants').toLowerCase()}
+              {computed.length.toLocaleString()} {t('inv.variants').toLowerCase()}
             </span>
           </div>
           <ul className="space-y-3">
