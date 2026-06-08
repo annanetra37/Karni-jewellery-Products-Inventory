@@ -142,6 +142,29 @@ const D: Record<string, Record<Locale, string>> = {
   'an.avgPrice': { en: 'Avg unit price', hy: 'Միջին գին', ru: 'Средняя цена' },
   'an.estMargin': { en: 'Est. margin', hy: 'Մոտավոր մարժա', ru: 'Прогноз. маржа' },
 
+  // Inventory explorer
+  'inv.title': { en: 'Inventory', hy: 'Պահեստ', ru: 'Склад' },
+  'inv.subtitle': {
+    en: 'Explore everything in stock and out of stock. Filter, visualize and drill in.',
+    hy: 'Ուսումնասիրեք առկա և բացակայող ապրանքները։ Զտեք, վերլուծեք և խորացեք։',
+    ru: 'Изучайте товары в наличии и отсутствующие. Фильтруйте, визуализируйте и детализируйте.',
+  },
+  'inv.variants': { en: 'Variants', hy: 'Տարբերակներ', ru: 'Варианты' },
+  'inv.totalUnits': { en: 'Units on hand', hy: 'Միավորներ առկա', ru: 'Единиц в наличии' },
+  'inv.stockValue': { en: 'Stock value', hy: 'Մնացորդի արժեք', ru: 'Стоимость остатков' },
+  'inv.byStatus': { en: 'Stock by status', hy: 'Մնացորդն ըստ կարգավիճակի', ru: 'Остатки по статусу' },
+  'inv.statusIn': { en: 'In stock', hy: 'Առկա', ru: 'В наличии' },
+  'inv.statusLow': { en: 'Low stock', hy: 'Քիչ', ru: 'Мало' },
+  'inv.statusOut': { en: 'Out of stock', hy: 'Չկա', ru: 'Нет в наличии' },
+  'inv.empty': { en: 'No items match these filters.', hy: 'Այս զտիչներով ապրանքներ չկան։', ru: 'Нет товаров по этим фильтрам.' },
+  'inv.items': { en: 'Items', hy: 'Ապրանքներ', ru: 'Товары' },
+  'inv.refineHint': { en: 'Refine the filters to narrow the list.', hy: 'Ճշգրտեք զտիչները՝ ցանկը նեղացնելու համար։', ru: 'Уточните фильтры, чтобы сузить список.' },
+  'inv.movements': { en: 'Recent movements (audit log)', hy: 'Վերջին շարժերը (մատյան)', ru: 'Последние движения (журнал)' },
+  'inv.allInventory': { en: 'All inventory', hy: 'Ամբողջ պահեստը', ru: 'Весь склад' },
+  'inv.avgPrice': { en: 'Avg unit price', hy: 'Միջին գին', ru: 'Средняя цена' },
+  'inv.search': { en: 'Search', hy: 'Որոնում', ru: 'Поиск' },
+  'inv.checkedInBy': { en: 'First checked in by', hy: 'Առաջին անգամ ընդունել է', ru: 'Впервые принял' },
+
   // Login
   'l.signInToContinue': { en: 'Sign in to continue.', hy: 'Մուտք գործեք՝ շարունակելու համար։', ru: 'Войдите, чтобы продолжить.' },
   'l.email': { en: 'Email', hy: 'Էլ. հասցե', ru: 'Эл. почта' },

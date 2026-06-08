@@ -1,16 +1,16 @@
 'use client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useT } from './I18nProvider';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
 
-const ALL_SP = '_all';
+const ALL_SP = '';
 
 const splitParam = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);
 const joinValues = (vs: string[]) => vs.join(',');
 
-export function AnalyticsFilters({
-  categories, collections, subcollections, sizes, colors, sellingPoints, defaultSellingPointId,
+export function InventoryFilters({
+  categories, collections, subcollections, sizes, colors, sellingPoints,
 }: {
   categories: string[];
   collections: string[];
@@ -18,8 +18,6 @@ export function AnalyticsFilters({
   sizes: string[];
   colors: string[];
   sellingPoints: { id: string; name: string }[];
-  /** Falls back to this when no sellingPointId is in the URL (e.g. Megamall). */
-  defaultSellingPointId: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -28,7 +26,7 @@ export function AnalyticsFilters({
 
   function push(next: URLSearchParams) {
     const qs = next.toString();
-    start(() => router.replace(qs ? `/admin/analytics?${qs}` : '/admin/analytics', { scroll: false }));
+    start(() => router.replace(qs ? `/admin/inventory?${qs}` : '/admin/inventory', { scroll: false }));
   }
 
   function setMulti(name: string, values: string[]) {
@@ -45,20 +43,49 @@ export function AnalyticsFilters({
     push(u);
   }
 
-  const urlSp = params.get('sellingPointId') || '';
-  const spValue = urlSp === ALL_SP ? ALL_SP : (urlSp || defaultSellingPointId);
+  function setStock(value: string) {
+    const u = new URLSearchParams(params.toString());
+    if (value && value !== 'all') u.set('stock', value);
+    else u.delete('stock');
+    push(u);
+  }
 
+  const stock = params.get('stock') || 'all';
+  const sp = params.get('sellingPointId') || '';
   const selectedCats = splitParam(params.get('category'));
   const selectedColls = splitParam(params.get('collection'));
   const selectedSubs = splitParam(params.get('subcollection'));
   const selectedSizes = splitParam(params.get('size'));
   const selectedColors = splitParam(params.get('color'));
 
-  const keys = ['category', 'collection', 'subcollection', 'size', 'color'] as const;
-  const anyActive = keys.some((k) => !!params.get(k)) || (urlSp && urlSp !== defaultSellingPointId);
+  // Local search box with debounced URL sync.
+  const urlQ = params.get('q') || '';
+  const [query, setQuery] = useState(urlQ);
+  useEffect(() => { setQuery(urlQ); }, [urlQ]);
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed === urlQ) return;
+    const handle = setTimeout(() => {
+      const u = new URLSearchParams(params.toString());
+      if (trimmed) u.set('q', trimmed); else u.delete('q');
+      push(u);
+    }, 350);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const keys = ['category', 'collection', 'subcollection', 'size', 'color', 'sellingPointId', 'q'] as const;
+  const anyActive = keys.some((k) => !!params.get(k)) || stock !== 'all';
+
+  const stockTabs: { key: string; label: string }[] = [
+    { key: 'all', label: t('c.stockAll') },
+    { key: 'in', label: t('inv.statusIn') },
+    { key: 'low', label: t('inv.statusLow') },
+    { key: 'out', label: t('inv.statusOut') },
+  ];
 
   return (
-    <div className="card space-y-3">
+    <div className="card space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="font-semibold text-sm flex items-center gap-2" style={{ color: 'var(--brand-deep)' }}>
           {t('an.filters')}
@@ -80,6 +107,31 @@ export function AnalyticsFilters({
           {t('c.reset')}
         </button>
       </div>
+
+      {/* Stock status tabs */}
+      <div className="flex flex-wrap gap-1.5">
+        {stockTabs.map((s) => (
+          <button key={s.key} type="button" onClick={() => setStock(s.key)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
+            style={stock === s.key
+              ? { background: 'var(--brand)', color: '#fff' }
+              : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Free-text search */}
+      <div>
+        <label className="label">{t('inv.search')}</label>
+        <input
+          className="input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('c.searchPlaceholder')}
+        />
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
           <label className="label">{t('c.category')}</label>
@@ -133,9 +185,9 @@ export function AnalyticsFilters({
         </div>
         <div>
           <label className="label">{t('c.sellingPoint')}</label>
-          <select className="input" value={spValue} onChange={(e) => setSingle('sellingPointId', e.target.value)}>
+          <select className="input" value={sp} onChange={(e) => setSingle('sellingPointId', e.target.value)}>
             <option value={ALL_SP}>{t('c.allSellingPoints')}</option>
-            {sellingPoints.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+            {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
       </div>

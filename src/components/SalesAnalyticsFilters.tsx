@@ -64,11 +64,19 @@ export function SalesAnalyticsFilters({
           {t('an.filters')}
           {pending && <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin opacity-50" aria-hidden="true" />}
         </p>
-        {anyActive && (
-          <button type="button" onClick={() => push(new URLSearchParams())} className="btn-link">
-            {t('an.clearFilters')}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => push(new URLSearchParams())}
+          disabled={!anyActive}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--brand)' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 2v6h6" />
+            <path d="M3.51 9a9 9 0 1 0 2.13-3.36L3 8" />
+          </svg>
+          {t('c.reset')}
+        </button>
       </div>
 
       {/* Date range pill bar */}
