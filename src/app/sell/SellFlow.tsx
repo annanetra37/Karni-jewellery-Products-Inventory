@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProductSearch } from '@/components/ProductSearch';
 import { ProductBrowse } from '@/components/ProductBrowse';
+import { BirthdayPicker } from '@/components/BirthdayPicker';
 import { useT } from '@/components/I18nProvider';
 
 type SP = { id: string; name: string; type: string };
@@ -204,7 +205,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
                 <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
                 <label className="label">{t('s.birthday')} <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <input className="input" type="date" value={newBirthday} onChange={(e) => setNewBirthday(e.target.value)} />
+                <BirthdayPicker value={newBirthday} onChange={setNewBirthday} />
                 <button className="text-karni-700 underline text-sm" onClick={() => setAddNew(false)}>{t('c.cancel')}</button>
               </div>
             ) : (
