@@ -2,14 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Clean studio backdrop the cut-out is placed onto (matches the app's beige).
-const BACKDROP = '#f5eedf';
+// Clean, bright studio backdrop the cut-out is placed onto (a light white-beige).
+const BACKDROP = '#faf6ed';
 // Keep plenty of detail; large enough for a crisp catalog photo, small enough
 // to stay well under the upload cap.
 const MAX_DIM = 2560;
+// Lift exposure on phone shots, which tend to come out dark indoors.
+const ENHANCE = 'brightness(1.28) contrast(1.05) saturate(1.08)';
 
 // Resize (never upscale) a blob through a canvas, returning a high-quality JPEG.
-async function resizeBlob(src: Blob, maxDim: number): Promise<Blob> {
+// When `enhance` is set, a brightness/contrast lift is baked in.
+async function resizeBlob(src: Blob, maxDim: number, enhance = false): Promise<Blob> {
   const bmp = await createImageBitmap(src);
   const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * scale));
@@ -17,7 +20,11 @@ async function resizeBlob(src: Blob, maxDim: number): Promise<Blob> {
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  if (ctx) { ctx.imageSmoothingQuality = 'high'; ctx.drawImage(bmp, 0, 0, w, h); }
+  if (ctx) {
+    ctx.imageSmoothingQuality = 'high';
+    if (enhance) ctx.filter = ENHANCE;
+    ctx.drawImage(bmp, 0, 0, w, h);
+  }
   bmp.close?.();
   return await new Promise<Blob>((res, rej) =>
     canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/jpeg', 0.95));
@@ -84,7 +91,7 @@ export function ImageUploadField({
       let toUpload: Blob;
       if (cut) {
         setStatus('Cleaning up background…');
-        const resized = await resizeBlob(file, MAX_DIM);
+        const resized = await resizeBlob(file, MAX_DIM, true);
         const { removeBackground } = await import('@imgly/background-removal');
         const cutBlob = await removeBackground(resized, { output: { format: 'image/png', quality: 1 } });
         setStatus('Finishing…');
