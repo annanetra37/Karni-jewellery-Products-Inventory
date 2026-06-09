@@ -51,12 +51,43 @@ export async function requireUser(): Promise<User> {
   return u;
 }
 
+export function isSuperAdmin(u: { role: Role } | null): boolean {
+  return u?.role === 'SUPER_ADMIN';
+}
+
+/** Admin privileges = a point-scoped ADMIN or a global SUPER_ADMIN. */
+export function isAdmin(u: { role: Role } | null): boolean {
+  return u?.role === 'ADMIN' || u?.role === 'SUPER_ADMIN';
+}
+
 export async function requireAdmin(): Promise<User> {
   const u = await requireUser();
-  if (u.role !== 'ADMIN') redirect('/');
+  if (!isAdmin(u)) redirect('/');
   return u;
 }
 
-export function isAdmin(u: { role: Role } | null): boolean {
-  return u?.role === 'ADMIN';
+export async function requireSuperAdmin(): Promise<User> {
+  const u = await requireUser();
+  if (!isSuperAdmin(u)) redirect('/');
+  return u;
+}
+
+/** Selling-point ids an admin may manage (empty until the super admin assigns some). */
+export async function getManagedSellingPointIds(userId: string): Promise<string[]> {
+  const rows = await prisma.adminSellingPoint.findMany({
+    where: { userId },
+    select: { sellingPointId: true },
+  });
+  return rows.map((r) => r.sellingPointId);
+}
+
+/**
+ * Selling points a user is allowed to see in scoped views.
+ * `null` means unrestricted (super admin); an array restricts to those ids
+ * (a point-scoped admin with no assignments gets an empty array → sees nothing).
+ */
+export async function sellingPointScope(u: { id: string; role: Role }): Promise<string[] | null> {
+  if (isSuperAdmin(u)) return null;
+  if (u.role === 'ADMIN') return getManagedSellingPointIds(u.id);
+  return [];
 }

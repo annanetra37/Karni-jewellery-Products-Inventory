@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
@@ -53,12 +53,25 @@ function fillTimeline(start: Date | null, end: Date, rev: Map<string, number>) {
 }
 
 export default async function SalesAnalyticsPage({ searchParams }: { searchParams: Params }) {
-  await requireAdmin();
+  const me = await requireAdmin();
+  const scope = await sellingPointScope(me);
   const { t } = await getT();
   const sp = await searchParams;
   const split = (v?: string) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
   const range = (sp.range || '30d').trim();
-  const sellingPointIds = split(sp.sellingPointId);
+  const requestedSpIds = split(sp.sellingPointId);
+  // Point-scoped admins are confined to their selling points; an out-of-scope
+  // selection falls back to their full scope rather than leaking everything.
+  let sellingPointIds: string[];
+  if (scope === null) {
+    sellingPointIds = requestedSpIds;
+  } else {
+    const inScope = requestedSpIds.filter((id) => scope.includes(id));
+    sellingPointIds = inScope.length ? inScope : scope;
+  }
+  const saleSpWhere = scope === null
+    ? (sellingPointIds.length ? { sellingPointId: { in: sellingPointIds } } : {})
+    : { sellingPointId: { in: sellingPointIds } };
   const soldByIds = split(sp.soldById);
   const paymentMethods = split(sp.paymentMethod);
 
@@ -68,7 +81,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const sales = await prisma.sale.findMany({
     where: {
       ...(startDate ? { createdAt: { gte: startDate, lte: now } } : {}),
-      ...(sellingPointIds.length ? { sellingPointId: { in: sellingPointIds } } : {}),
+      ...saleSpWhere,
       ...(soldByIds.length ? { soldById: { in: soldByIds } } : {}),
       ...(paymentMethods.length ? { paymentMethod: { in: paymentMethods as never } } : {}),
     },
@@ -140,7 +153,8 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const topCustomers = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   const timeline = fillTimeline(startDate, now, revByDay);
 
-  const sellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
+  const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
+  const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
   const salespeople = await prisma.user.findMany({
     where: { isActive: true },
     orderBy: { fullName: 'asc' },

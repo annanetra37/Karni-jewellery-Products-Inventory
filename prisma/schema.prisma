@@ -12,6 +12,7 @@ datasource db {
 enum Role {
   SALES
   ADMIN
+  SUPER_ADMIN
 }
 
 enum SellingPointType {
@@ -93,6 +94,7 @@ model User {
   customersCreated Customer[]        @relation("CustomerCreatedBy")
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   notifications    Notification[]
+  adminSellingPoints AdminSellingPoint[]
 }
 
 model Design {
@@ -177,6 +179,19 @@ model SellingPoint {
   sales          Sale[]
   orders         Order[]
   cashSessions   CashDrawerSession[]
+  admins         AdminSellingPoint[]
+}
+
+// Scopes a point-restricted ADMIN to the selling points they may manage.
+// Super admins (global) and sales have no rows here.
+model AdminSellingPoint {
+  userId         String
+  sellingPointId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellingPoint   SellingPoint @relation(fields: [sellingPointId], references: [id], onDelete: Cascade)
+
+  @@id([userId, sellingPointId])
+  @@index([sellingPointId])
 }
 
 model InventoryItem {

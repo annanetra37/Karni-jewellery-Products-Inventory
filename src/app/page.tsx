@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getCurrentUser, isAdmin } from '@/lib/auth';
+import { getCurrentUser, isAdmin, isSuperAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
@@ -89,7 +89,7 @@ export default async function HomePage() {
             <span className="chip">{lowStock} {t('h.lowOrOut')}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <Link href="/admin/users" className="btn-secondary">{t('h.users')}</Link>
+            {isSuperAdmin(user) && <Link href="/admin/users" className="btn-secondary">{t('h.users')}</Link>}
             <Link href="/admin/products" className="btn-secondary">{t('h.products')}</Link>
             <Link href="/admin/inventory" className="btn-secondary">{t('h.inventory')}</Link>
             <Link href="/admin/analytics" className="btn-accent">{t('h.analytics')}</Link>
