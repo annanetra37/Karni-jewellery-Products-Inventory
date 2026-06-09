@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from './I18nProvider';
+import { StockToggle } from './StockToggle';
 import { readUrlParam, syncUrlParams } from '@/lib/urlSync';
 
 type SearchResult = {
@@ -178,12 +179,8 @@ export function ProductSearch({
             <option value="">— {t('c.color').toLowerCase()} —</option>
             {facets.colors.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          <select className="input flex-1 min-w-[140px]" value={stock} onChange={(e) => setStock(e.target.value as 'all' | 'in' | 'out')}>
-            <option value="all">{t('c.stockAll')}</option>
-            <option value="in">{t('c.stockIn')}</option>
-            <option value="out">{t('c.stockOut')}</option>
-          </select>
         </div>
+        <StockToggle value={stock} onChange={setStock} />
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-karni-700">
             {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
