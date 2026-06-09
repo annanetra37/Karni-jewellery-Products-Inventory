@@ -170,7 +170,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
         <fieldset className="space-y-3">
           <legend className="font-semibold text-karni-900">Photo</legend>
-          <ImageUploadField defaultValue={v.imageUrl || ''} />
+          <ImageUploadField defaultValue={v.imageUrl || ''} cutout />
         </fieldset>
 
         <fieldset className="space-y-3">

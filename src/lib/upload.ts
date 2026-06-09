@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { BlobServiceClient } from '@azure/storage-blob';
 
 const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const EXT: Record<string, string> = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
 };

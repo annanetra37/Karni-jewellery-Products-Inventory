@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
+    "@imgly/background-removal": "^1.7.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "exceljs": "^4.4.0",

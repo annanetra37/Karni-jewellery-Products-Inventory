@@ -123,7 +123,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
       <form action={createAction} className="card space-y-4">
         <fieldset className="space-y-3">
           <legend className="font-semibold text-karni-900">Photo</legend>
-          <ImageUploadField />
+          <ImageUploadField cutout />
         </fieldset>
 
         <fieldset className="space-y-3">
