@@ -1,4 +1,4 @@
-import { requireUser, isAdmin } from '@/lib/auth';
+import { requireUser, isAdmin, allowedSellingPoints } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import Link from 'next/link';
@@ -9,10 +9,13 @@ async function openShiftAction(formData: FormData) {
   const { requireUser } = await import('@/lib/auth');
   const { prisma } = await import('@/lib/db');
   const { redirect } = await import('next/navigation');
+  const { sellingPointScope } = await import('@/lib/auth');
   const u = await requireUser();
   const sellingPointId = String(formData.get('sellingPointId') || '');
   const openingCountAmd = Number(formData.get('openingCountAmd') || 0);
   if (!sellingPointId) redirect('/kacca?err=missing');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(sellingPointId)) redirect('/kacca?err=forbidden');
   const existing = await prisma.cashDrawerSession.findFirst({
     where: { sellingPointId, status: 'OPEN' },
     include: { sellingPoint: true, openingBy: true },
@@ -110,6 +113,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       include: { sellingPoint: true, openingBy: true, closingBy: true, user: true },
     }),
   ]);
+  const allowedSps = await allowedSellingPoints(user, sps);
 
   return (
     <div className="space-y-3">
@@ -118,6 +122,11 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       {sp.err === 'alreadyOpen' && (
         <div className="card bg-amber-50 border-amber-200 text-amber-900 text-sm">
           {t('k.alreadyOpen')} <b>{sp.by}</b>. {t('k.mustClose')}
+        </div>
+      )}
+      {sp.err === 'forbidden' && (
+        <div className="card bg-red-50 border-red-200 text-red-900 text-sm">
+          {t('k.forbidden')}
         </div>
       )}
 
@@ -139,7 +148,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           <label className="label">{t('c.sellingPoint')}</label>
           <select name="sellingPointId" className="input" required>
             <option value="">{t('k.pickPoint')}</option>
-            {sps.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {allowedSps.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <label className="label">{t('k.countDrawer')}</label>
           <input className="input" name="openingCountAmd" type="number" step="0.01" min="0" required />

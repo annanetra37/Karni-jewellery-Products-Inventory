@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, sellingPointScope } from '@/lib/auth';
 import { nextNumber, saleNumber } from '@/lib/counter';
 import { notify } from '@/lib/notify';
 
@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { sellingPointId, customerId, paymentMethod, lines } = parsed.data;
+
+  // Enforce the seller's selling-point scope server-side (UI restriction alone
+  // is not enough).
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(sellingPointId)) {
+    return NextResponse.json({ error: 'You do not have access to this selling point.' }, { status: 403 });
+  }
 
   // Reject duplicate variantIds — caller should consolidate first.
   const variantIds = lines.map((l) => l.variantId);

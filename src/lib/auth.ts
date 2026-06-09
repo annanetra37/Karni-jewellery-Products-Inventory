@@ -82,12 +82,21 @@ export async function getManagedSellingPointIds(userId: string): Promise<string[
 }
 
 /**
- * Selling points a user is allowed to see in scoped views.
- * `null` means unrestricted (super admin); an array restricts to those ids
- * (a point-scoped admin with no assignments gets an empty array → sees nothing).
+ * Selling points a user is restricted to (applies to ADMIN and SALES alike).
+ * `null` means no restriction — super admins, or anyone with no assignments
+ * (so existing users are never locked out). A non-empty array restricts to
+ * exactly those selling-point ids.
  */
 export async function sellingPointScope(u: { id: string; role: Role }): Promise<string[] | null> {
   if (isSuperAdmin(u)) return null;
-  if (u.role === 'ADMIN') return getManagedSellingPointIds(u.id);
-  return [];
+  const ids = await getManagedSellingPointIds(u.id);
+  return ids.length > 0 ? ids : null;
+}
+
+/** Filter a list of selling points down to those the user may use. */
+export async function allowedSellingPoints<T extends { id: string }>(
+  u: { id: string; role: Role }, list: T[],
+): Promise<T[]> {
+  const scope = await sellingPointScope(u);
+  return scope === null ? list : list.filter((s) => scope.includes(s.id));
 }

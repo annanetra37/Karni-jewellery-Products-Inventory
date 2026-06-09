@@ -42,6 +42,7 @@ export function ProductSearch({
   const [page, setPage] = useState(urlSync ? (Number(readUrlParam('spg', '0')) || 0) : 0);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalStock, setTotalStock] = useState(0);
   const [loading, setLoading] = useState(false);
   const [facets, setFacets] = useState<{ categories: string[]; sizes: string[]; subcollections: string[]; colors: string[]; collections: string[] }>({ categories: [], sizes: [], subcollections: [], colors: [], collections: [] });
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,7 +96,7 @@ export function ProductSearch({
       setLoading(true);
       fetch(url)
         .then((r) => r.json())
-        .then((d) => { setResults(d.results || []); setTotal(d.total || 0); })
+        .then((d) => { setResults(d.results || []); setTotal(d.total || 0); setTotalStock(d.totalStock || 0); })
         .finally(() => setLoading(false));
     }, 180);
   }, [url]);
@@ -175,16 +176,38 @@ export function ProductSearch({
             <option value="">{t('c.anySize')}</option>
             {facets.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select className="input flex-1 min-w-[140px]" value={color} onChange={(e) => setColor(e.target.value)}>
-            <option value="">— {t('c.color').toLowerCase()} —</option>
-            {facets.colors.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
         </div>
+
+        {/* Available colors as quick clickable filters. */}
+        {facets.colors.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] uppercase tracking-wide font-semibold mr-1" style={{ color: 'var(--ink-soft)' }}>{t('c.color')}</span>
+            {facets.colors.map((c) => {
+              const active = color === c;
+              return (
+                <button key={c} type="button" onClick={() => setColor(active ? '' : c)}
+                  aria-pressed={active}
+                  className="px-2.5 py-1 rounded-full text-xs font-medium transition"
+                  style={active
+                    ? { background: 'var(--brand)', color: '#fff' }
+                    : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <StockToggle value={stock} onChange={setStock} />
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-karni-700">
-            {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
-          </p>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-karni-700">
+              {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
+            </p>
+            {!hideStock && total > 0 && stock !== 'out' && (
+              <span className="chip chip-ok whitespace-nowrap">{totalStock.toLocaleString()} {t('c.inStock')}</span>
+            )}
+          </div>
           <button type="button" onClick={reset} disabled={!filtersActive}
             className="btn-link disabled:opacity-40 disabled:cursor-not-allowed">
             {t('c.reset')}
