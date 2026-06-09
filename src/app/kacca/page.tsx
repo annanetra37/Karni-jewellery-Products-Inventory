@@ -1,4 +1,4 @@
-import { requireUser, isAdmin, allowedSellingPoints } from '@/lib/auth';
+import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import Link from 'next/link';
@@ -62,6 +62,9 @@ async function closeShiftAction(formData: FormData) {
   const closingCountAmd = Number(formData.get('closingCountAmd') || 0);
   const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
   if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const { sellingPointScope } = await import('@/lib/auth');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
   // Compute expected from cash sales between openingAt and now at this sellingPoint.
   const cashSales = await prisma.sale.aggregate({
     _sum: { totalAmd: true },
@@ -101,14 +104,23 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
   const user = await requireUser();
   const { t } = await getT();
   const sp = await searchParams;
+  const scope = await sellingPointScope(user);
+  // The open shift is found by SELLING POINT (the cassa is shared), so whoever
+  // is on shift — the person leaving or the one arriving — can close it during
+  // a handover. Unrestricted users fall back to their own open shift.
+  const openWhere = scope
+    ? { status: 'OPEN' as const, sellingPointId: { in: scope } }
+    : { status: 'OPEN' as const, userId: user.id };
+  const recentWhere = scope ? { sellingPointId: { in: scope } } : (isAdmin(user) ? {} : { userId: user.id });
   const [sps, openShift, recentSessions] = await Promise.all([
     prisma.sellingPoint.findMany({ where: { isActive: true, type: { in: ['PHYSICAL', 'CONSIGNMENT'] } }, orderBy: { name: 'asc' } }),
     prisma.cashDrawerSession.findFirst({
-      where: { userId: user.id, status: 'OPEN' },
-      include: { sellingPoint: true },
+      where: openWhere,
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: true, openingBy: true },
     }),
     prisma.cashDrawerSession.findMany({
-      where: isAdmin(user) ? {} : { userId: user.id },
+      where: recentWhere,
       orderBy: { openingAt: 'desc' }, take: 10,
       include: { sellingPoint: true, openingBy: true, closingBy: true, user: true },
     }),
@@ -134,11 +146,12 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
         <div className="card space-y-3 bg-emerald-50 border-emerald-200">
           <p className="font-medium">{t('k.shiftOpen')}</p>
           <p className="text-sm">{openShift.sellingPoint.name} · {t('k.opened')} {openShift.openingAt.toLocaleString()}</p>
-          <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b></p>
+          <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b> · {t('o.by').toLowerCase()} {openShift.openingBy.fullName}</p>
           <form action={closeShiftAction} className="space-y-2">
             <input type="hidden" name="sessionId" value={openShift.id} />
             <label className="label">{t('k.closingCount')}</label>
             <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
+            <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
             <button className="btn-primary w-full" type="submit">{t('k.endShift')}</button>
           </form>
         </div>
