@@ -23,7 +23,7 @@ const LIST_CAP = 50;
 export default async function AdminInventoryPage({ searchParams }: { searchParams: Params }) {
   const me = await requireAdmin();
   const scope = await sellingPointScope(me);
-  const { t } = await getT();
+  const { t, tl } = await getT();
   const sp = await searchParams;
   const split = (v: string | undefined) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
   const stock = (sp.stock || 'all').trim();
@@ -155,8 +155,8 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   const totalValue = stock === 'out' ? 0 : stock === 'low' ? s0.value_low : s0.value_all;
   const avgUnitPrice = totalUnits > 0 ? totalValue / totalUnits : 0;
 
-  const toUnits = (rows: AggRow[]) => rows.map((r) => ({ label: r.label, value: r.units, sub: formatAmd(r.value) }));
-  const toValue = (rows: AggRow[]) => rows.map((r) => ({ label: r.label, value: Math.round(r.value), sub: `${r.units} u.` }));
+  const toUnits = (rows: AggRow[]) => rows.map((r) => ({ label: tl(r.label), value: r.units, sub: formatAmd(r.value) }));
+  const toValue = (rows: AggRow[]) => rows.map((r) => ({ label: tl(r.label), value: Math.round(r.value), sub: `${r.units} u.` }));
   const catData = toUnits(catRows);
   const collData = toValue(collRows).sort((a, b) => b.value - a.value);
   const sizeData = toUnits(sizeRows).slice(0, 12);
@@ -212,9 +212,9 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   const activeChips: { label: string; value: string }[] = [
     stock !== 'all' && { label: t('c.stock'), value: stock === 'in' ? t('inv.statusIn') : stock === 'low' ? t('inv.statusLow') : t('inv.statusOut') },
     q && { label: t('inv.search'), value: q },
-    categories.length > 0 && { label: t('c.category'), value: joinShort(categories) },
-    collections.length > 0 && { label: t('c.collection'), value: joinShort(collections) },
-    subcollections.length > 0 && { label: t('c.subcollection'), value: joinShort(subcollections) },
+    categories.length > 0 && { label: t('c.category'), value: joinShort(categories.map(tl)) },
+    collections.length > 0 && { label: t('c.collection'), value: joinShort(collections.map(tl)) },
+    subcollections.length > 0 && { label: t('c.subcollection'), value: joinShort(subcollections.map(tl)) },
     sizes.length > 0 && { label: t('c.size'), value: joinShort(sizes) },
     colors.length > 0 && { label: t('c.color'), value: joinShort(colors) },
     sellingPointName && { label: t('c.sellingPoint'), value: sellingPointName },
@@ -231,9 +231,9 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
       ? v.inventoryItems.map((it) => `${it.sellingPoint.name}: ${it.quantity}`).join(' · ')
       : '—';
     return [
-      { label: t('c.category'), value: v.category },
-      { label: t('c.collection'), value: v.collection },
-      { label: t('c.subcollection'), value: v.subcollection },
+      { label: t('c.category'), value: tl(v.category) },
+      { label: t('c.collection'), value: tl(v.collection) },
+      { label: t('c.subcollection'), value: tl(v.subcollection) },
       { label: t('c.size'), value: v.size },
       { label: t('c.color'), value: v.color },
       { label: t('c.price'), value: formatAmd(Number(v.priceAmd)) },

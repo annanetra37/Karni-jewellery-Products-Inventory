@@ -47,7 +47,7 @@ export function ProductSearch({
   const [loading, setLoading] = useState(false);
   const [facets, setFacets] = useState<{ categories: string[]; sizes: string[]; subcollections: string[]; colors: string[]; collections: string[] }>({ categories: [], sizes: [], subcollections: [], colors: [], collections: [] });
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { t } = useT();
+  const { t, tl } = useT();
 
   // Load distinct facet values from the catalog, scoped by every other
   // active filter ("leave one out") so each dropdown only offers values
@@ -171,15 +171,15 @@ export function ProductSearch({
           </select>
           <select className="input flex-1 min-w-[140px]" value={collection} onChange={(e) => setCollection(e.target.value)}>
             <option value="">— {t('c.collection').toLowerCase()} —</option>
-            {facets.collections.map((c) => <option key={c} value={c}>{c}</option>)}
+            {facets.collections.map((c) => <option key={c} value={c}>{tl(c)}</option>)}
           </select>
           <select className="input flex-1 min-w-[140px]" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">{t('c.allCategories')}</option>
-            {facets.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            {facets.categories.map((c) => <option key={c} value={c}>{tl(c)}</option>)}
           </select>
           <select className="input flex-1 min-w-[140px]" value={subcollection} onChange={(e) => setSubcollection(e.target.value)}>
             <option value="">{t('c.anySubcollection')}</option>
-            {facets.subcollections.map((s) => <option key={s} value={s}>{s}</option>)}
+            {facets.subcollections.map((s) => <option key={s} value={s}>{tl(s)}</option>)}
           </select>
           <select className="input flex-1 min-w-[120px]" value={size} onChange={(e) => setSize(e.target.value)}>
             <option value="">{t('c.anySize')}</option>

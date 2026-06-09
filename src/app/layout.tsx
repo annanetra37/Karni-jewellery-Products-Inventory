@@ -9,6 +9,7 @@ import { I18nProvider } from '@/components/I18nProvider';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { dictFor } from '@/lib/i18n';
 import { getLocale } from '@/lib/i18n-server';
+import { getLabels } from '@/lib/labels';
 
 export const metadata: Metadata = {
   title: 'Karni Sales',
@@ -28,11 +29,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const unread = user ? await unreadCount(user.id) : 0;
   const locale = await getLocale();
   const dict = dictFor(locale);
+  const labels = await getLabels(locale);
 
   return (
     <html lang={locale}>
       <body className="min-h-screen pb-28">
-        <I18nProvider dict={dict} locale={locale}>
+        <I18nProvider dict={dict} locale={locale} labels={labels}>
           {user && (
             <header className="no-print sticky top-0 z-30 appbar">
               <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between gap-3">

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { requireUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { Thumb } from '@/components/Thumb';
+import { getT } from '@/lib/i18n-server';
 
 const SIZE_ORDER: Record<string, number> = { small: 1, medium: 2, large: 3 };
 
@@ -12,6 +13,7 @@ export default async function BrowseVariantsPage({
   params: Promise<{ collection: string; category: string }>;
 }) {
   await requireUser();
+  const { tl } = await getT();
   const { collection: encColl, category: encCat } = await params;
   const collection = decodeURIComponent(encColl);
   const category = decodeURIComponent(encCat);
@@ -45,9 +47,9 @@ export default async function BrowseVariantsPage({
 
   return (
     <div className="space-y-5">
-      <Link href={`/browse/${encodeURIComponent(collection)}`} className="btn-link">← Back to {collection}</Link>
+      <Link href={`/browse/${encodeURIComponent(collection)}`} className="btn-link">← Back to {tl(collection)}</Link>
       <header>
-        <h1 className="page-title">{collection} · {category}</h1>
+        <h1 className="page-title">{tl(collection)} · {tl(category)}</h1>
         <p className="page-subtitle">
           {variants.length} {variants.length === 1 ? 'item' : 'items'}
           {hasMultipleSizes && ' · grouped by size'}

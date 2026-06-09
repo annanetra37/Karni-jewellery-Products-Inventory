@@ -6,7 +6,7 @@ import { getT } from '@/lib/i18n-server';
 
 export default async function BrowseCollectionsPage() {
   const user = await requireUser();
-  const { t } = await getT();
+  const { t, tl } = await getT();
   const [rows, meta] = await Promise.all([
     prisma.variant.groupBy({
       by: ['collection'],
@@ -36,7 +36,7 @@ export default async function BrowseCollectionsPage() {
           <BrowseCard
             key={c.name}
             href={`/browse/${encodeURIComponent(c.name)}`}
-            title={c.name}
+            title={tl(c.name)}
             subtitle={`${c.count} ${c.count === 1 ? t('c.item') : t('c.items')}`}
             imageUrl={photos.get(c.name) || null}
           />

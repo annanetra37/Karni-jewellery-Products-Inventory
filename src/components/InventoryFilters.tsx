@@ -21,7 +21,7 @@ export function InventoryFilters({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const { t } = useT();
+  const { t, tl } = useT();
   const [pending, start] = useTransition();
 
   function push(next: URLSearchParams) {
@@ -141,6 +141,7 @@ export function InventoryFilters({
             onChange={(v) => setMulti('category', v)}
             placeholder={t('c.allCategories')}
             allLabel={t('c.allCategories')}
+            renderLabel={tl}
           />
         </div>
         <div>
@@ -151,6 +152,7 @@ export function InventoryFilters({
             onChange={(v) => setMulti('collection', v)}
             placeholder="—"
             allLabel="—"
+            renderLabel={tl}
           />
         </div>
         <div>
@@ -161,6 +163,7 @@ export function InventoryFilters({
             onChange={(v) => setMulti('subcollection', v)}
             placeholder={t('c.anySubcollection')}
             allLabel={t('c.anySubcollection')}
+            renderLabel={tl}
           />
         </div>
         <div>

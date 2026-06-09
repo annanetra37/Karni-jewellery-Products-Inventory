@@ -7,7 +7,7 @@ import { getT } from '@/lib/i18n-server';
 
 export default async function BrowseCategoriesPage({ params }: { params: Promise<{ collection: string }> }) {
   const user = await requireUser();
-  const { t } = await getT();
+  const { t, tl } = await getT();
   const { collection: encoded } = await params;
   const collection = decodeURIComponent(encoded);
 
@@ -31,7 +31,7 @@ export default async function BrowseCategoriesPage({ params }: { params: Promise
     <div className="space-y-4">
       <Link href="/browse" className="btn-link">{t('b.allCollections')}</Link>
       <header>
-        <h1 className="page-title">{collection}</h1>
+        <h1 className="page-title">{tl(collection)}</h1>
         <p className="page-subtitle">{t('b.pickCategory')}.</p>
       </header>
 
@@ -40,7 +40,7 @@ export default async function BrowseCategoriesPage({ params }: { params: Promise
           <BrowseCard
             key={c.name}
             href={`/browse/${encodeURIComponent(collection)}/${encodeURIComponent(c.name)}`}
-            title={c.name}
+            title={tl(c.name)}
             subtitle={`${c.count} ${c.count === 1 ? t('c.item') : t('c.items')}`}
             imageUrl={photos.get(c.name) || null}
           />
