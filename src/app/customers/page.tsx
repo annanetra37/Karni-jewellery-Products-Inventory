@@ -10,7 +10,11 @@ export default async function CustomersPage() {
   return (
     <div className="space-y-3">
       <h1 className="page-title">{t('cu.title')}</h1>
-      <CustomersList initial={customers.map((c) => ({ id: c.id, fullName: c.fullName, phone: c.phone, email: c.email }))} />
+      <CustomersList initial={customers.map((c) => ({
+        id: c.id, fullName: c.fullName, phone: c.phone, email: c.email,
+        birthday: c.birthday ? c.birthday.toISOString().slice(0, 10) : null,
+        address: c.address, instagram: c.instagram, gender: c.gender,
+      }))} />
     </div>
   );
 }

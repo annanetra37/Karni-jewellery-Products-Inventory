@@ -164,6 +164,14 @@ const D: Record<string, Record<Locale, string>> = {
   'inv.avgPrice': { en: 'Avg unit price', hy: 'Միջին գին', ru: 'Средняя цена' },
   'inv.search': { en: 'Search', hy: 'Որոնում', ru: 'Поиск' },
   'inv.checkedInBy': { en: 'First checked in by', hy: 'Առաջին անգամ ընդունել է', ru: 'Впервые принял' },
+  'inv.reorderPoint': { en: 'Reorder point', hy: 'Համալրման շեմ', ru: 'Точка дозаказа' },
+  'inv.onHand': { en: 'On hand', hy: 'Առկա', ru: 'В наличии' },
+  'inv.byPoint': { en: 'By selling point', hy: 'Ըստ վաճառակետի', ru: 'По точкам продаж' },
+  'inv.barcode': { en: 'Barcode', hy: 'Շտրիխկոդ', ru: 'Штрихкод' },
+  'inv.weight': { en: 'Weight', hy: 'Քաշ', ru: 'Вес' },
+  'inv.statusField': { en: 'Status', hy: 'Կարգավիճակ', ru: 'Статус' },
+  'inv.openProduct': { en: 'Open product →', hy: 'Բացել ապրանքը →', ru: 'Открыть товар →' },
+  'inv.tapForDetail': { en: 'Tap a row for full detail', hy: 'Հպեք տողին՝ ամբողջ տվյալների համար', ru: 'Нажмите строку для деталей' },
 
   // Login
   'l.signInToContinue': { en: 'Sign in to continue.', hy: 'Մուտք գործեք՝ շարունակելու համար։', ru: 'Войдите, чтобы продолжить.' },
@@ -199,6 +207,8 @@ const D: Record<string, Record<Locale, string>> = {
   's.pmTransfer': { en: 'TRANSFER', hy: 'Փոխանցում', ru: 'Перевод' },
   's.pmOther': { en: 'OTHER', hy: 'Այլ', ru: 'Другое' },
   's.customer': { en: 'Customer', hy: 'Հաճախորդ', ru: 'Клиент' },
+  's.birthday': { en: 'Birthday', hy: 'Ծննդյան օր', ru: 'День рождения' },
+  's.birthdayRequired': { en: 'Birthday is required for a new customer.', hy: 'Նոր հաճախորդի համար ծննդյան օրը պարտադիր է։', ru: 'Для нового клиента укажите день рождения.' },
   's.findCustomer': { en: 'Find by name / phone / email', hy: 'Որոնել՝ անուն / հեռախոս / էլ. հասցե', ru: 'Поиск по имени / телефону / email' },
   's.addCustomer': { en: '+ Add new customer', hy: '+ Ավելացնել նոր հաճախորդ', ru: '+ Добавить нового клиента' },
   's.fullName': { en: 'Full name', hy: 'Անուն ազգանուն', ru: 'Полное имя' },

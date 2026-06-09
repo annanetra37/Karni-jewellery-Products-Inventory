@@ -223,6 +223,10 @@ model Customer {
   fullName    String
   email       String?
   phone       String?
+  birthday    DateTime? @db.Date
+  address     String?
+  instagram   String?
+  gender      String?
   notes       String?
   isLoyalty   Boolean @default(true)
   createdById String?
@@ -234,6 +238,7 @@ model Customer {
 
   @@index([phone])
   @@index([email])
+  @@index([birthday])
 }
 
 model Sale {

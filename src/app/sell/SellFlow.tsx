@@ -30,6 +30,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [custResults, setCustResults] = useState<Customer[]>([]);
   const [addNew, setAddNew] = useState(false);
   const [newName, setNewName] = useState(''); const [newPhone, setNewPhone] = useState(''); const [newEmail, setNewEmail] = useState('');
+  const [newBirthday, setNewBirthday] = useState('');
 
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [submitting, setSubmitting] = useState(false);
@@ -77,9 +78,10 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
     try {
       let customerId = customer?.id ?? null;
       if (addNew && newName && (newPhone || newEmail)) {
+        if (!newBirthday) { setErr(t('s.birthdayRequired')); setSubmitting(false); return; }
         const cr = await fetch('/api/customers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fullName: newName, phone: newPhone || null, email: newEmail || null }),
+          body: JSON.stringify({ fullName: newName, phone: newPhone || null, email: newEmail || null, birthday: newBirthday }),
         });
         const cj = await cr.json();
         if (!cr.ok) { setErr(cj.error || 'Could not save customer'); setSubmitting(false); return; }
@@ -201,6 +203,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 <input className="input" placeholder={t('s.fullName')} value={newName} onChange={(e) => setNewName(e.target.value)} />
                 <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
                 <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                <label className="label">{t('s.birthday')} <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <input className="input" type="date" value={newBirthday} onChange={(e) => setNewBirthday(e.target.value)} />
                 <button className="text-karni-700 underline text-sm" onClick={() => setAddNew(false)}>{t('c.cancel')}</button>
               </div>
             ) : (

@@ -58,7 +58,8 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
     },
     select: {
       id: true, sku: true, designName: true, category: true, collection: true, subcollection: true,
-      size: true, color: true, priceAmd: true, reorderPoint: true, imageUrl: true,
+      size: true, color: true, priceAmd: true, costAmd: true, reorderPoint: true, imageUrl: true,
+      barcode: true, status: true, weightG: true,
       inventoryItems: {
         ...(sellingPointId ? { where: { sellingPointId } } : {}),
         select: { quantity: true, sellingPoint: { select: { id: true, name: true } } },
@@ -132,10 +133,12 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   const colorData = sortByUnits(byColor).slice(0, 10);
   const spData = sortByUnits(bySp);
 
-  // List: lowest stock first (out/low surface at the top), then by value.
-  const listItems = [...visible]
-    .sort((a, b) => (a.qty - b.qty) || (b.value - a.value))
-    .slice(0, LIST_CAP);
+  // Group the (tab-scoped) items so out-of-stock and low-stock each get their
+  // own detailed, drill-down section. These groups partition `visible`, so the
+  // stock tab automatically controls which of them appear.
+  const outItems = visible.filter((c) => c.qty <= 0).sort((a, b) => b.value - a.value);
+  const lowItems = visible.filter((c) => c.status === 'low').sort((a, b) => (a.qty - b.qty) || (b.value - a.value));
+  const healthyItems = visible.filter((c) => c.status === 'in').sort((a, b) => b.value - a.value);
 
   const statusRows = [
     { key: 'in', label: t('inv.statusIn'), count: inCount, color: 'var(--success)' },
@@ -191,6 +194,70 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
 
   const chipClass = (status: Computed['status']) =>
     status === 'out' ? 'chip chip-danger' : status === 'low' ? 'chip chip-warn' : 'chip chip-ok';
+
+  // Every field we surface when a row is expanded — so low / out-of-stock
+  // items (and any other) can be inspected in full without leaving the page.
+  const fieldsFor = (c: Computed) => {
+    const v = c.variant;
+    const byPoint = v.inventoryItems.length
+      ? v.inventoryItems.map((it) => `${it.sellingPoint.name}: ${it.quantity}`).join(' · ')
+      : '—';
+    return [
+      { label: t('c.category'), value: v.category },
+      { label: t('c.collection'), value: v.collection },
+      { label: t('c.subcollection'), value: v.subcollection },
+      { label: t('c.size'), value: v.size },
+      { label: t('c.color'), value: v.color },
+      { label: t('c.price'), value: formatAmd(Number(v.priceAmd)) },
+      { label: t('c.cost'), value: v.costAmd != null ? formatAmd(Number(v.costAmd)) : null },
+      { label: t('inv.reorderPoint'), value: String(v.reorderPoint) },
+      { label: t('inv.onHand'), value: String(c.qty) },
+      { label: t('inv.byPoint'), value: byPoint },
+      { label: t('inv.barcode'), value: v.barcode },
+      { label: t('inv.weight'), value: v.weightG != null ? `${Number(v.weightG)} g` : null },
+      { label: t('inv.statusField'), value: v.status },
+    ] as { label: string; value: string | null | undefined }[];
+  };
+
+  const renderItem = (c: Computed) => (
+    <details key={c.variant.id} className="border-b border-karni-100 last:border-0">
+      <summary className="flex items-center gap-3 py-2 cursor-pointer" style={{ listStyle: 'none' }}>
+        <Thumb src={c.variant.imageUrl} alt={c.variant.designName} size={12} />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium truncate">{c.variant.designName}
+            <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> · {[c.variant.color, c.variant.size].filter(Boolean).join(' · ')}</span>
+          </p>
+          <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{c.variant.sku}</p>
+        </div>
+        <div className="text-right shrink-0 flex items-center gap-2">
+          <div>
+            <span className={chipClass(c.status)}>{c.qty}</span>
+            {c.value > 0 && <p className="text-[10px] mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>{formatAmd(c.value)}</p>}
+          </div>
+          <svg className="opacity-50" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </summary>
+      <div className="pb-3 pt-1 pl-[60px]">
+        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+          {fieldsFor(c).map((f) => (f.value != null && f.value !== '') ? (
+            <div key={f.label}>
+              <dt className="uppercase text-[9px] tracking-wide font-semibold" style={{ color: 'var(--ink-faint)' }}>{f.label}</dt>
+              <dd className="font-medium" style={{ color: 'var(--ink)' }}>{f.value}</dd>
+            </div>
+          ) : null)}
+        </dl>
+        <Link href={`/admin/products/${c.variant.id}`} className="btn-link text-xs mt-2 inline-block">{t('inv.openProduct')}</Link>
+      </div>
+    </details>
+  );
+
+  const groups = [
+    { key: 'out', label: t('inv.statusOut'), chip: 'chip chip-danger', items: outItems },
+    { key: 'low', label: t('inv.statusLow'), chip: 'chip chip-warn', items: lowItems },
+    { key: 'in', label: t('inv.statusIn'), chip: 'chip chip-ok', items: healthyItems },
+  ].filter((g) => g.items.length > 0);
 
   return (
     <div className="space-y-5">
@@ -275,67 +342,58 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
         <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>{t('inv.empty')}</div>
       ) : (
         <>
-          <section className="grid md:grid-cols-2 gap-3">
-            <div className="card">
-              <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.byCategory')}</p>
-              <BarChart data={catData} />
-            </div>
-            <div className="card">
-              <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.bySellingPoint')}</p>
-              <BarChart data={spData} />
-            </div>
-          </section>
+          {totalUnits > 0 && (
+            <>
+              <section className="grid md:grid-cols-2 gap-3">
+                <div className="card">
+                  <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.byCategory')}</p>
+                  <BarChart data={catData} />
+                </div>
+                <div className="card">
+                  <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.bySellingPoint')}</p>
+                  <BarChart data={spData} />
+                </div>
+              </section>
 
-          <section className="grid md:grid-cols-2 gap-3">
-            <div className="card">
-              <p className="font-semibold mb-3">{t('an.valueBy')} {t('an.byCollection')}</p>
-              <DonutChart slices={collData} total={collData.reduce((s, d) => s + d.value, 0)} />
-            </div>
-            <div className="card">
-              <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.bySize')}</p>
-              <BarChart data={sizeData} />
-            </div>
-          </section>
+              <section className="grid md:grid-cols-2 gap-3">
+                <div className="card">
+                  <p className="font-semibold mb-3">{t('an.valueBy')} {t('an.byCollection')}</p>
+                  <DonutChart slices={collData} total={collData.reduce((s, d) => s + d.value, 0)} />
+                </div>
+                <div className="card">
+                  <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.bySize')}</p>
+                  <BarChart data={sizeData} />
+                </div>
+              </section>
 
-          <section className="card">
-            <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.byColor')}</p>
-            <BarChart data={colorData} />
-          </section>
+              <section className="card">
+                <p className="font-semibold mb-3">{t('an.unitsBy')} {t('an.byColor')}</p>
+                <BarChart data={colorData} />
+              </section>
+            </>
+          )}
 
-          {/* Item list — flexible explorer covering both in and out of stock */}
-          <section className="card">
-            <div className="flex items-center justify-between mb-3 gap-2">
-              <p className="font-semibold">{t('inv.items')}</p>
-              <span className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                {t('c.showing')} {listItems.length.toLocaleString()} {t('c.of')} {visible.length.toLocaleString()}
-              </span>
-            </div>
-            <ul className="space-y-2">
-              {listItems.map((c) => (
-                <li key={c.variant.id} className="flex items-center gap-3 border-b border-karni-100 pb-2 last:border-0 last:pb-0">
-                  <Thumb src={c.variant.imageUrl} alt={c.variant.designName} size={12} />
-                  <Link href={`/admin/products/${c.variant.id}`} className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{c.variant.designName}
-                      <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> · {[c.variant.color, c.variant.size].filter(Boolean).join(' · ')}</span>
-                    </p>
-                    <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{c.variant.sku}</p>
-                    {c.variant.inventoryItems.length > 0 && (
-                      <p className="text-[10px] truncate" style={{ color: 'var(--ink-faint)' }}>
-                        {c.variant.inventoryItems.map((it) => `${it.sellingPoint.name}: ${it.quantity}`).join(' · ')}
-                      </p>
-                    )}
-                  </Link>
-                  <div className="text-right shrink-0">
-                    <span className={chipClass(c.status)}>{c.qty}</span>
-                    {c.value > 0 && <p className="text-[10px] mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>{formatAmd(c.value)}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {visible.length > LIST_CAP && (
-              <p className="text-xs text-center mt-3" style={{ color: 'var(--ink-soft)' }}>{t('inv.refineHint')}</p>
-            )}
-          </section>
+          {/* Detailed, expandable item groups. Out-of-stock and low-stock get
+              their own sections so every field can be drilled into. Tap a row
+              to reveal the full data. */}
+          {groups.map((g) => (
+            <section key={g.key} className="card">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <p className="font-semibold flex items-center gap-2">
+                  <span className={g.chip}>{g.items.length.toLocaleString()}</span> {g.label}
+                </p>
+                <span className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                  {g.items.length > LIST_CAP
+                    ? `${t('c.showing')} ${LIST_CAP} ${t('c.of')} ${g.items.length.toLocaleString()}`
+                    : t('inv.tapForDetail')}
+                </span>
+              </div>
+              <div>{g.items.slice(0, LIST_CAP).map(renderItem)}</div>
+              {g.items.length > LIST_CAP && (
+                <p className="text-xs text-center mt-3" style={{ color: 'var(--ink-soft)' }}>{t('inv.refineHint')}</p>
+              )}
+            </section>
+          ))}
         </>
       )}
 
