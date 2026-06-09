@@ -40,6 +40,7 @@ export function ProductSearch({
       : 'all'
   );
   const [page, setPage] = useState(urlSync ? (Number(readUrlParam('spg', '0')) || 0) : 0);
+  const [showAllColors, setShowAllColors] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [totalStock, setTotalStock] = useState(0);
@@ -136,6 +137,14 @@ export function ProductSearch({
   const end = Math.min(total, (page + 1) * LIMIT);
   const lastPage = Math.max(0, Math.ceil(total / LIMIT) - 1);
 
+  // Keep the colour list compact on small screens — show a handful, with the
+  // active colour always visible, and a toggle to expand the rest.
+  const COLOR_CHIP_LIMIT = 8;
+  const collapsedColors = facets.colors.slice(0, COLOR_CHIP_LIMIT);
+  const colorChips = showAllColors
+    ? facets.colors
+    : (color && !collapsedColors.includes(color) ? [color, ...collapsedColors] : collapsedColors);
+
   return (
     <div className="space-y-3">
       <div className="card space-y-3">
@@ -182,7 +191,7 @@ export function ProductSearch({
         {facets.colors.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] uppercase tracking-wide font-semibold mr-1" style={{ color: 'var(--ink-soft)' }}>{t('c.color')}</span>
-            {facets.colors.map((c) => {
+            {colorChips.map((c) => {
               const active = color === c;
               return (
                 <button key={c} type="button" onClick={() => setColor(active ? '' : c)}
@@ -195,6 +204,11 @@ export function ProductSearch({
                 </button>
               );
             })}
+            {facets.colors.length > COLOR_CHIP_LIMIT && (
+              <button type="button" onClick={() => setShowAllColors((s) => !s)} className="btn-link text-xs">
+                {showAllColors ? t('c.showLess') : `+${facets.colors.length - COLOR_CHIP_LIMIT} ${t('c.more')}`}
+              </button>
+            )}
           </div>
         )}
 
