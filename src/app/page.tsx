@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getCurrentUser, isAdmin, isSuperAdmin } from '@/lib/auth';
+import { ensureBirthdayReminders } from '@/lib/birthdays';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
@@ -18,6 +19,12 @@ export default async function HomePage() {
         </div>
       </div>
     );
+  }
+
+  // Lazily surface birthday reminders for super admins (no scheduler needed;
+  // de-duped so it's safe on every load).
+  if (isSuperAdmin(user)) {
+    try { await ensureBirthdayReminders(); } catch (e) { console.error('[birthday] reminder check failed', e); }
   }
 
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);

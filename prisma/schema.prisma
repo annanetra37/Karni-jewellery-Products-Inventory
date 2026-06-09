@@ -69,6 +69,7 @@ enum NotificationType {
   LOW_STOCK
   KACCA_MISMATCH
   INVITE
+  BIRTHDAY
 }
 
 model User {
@@ -76,6 +77,7 @@ model User {
   email            String   @unique
   passwordHash     String?
   fullName         String
+  birthday         DateTime? @db.Date
   role             Role     @default(SALES)
   isActive         Boolean  @default(true)
   inviteToken      String?  @unique
@@ -95,6 +97,8 @@ model User {
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   notifications    Notification[]
   adminSellingPoints AdminSellingPoint[]
+
+  @@index([birthday])
 }
 
 model Design {
