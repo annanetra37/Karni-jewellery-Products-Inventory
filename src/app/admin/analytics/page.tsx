@@ -26,7 +26,7 @@ function bucket(map: Map<string, { units: number; value: number }>, key: string 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Params }) {
   const me = await requireAdmin();
   const scope = await sellingPointScope(me);
-  const { t } = await getT();
+  const { t, tl } = await getT();
   const sp = await searchParams;
   const split = (v: string | undefined) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
   const categories = split(sp.category);
@@ -110,9 +110,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const margin = totalCost > 0 && totalValue > 0 ? (totalValue - totalCost) / totalValue : null;
 
   const sortByUnits = (m: Map<string, { units: number; value: number }>) =>
-    Array.from(m.entries()).map(([label, v]) => ({ label, value: v.units, sub: formatAmd(v.value) })).sort((a, b) => b.value - a.value);
+    Array.from(m.entries()).map(([label, v]) => ({ label: tl(label), value: v.units, sub: formatAmd(v.value) })).sort((a, b) => b.value - a.value);
   const sortByValue = (m: Map<string, { units: number; value: number }>) =>
-    Array.from(m.entries()).map(([label, v]) => ({ label, value: Math.round(v.value), sub: `${v.units} u.` })).sort((a, b) => b.value - a.value);
+    Array.from(m.entries()).map(([label, v]) => ({ label: tl(label), value: Math.round(v.value), sub: `${v.units} u.` })).sort((a, b) => b.value - a.value);
 
   const catData = sortByUnits(byCategory);
   const collData = sortByValue(byCollection);
@@ -153,9 +153,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const sellingPointName = sellingPointId ? sellingPoints.find((s) => s.id === sellingPointId)?.name : '';
   const joinShort = (vs: string[]) => vs.length <= 2 ? vs.join(', ') : `${vs[0]} +${vs.length - 1}`;
   const activeChips: { label: string; value: string }[] = [
-    categories.length > 0 && { label: t('c.category'), value: joinShort(categories) },
-    collections.length > 0 && { label: t('c.collection'), value: joinShort(collections) },
-    subcollections.length > 0 && { label: t('c.subcollection'), value: joinShort(subcollections) },
+    categories.length > 0 && { label: t('c.category'), value: joinShort(categories.map(tl)) },
+    collections.length > 0 && { label: t('c.collection'), value: joinShort(collections.map(tl)) },
+    subcollections.length > 0 && { label: t('c.subcollection'), value: joinShort(subcollections.map(tl)) },
     sizes.length > 0 && { label: t('c.size'), value: joinShort(sizes) },
     colors.length > 0 && { label: t('c.color'), value: joinShort(colors) },
     sellingPointName && { label: t('c.sellingPoint'), value: sellingPointName },

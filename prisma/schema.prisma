@@ -389,6 +389,8 @@ model Counter {
 model CollectionMeta {
   id        String   @id @default(cuid())
   name      String   @unique
+  nameHy    String?
+  nameRu    String?
   imageUrl  String?
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
@@ -397,6 +399,8 @@ model CollectionMeta {
 model CategoryMeta {
   id        String   @id @default(cuid())
   name      String   @unique
+  nameHy    String?
+  nameRu    String?
   imageUrl  String?
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())

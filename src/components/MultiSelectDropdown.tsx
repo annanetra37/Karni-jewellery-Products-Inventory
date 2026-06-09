@@ -2,14 +2,17 @@
 import { useEffect, useRef, useState } from 'react';
 
 export function MultiSelectDropdown({
-  options, value, onChange, placeholder, allLabel,
+  options, value, onChange, placeholder, allLabel, renderLabel,
 }: {
   options: string[];
   value: string[];
   onChange: (next: string[]) => void;
   placeholder: string;
   allLabel?: string;
+  /** Display the option with a localized label while keeping its raw value. */
+  renderLabel?: (v: string) => string;
 }) {
+  const label = (v: string) => (renderLabel ? renderLabel(v) : v);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -26,8 +29,8 @@ export function MultiSelectDropdown({
   const summary = value.length === 0
     ? (allLabel || placeholder)
     : value.length === 1
-      ? value[0]
-      : `${value[0]} +${value.length - 1}`;
+      ? label(value[0])
+      : `${label(value[0])} +${value.length - 1}`;
 
   function toggle(opt: string) {
     onChange(value.includes(opt) ? value.filter((v) => v !== opt) : [...value, opt]);
@@ -75,7 +78,7 @@ export function MultiSelectDropdown({
                       checked={checked}
                       onChange={() => toggle(opt)}
                     />
-                    <span style={{ color: 'var(--ink)' }}>{opt}</span>
+                    <span style={{ color: 'var(--ink)' }}>{label(opt)}</span>
                   </label>
                 </li>
               );

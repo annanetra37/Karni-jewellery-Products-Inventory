@@ -55,7 +55,7 @@ export function ProductBrowse({
   // Bumped on Refresh — every fetch in this component watches it so a click
   // re-pulls collections / categories / variants without a full page reload.
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const { t } = useT();
+  const { t, tl } = useT();
 
   const VAR_LIMIT = 24;
 
@@ -167,8 +167,8 @@ export function ProductBrowse({
         )}
         <span className="text-karni-700 truncate">
           {step === 'col' && t('b.pickCollection')}
-          {step === 'cat' && <>{collection} <span className="text-karni-400">·</span> {t('b.pickCategory')}</>}
-          {step === 'var' && <>{collection} <span className="text-karni-400">·</span> {category}</>}
+          {step === 'cat' && <>{tl(collection)} <span className="text-karni-400">·</span> {t('b.pickCategory')}</>}
+          {step === 'var' && <>{tl(collection)} <span className="text-karni-400">·</span> {tl(category)}</>}
         </span>
       </div>
       {step !== 'var' && (
@@ -198,7 +198,7 @@ export function ProductBrowse({
                 className="group block w-full text-left rounded-2xl overflow-hidden bg-white border border-karni-100 shadow-soft hover:shadow-lift transition-all hover:-translate-y-0.5">
                 <PhotoBox src={c.imageUrl} alt={c.name} />
                 <div className="p-3">
-                  <p className="font-semibold text-karni-900">{c.name}</p>
+                  <p className="font-semibold text-karni-900">{tl(c.name)}</p>
                   <p className="text-xs text-karni-700">{c.count} {t('c.items')}</p>
                 </div>
               </button>
@@ -224,7 +224,7 @@ export function ProductBrowse({
                 className="group block w-full text-left rounded-2xl overflow-hidden bg-white border border-karni-100 shadow-soft hover:shadow-lift transition-all hover:-translate-y-0.5">
                 <PhotoBox src={c.imageUrl} alt={c.name} />
                 <div className="p-3">
-                  <p className="font-semibold text-karni-900">{c.name}</p>
+                  <p className="font-semibold text-karni-900">{tl(c.name)}</p>
                   <p className="text-xs text-karni-700">{c.count} {t('c.items')}</p>
                 </div>
               </button>
