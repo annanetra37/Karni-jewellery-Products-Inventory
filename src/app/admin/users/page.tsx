@@ -187,7 +187,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
       <div className="inline-flex rounded-full p-0.5 gap-0.5" style={{ background: 'var(--bg-tint)', border: '1px solid var(--border-strong)' }}>
         {([
           { key: 'users', label: `Current users (${users.length})`, href: '/admin/users' },
-          { key: 'add', label: 'Add new user', href: '/admin/users?tab=add' },
+          { key: 'add', label: '+ Add new user', href: '/admin/users?tab=add' },
         ] as const).map((tb) => (
           <Link key={tb.key} href={tb.href} scroll={false}
             className="px-4 py-1.5 rounded-full text-sm font-semibold transition"
@@ -239,15 +239,21 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
           const assigned = new Set(u.adminSellingPoints.map((a) => a.sellingPointId));
           const roleChip = role === 'SUPER_ADMIN' ? 'chip-danger' : role === 'ADMIN' ? 'chip-warn' : '';
           return (
-            <li key={u.id} className="card space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold flex items-center gap-2 flex-wrap">
+            <li key={u.id}>
+              <details className="card group space-y-3">
+                <summary className="flex items-center justify-between gap-3 cursor-pointer select-none" style={{ listStyle: 'none' }}>
+                  <span className="font-semibold flex items-center gap-2 flex-wrap min-w-0">
                     {u.fullName}
                     <span className={`chip ${roleChip}`}>{ROLE_LABEL[role]}</span>
                     {!u.isActive && <span className="chip chip-danger">Disabled</span>}
                     {pending && <span className="chip chip-ok">Pending activation</span>}
-                  </p>
+                  </span>
+                  <svg className="shrink-0 transition-transform group-open:rotate-180" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--ink-soft)' }}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </summary>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm text-karni-700">{u.email}</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--ink-soft)' }}>
                     🎂 <span className="font-medium">Birthday:</span>{' '}
@@ -370,6 +376,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
                     <p className="text-xs text-karni-700">Tell the user the password verbally; they can change it themselves under <code>/account/password</code>.</p>
                   </form>
                 </div>
+              </details>
               </details>
             </li>
           );
