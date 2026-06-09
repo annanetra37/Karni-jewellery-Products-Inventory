@@ -1,32 +1,132 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-export function ImageUploadField({ name = 'imageUrl', defaultValue = '' }: { name?: string; defaultValue?: string }) {
+// Resize (never upscale) a blob through a canvas, returning a JPEG. Keeps
+// camera shots and large gallery photos well under the upload limit and makes
+// background removal much faster.
+async function resizeBlob(src: Blob, maxDim: number): Promise<Blob> {
+  const bmp = await createImageBitmap(src);
+  const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (ctx) ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  return await new Promise<Blob>((res, rej) =>
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/jpeg', 0.92));
+}
+
+export function ImageUploadField({
+  name = 'imageUrl', defaultValue = '', cutout = false,
+}: {
+  name?: string;
+  defaultValue?: string;
+  /** When true, the "Erase background" toggle defaults on (ideal for product cut-outs). */
+  cutout?: boolean;
+}) {
   const [url, setUrl] = useState(defaultValue);
   const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState('');
   const [err, setErr] = useState('');
+  const [removeBg, setRemoveBg] = useState(cutout);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setErr('');
-    setUploading(true);
+  // Attach / detach the live camera stream.
+  useEffect(() => {
+    if (cameraOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraOpen]);
+  // Always release the camera when the component goes away.
+  useEffect(() => () => stopStream(), []);
+
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+  function closeCamera() {
+    stopStream();
+    setCameraOpen(false);
+  }
+
+  async function handleImage(file: Blob, cut: boolean) {
+    setErr(''); setUploading(true);
     try {
+      let toUpload: Blob;
+      if (cut) {
+        setStatus('Erasing background…');
+        const resized = await resizeBlob(file, 2000);
+        const { removeBackground } = await import('@imgly/background-removal');
+        toUpload = await removeBackground(resized);
+      } else {
+        toUpload = file;
+      }
+      setStatus('Uploading…');
+      const upName = cut ? 'cutout.png' : (file instanceof File ? file.name : 'photo.jpg');
+      const upType = cut ? 'image/png' : (file.type || 'image/jpeg');
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', new File([toUpload], upName, { type: upType }));
       const r = await fetch('/api/upload', { method: 'POST', body: fd });
       const j = await r.json();
       if (!r.ok) { setErr(j.error || 'Upload failed'); return; }
       setUrl(j.url);
     } catch {
-      setErr('Upload failed — check your connection and try again.');
+      setErr(cut
+        ? 'Background removal failed. Try again, or turn it off and re-upload.'
+        : 'Upload failed — check your connection and try again.');
     } finally {
-      setUploading(false);
+      setUploading(false); setStatus('');
       if (fileRef.current) fileRef.current.value = '';
     }
   }
+
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleImage(file, removeBg);
+  }
+
+  async function openCamera() {
+    setErr('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErr('Camera is not available in this browser. Use file upload instead.');
+      return;
+    }
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } }, audio: false,
+      });
+      setCameraOpen(true);
+    } catch {
+      setErr('Could not access the camera. Grant permission, or use file upload.');
+    }
+  }
+
+  function capture() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const wantCut = removeBg;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      closeCamera();
+      handleImage(file, wantCut);
+    }, 'image/jpeg', 0.92);
+  }
+
+  const checker = 'repeating-conic-gradient(#e9e2d2 0% 25%, #f7f2e7 0% 50%) 50% / 16px 16px';
 
   return (
     <div className="space-y-3">
@@ -36,7 +136,7 @@ export function ImageUploadField({ name = 'imageUrl', defaultValue = '' }: { nam
       {url ? (
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="Product" className="w-28 h-28 rounded-xl object-cover border border-karni-200" />
+          <img src={url} alt="Product" className="w-28 h-28 rounded-xl object-contain border border-karni-200" style={{ background: checker }} />
           <button type="button" className="btn-link-danger" onClick={() => setUrl('')}>Remove photo</button>
         </div>
       ) : (
@@ -47,8 +147,18 @@ export function ImageUploadField({ name = 'imageUrl', defaultValue = '' }: { nam
         </div>
       )}
 
-      <div>
-        <label className="label" htmlFor="image-upload">Upload a photo</label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" className="accent-karni-600" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} disabled={uploading} />
+        <span style={{ color: 'var(--ink)' }}>Erase background automatically</span>
+      </label>
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary" onClick={openCamera} disabled={uploading}>
+          📷 Take photo
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          Choose file
+        </button>
         <input
           id="image-upload"
           ref={fileRef}
@@ -56,18 +166,37 @@ export function ImageUploadField({ name = 'imageUrl', defaultValue = '' }: { nam
           accept="image/jpeg,image/png,image/webp,image/gif"
           onChange={onFile}
           disabled={uploading}
-          className="input"
+          className="hidden"
         />
-        <p className="text-xs text-karni-700 mt-1">
-          {uploading ? 'Uploading to storage…' : 'JPEG / PNG / WebP / GIF, up to 5 MB. Stored in Azure Blob Storage.'}
-        </p>
-        {err && <p className="banner-danger mt-2">{err}</p>}
       </div>
+      <p className="text-xs text-karni-700">
+        {uploading
+          ? (status || 'Working…')
+          : removeBg
+            ? 'Capture or pick a photo — the background is erased before upload.'
+            : 'JPEG / PNG / WebP / GIF, up to 10 MB.'}
+      </p>
+      {err && <p className="banner-danger mt-1">{err}</p>}
 
       <div>
         <label className="label" htmlFor="image-url">…or paste a URL</label>
         <input id="image-url" className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…/photo.jpg" />
       </div>
+
+      {/* Live camera modal */}
+      {cameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md space-y-3">
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video ref={videoRef} playsInline muted className="w-full rounded-xl bg-black aspect-[3/4] object-cover" />
+            <div className="flex gap-2">
+              <button type="button" className="btn-primary flex-1" onClick={capture}>Capture</button>
+              <button type="button" className="btn-secondary" onClick={closeCamera}>Cancel</button>
+            </div>
+            {removeBg && <p className="text-xs text-center text-white/80">Background will be erased automatically after capture.</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
