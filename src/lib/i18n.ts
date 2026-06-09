@@ -64,6 +64,8 @@ const D: Record<string, Record<Locale, string>> = {
   'c.showing': { en: 'Showing', hy: 'Ցուցադրվում է', ru: 'Показано' },
   'c.of': { en: 'of', hy: 'ընդհանուր', ru: 'из' },
   'c.noMatches': { en: 'No matches', hy: 'Համընկնումներ չկան', ru: 'Совпадений нет' },
+  'c.more': { en: 'more', hy: 'ևս', ru: 'ещё' },
+  'c.showLess': { en: 'Show less', hy: 'Թաքցնել', ru: 'Свернуть' },
   'c.noResults': { en: 'No results.', hy: 'Արդյունքներ չկան։', ru: 'Нет результатов.' },
   'c.page': { en: 'Page', hy: 'Էջ', ru: 'Стр.' },
   'c.searchPlaceholder': {
