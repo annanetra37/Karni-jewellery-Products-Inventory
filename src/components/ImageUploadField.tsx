@@ -2,9 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Resize (never upscale) a blob through a canvas, returning a JPEG. Keeps
-// camera shots and large gallery photos well under the upload limit and makes
-// background removal much faster.
+// Clean studio backdrop the cut-out is placed onto (matches the app's beige).
+const BACKDROP = '#f5eedf';
+// Keep plenty of detail; large enough for a crisp catalog photo, small enough
+// to stay well under the upload cap.
+const MAX_DIM = 2560;
+
+// Resize (never upscale) a blob through a canvas, returning a high-quality JPEG.
 async function resizeBlob(src: Blob, maxDim: number): Promise<Blob> {
   const bmp = await createImageBitmap(src);
   const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
@@ -13,10 +17,28 @@ async function resizeBlob(src: Blob, maxDim: number): Promise<Blob> {
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  if (ctx) ctx.drawImage(bmp, 0, 0, w, h);
+  if (ctx) { ctx.imageSmoothingQuality = 'high'; ctx.drawImage(bmp, 0, 0, w, h); }
   bmp.close?.();
   return await new Promise<Blob>((res, rej) =>
-    canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/jpeg', 0.92));
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/jpeg', 0.95));
+}
+
+// Flatten a transparent cut-out onto a solid backdrop, returning a high-quality
+// JPEG — so the product keeps a clean white-beige background, not a hole.
+async function flattenOnBackdrop(src: Blob, color: string): Promise<Blob> {
+  const bmp = await createImageBitmap(src);
+  const canvas = document.createElement('canvas');
+  canvas.width = bmp.width; canvas.height = bmp.height;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, 0, 0);
+  }
+  bmp.close?.();
+  return await new Promise<Blob>((res, rej) =>
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/jpeg', 0.95));
 }
 
 export function ImageUploadField({
@@ -61,16 +83,18 @@ export function ImageUploadField({
     try {
       let toUpload: Blob;
       if (cut) {
-        setStatus('Erasing background…');
-        const resized = await resizeBlob(file, 2000);
+        setStatus('Cleaning up background…');
+        const resized = await resizeBlob(file, MAX_DIM);
         const { removeBackground } = await import('@imgly/background-removal');
-        toUpload = await removeBackground(resized);
+        const cutBlob = await removeBackground(resized, { output: { format: 'image/png', quality: 1 } });
+        setStatus('Finishing…');
+        toUpload = await flattenOnBackdrop(cutBlob, BACKDROP);
       } else {
         toUpload = file;
       }
       setStatus('Uploading…');
-      const upName = cut ? 'cutout.png' : (file instanceof File ? file.name : 'photo.jpg');
-      const upType = cut ? 'image/png' : (file.type || 'image/jpeg');
+      const upName = cut ? 'product.jpg' : (file instanceof File ? file.name : 'photo.jpg');
+      const upType = cut ? 'image/jpeg' : (file.type || 'image/jpeg');
       const fd = new FormData();
       fd.append('file', new File([toUpload], upName, { type: upType }));
       const r = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -100,7 +124,12 @@ export function ImageUploadField({
     }
     try {
       streamRef.current = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }, audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 2560 },
+          height: { ideal: 1440 },
+        },
+        audio: false,
       });
       setCameraOpen(true);
     } catch {
@@ -116,6 +145,7 @@ export function ImageUploadField({
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const wantCut = removeBg;
     canvas.toBlob((blob) => {
@@ -123,10 +153,8 @@ export function ImageUploadField({
       const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
       closeCamera();
       handleImage(file, wantCut);
-    }, 'image/jpeg', 0.92);
+    }, 'image/jpeg', 0.97);
   }
-
-  const checker = 'repeating-conic-gradient(#e9e2d2 0% 25%, #f7f2e7 0% 50%) 50% / 16px 16px';
 
   return (
     <div className="space-y-3">
@@ -136,7 +164,7 @@ export function ImageUploadField({
       {url ? (
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="Product" className="w-28 h-28 rounded-xl object-contain border border-karni-200" style={{ background: checker }} />
+          <img src={url} alt="Product" className="w-28 h-28 rounded-xl object-contain border border-karni-200" style={{ background: BACKDROP }} />
           <button type="button" className="btn-link-danger" onClick={() => setUrl('')}>Remove photo</button>
         </div>
       ) : (
@@ -149,7 +177,7 @@ export function ImageUploadField({
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" className="accent-karni-600" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} disabled={uploading} />
-        <span style={{ color: 'var(--ink)' }}>Erase background automatically</span>
+        <span style={{ color: 'var(--ink)' }}>Clean up background (white-beige)</span>
       </label>
 
       <div className="flex flex-wrap gap-2">
@@ -173,7 +201,7 @@ export function ImageUploadField({
         {uploading
           ? (status || 'Working…')
           : removeBg
-            ? 'Capture or pick a photo — the background is erased before upload.'
+            ? 'Capture or pick a photo — the busy background is replaced with a clean white-beige backdrop.'
             : 'JPEG / PNG / WebP / GIF, up to 10 MB.'}
       </p>
       {err && <p className="banner-danger mt-1">{err}</p>}
@@ -193,7 +221,7 @@ export function ImageUploadField({
               <button type="button" className="btn-primary flex-1" onClick={capture}>Capture</button>
               <button type="button" className="btn-secondary" onClick={closeCamera}>Cancel</button>
             </div>
-            {removeBg && <p className="text-xs text-center text-white/80">Background will be erased automatically after capture.</p>}
+            {removeBg && <p className="text-xs text-center text-white/80">The background will be replaced with a clean white-beige backdrop after capture.</p>}
           </div>
         </div>
       )}
