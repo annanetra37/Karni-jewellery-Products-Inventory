@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   const offset = Math.max(0, Number(sp.get('offset') || 0));
 
   let rows: Row[];
-  let totalRows: { count: bigint }[];
+  let totalRows: { count: bigint; stock: bigint }[];
 
   if (q) {
     const like = `%${q}%`;
@@ -70,9 +70,9 @@ export async function GET(req: NextRequest) {
       `,
       sellingPointId, category, collection, color, size, like, q, stock, limit, offset, subcollection
     );
-    totalRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+    totalRows = await prisma.$queryRawUnsafe<{ count: bigint; stock: bigint }[]>(
       `
-      SELECT COUNT(*)::bigint AS count
+      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(COALESCE(ii.quantity, 0)), 0)::bigint AS stock
       FROM "Variant" v
       LEFT JOIN "InventoryItem" ii
         ON ii."variantId" = v.id
@@ -115,9 +115,9 @@ export async function GET(req: NextRequest) {
       `,
       sellingPointId, category, collection, color, size, stock, limit, offset, subcollection
     );
-    totalRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+    totalRows = await prisma.$queryRawUnsafe<{ count: bigint; stock: bigint }[]>(
       `
-      SELECT COUNT(*)::bigint AS count
+      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(COALESCE(ii.quantity, 0)), 0)::bigint AS stock
       FROM "Variant" v
       LEFT JOIN "InventoryItem" ii
         ON ii."variantId" = v.id
@@ -137,5 +137,6 @@ export async function GET(req: NextRequest) {
   }
 
   const total = Number(totalRows[0]?.count ?? 0);
-  return NextResponse.json({ results: rows, total, limit, offset });
+  const totalStock = Number(totalRows[0]?.stock ?? 0);
+  return NextResponse.json({ results: rows, total, totalStock, limit, offset });
 }
