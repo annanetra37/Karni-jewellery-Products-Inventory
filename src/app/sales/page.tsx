@@ -1,0 +1,166 @@
+import { requireUser, isAdmin, sellingPointScope } from '@/lib/auth';
+import { prisma } from '@/lib/db';
+import { formatAmd } from '@/lib/currency';
+import { Thumb } from '@/components/Thumb';
+import Link from 'next/link';
+
+export const dynamic = 'force-dynamic';
+
+type Search = Promise<{ range?: string }>;
+
+function startOf(range: string): Date | null {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (range === '7d') { d.setDate(d.getDate() - 6); return d; }
+  if (range === '30d') { d.setDate(d.getDate() - 29); return d; }
+  if (range === 'all') return null;
+  return d; // today
+}
+
+const RANGES = [
+  { key: 'today', label: 'Today' },
+  { key: '7d', label: 'Last 7 days' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: 'all', label: 'All time' },
+];
+
+export default async function SalesPage({ searchParams }: { searchParams: Search }) {
+  const user = await requireUser();
+  const sp = await searchParams;
+  const range = RANGES.some((r) => r.key === sp.range) ? sp.range! : 'today';
+  const startDate = startOf(range);
+
+  const admin = isAdmin(user);
+  const scope = admin ? await sellingPointScope(user) : null;
+  // Admins see all sales (scoped to their selling points); salespeople see
+  // only their own.
+  const where = {
+    ...(startDate ? { createdAt: { gte: startDate } } : {}),
+    ...(admin
+      ? (scope ? { sellingPointId: { in: scope } } : {})
+      : { soldById: user.id }),
+  };
+
+  const [sales, agg] = await Promise.all([
+    prisma.sale.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        customer: { select: { fullName: true, phone: true } },
+        soldBy: { select: { fullName: true } },
+        sellingPoint: { select: { name: true } },
+        lineItems: { include: { variant: { select: { designName: true, sku: true, color: true, size: true, imageUrl: true } } } },
+      },
+    }),
+    prisma.sale.aggregate({ where, _count: true, _sum: { totalAmd: true } }),
+  ]);
+
+  const totalCount = agg._count;
+  const totalRevenue = Number(agg._sum.totalAmd ?? 0);
+
+  return (
+    <div className="space-y-4">
+      <header>
+        <h1 className="page-title">Sales</h1>
+        <p className="page-subtitle">{admin ? 'Every sale with its items, amount and customer.' : 'Your sales with items, amount and customer.'}</p>
+      </header>
+
+      {/* Range pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {RANGES.map((r) => (
+          <Link key={r.key} href={`/sales?range=${r.key}`} scroll={false}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
+            style={range === r.key
+              ? { background: 'var(--brand)', color: '#fff' }
+              : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
+            {r.label}
+          </Link>
+        ))}
+      </div>
+
+      {/* Summary */}
+      <section className="rounded-2xl p-5 shadow-lift border" style={{ background: 'var(--brand)', color: '#f4ecd9', borderColor: 'var(--brand-deep)' }}>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Sales</p>
+            <p className="display text-4xl font-semibold mt-1">{totalCount.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Revenue</p>
+            <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalRevenue)}</p>
+          </div>
+        </div>
+      </section>
+
+      {sales.length === 0 ? (
+        <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>No sales in this period.</div>
+      ) : (
+        <ul className="space-y-2">
+          {sales.map((s) => {
+            const units = s.lineItems.reduce((n, li) => n + li.quantity, 0);
+            return (
+              <li key={s.id}>
+                <details className="card group">
+                  <summary className="flex items-center justify-between gap-3 cursor-pointer select-none" style={{ listStyle: 'none' }}>
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">
+                        {s.customer?.fullName || 'Walk-in'}
+                        <span className="text-xs font-normal" style={{ color: 'var(--ink-soft)' }}> · {units} {units === 1 ? 'item' : 'items'}</span>
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                        {s.createdAt.toLocaleString()} · <span className="font-mono">{s.saleNumber}</span>
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <div>
+                        <p className="font-bold tabular-nums">{formatAmd(Number(s.totalAmd))}</p>
+                        <p className="text-[10px] uppercase" style={{ color: 'var(--ink-soft)' }}>{s.paymentMethod || 'CASH'}</p>
+                      </div>
+                      <svg className="shrink-0 transition-transform group-open:rotate-180" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--ink-soft)' }}>
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </div>
+                  </summary>
+
+                  <div className="mt-3 space-y-3">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--ink-soft)' }}>
+                      <span><span className="font-semibold">Sold by:</span> {s.soldBy.fullName}</span>
+                      <span><span className="font-semibold">Point:</span> {s.sellingPoint.name}</span>
+                      {s.customer?.phone && <span><span className="font-semibold">Phone:</span> {s.customer.phone}</span>}
+                    </div>
+
+                    <ul className="space-y-2">
+                      {s.lineItems.map((li) => (
+                        <li key={li.id} className="flex items-center gap-3 border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                          <Thumb src={li.variant.imageUrl} alt={li.variant.designName} size={12} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{li.variant.designName}
+                              <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> · {[li.variant.color, li.variant.size].filter(Boolean).join(' · ')}</span>
+                            </p>
+                            <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{li.variant.sku}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm tabular-nums">{li.quantity} × {formatAmd(Number(li.unitPriceAmd))}</p>
+                            <p className="font-semibold tabular-nums">{formatAmd(Number(li.lineTotalAmd))}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <Link href={`/sale/${s.id}/receipt`} className="btn-link text-xs inline-block">Open receipt →</Link>
+                  </div>
+                </details>
+              </li>
+            );
+          })}
+          {totalCount > sales.length && (
+            <li className="text-xs text-center py-2" style={{ color: 'var(--ink-soft)' }}>
+              Showing the latest {sales.length} of {totalCount.toLocaleString()} — narrow the range to see more.
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}

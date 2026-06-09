@@ -72,14 +72,16 @@ export default async function HomePage() {
       )}
 
       <section className="grid grid-cols-2 gap-3">
-        <div className="card">
+        <Link href="/sales?range=today" className="card-interactive block">
           <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('h.salesToday')}</p>
           <p className="display text-3xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{todaySalesCount}</p>
-        </div>
-        <div className="card">
+          <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
+        </Link>
+        <Link href="/sales?range=today" className="card-interactive block">
           <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('h.revenueToday')}</p>
           <p className="display text-2xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
-        </div>
+          <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
+        </Link>
       </section>
 
       <section className="grid grid-cols-2 gap-3">

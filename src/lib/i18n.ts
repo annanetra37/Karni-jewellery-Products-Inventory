@@ -92,6 +92,7 @@ const D: Record<string, Record<Locale, string>> = {
   'h.signedInAs': { en: 'Signed in as', hy: 'Մուտք գործած է որպես', ru: 'Вход выполнен как' },
   'h.salesToday': { en: 'Sales today', hy: 'Վաճառքները այսօր', ru: 'Продажи сегодня' },
   'h.revenueToday': { en: 'Revenue today', hy: 'Շրջանառությունը այսօր', ru: 'Выручка сегодня' },
+  'h.viewDetails': { en: 'View details', hy: 'Տեսնել մանրամասները', ru: 'Подробнее' },
   'h.shiftOpenAt': { en: 'Shift open at', hy: 'Հերթափոխը բացված է՝', ru: 'Смена открыта в' },
   'h.openingCount': { en: 'Opening count', hy: 'Բացման մնացորդը', ru: 'Открывающий остаток' },
   'h.started': { en: 'started', hy: 'սկսված', ru: 'начата' },
