@@ -8,6 +8,9 @@ import { CopyButton } from '@/components/CopyButton';
 import { PasswordInput } from '@/components/PasswordInput';
 import { BirthdayField } from '@/components/BirthdayField';
 
+// Always render fresh from the DB — never serve a cached access state.
+export const dynamic = 'force-dynamic';
+
 /** Parse a "YYYY-MM-DD" form value into a UTC-midnight Date, or null. */
 function parseBirthday(v: unknown): Date | null {
   const s = String(v || '').trim();
@@ -76,13 +79,26 @@ async function updateAccessAction(formData: FormData) {
   const me = await requireSuperAdmin();
   const id = String(formData.get('id') || '');
   const role = normalizeRole(formData.get('role'));
-  const sellingPoints = formData.getAll('sellingPoints').map(String);
   if (!id) return;
   // Guard against a super admin accidentally demoting themselves out of access.
   if (id === me.id && role !== 'SUPER_ADMIN') return;
   const birthday = parseBirthday(formData.get('birthday'));
   await prisma.user.update({ where: { id }, data: { role, ...(birthday ? { birthday } : {}) } });
-  await syncSellingPoints(id, role, sellingPoints);
+  // Moving to super admin clears any point restriction.
+  if (role === 'SUPER_ADMIN') await prisma.adminSellingPoint.deleteMany({ where: { userId: id } });
+  revalidatePath('/admin/users');
+}
+
+/** Save ONLY a user's selling-point access (its own form, so role saves can't wipe it). */
+async function updateSellingPointsAction(formData: FormData) {
+  'use server';
+  await requireSuperAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return;
+  const target = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+  if (!target) return;
+  const selected = formData.getAll('sellingPoints').map(String);
+  await syncSellingPoints(id, target.role as RoleStr, selected);
   revalidatePath('/admin/users');
 }
 
@@ -227,14 +243,18 @@ export default async function AdminUsersPage() {
                   {u.birthday && (
                     <p className="text-xs text-karni-700 mt-0.5">🎂 {u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</p>
                   )}
-                  <p className="text-xs mt-1" style={{ color: 'var(--ink-soft)' }}>
-                    <span className="font-semibold">Access: </span>
-                    {role === 'SUPER_ADMIN'
-                      ? 'All selling points (full access)'
-                      : assigned.size > 0
-                        ? [...assigned].map((id) => spName.get(id) || id).join(', ')
-                        : 'All selling points (no restriction set)'}
-                  </p>
+                  <div className="mt-1.5">
+                    <p className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--ink-soft)' }}>Selling-point access</p>
+                    {role === 'SUPER_ADMIN' ? (
+                      <span className="chip chip-ok">All selling points (full access)</span>
+                    ) : assigned.size > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {[...assigned].map((id) => <span key={id} className="chip chip-accent">{spName.get(id) || id}</span>)}
+                      </div>
+                    ) : (
+                      <span className="chip">All selling points · no limit set</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   {u.isActive ? (
@@ -265,9 +285,32 @@ export default async function AdminUsersPage() {
                 </div>
               )}
 
+              {/* Selling-point access — its own form so saving role can never wipe it.
+                  The `key` re-mounts the checkboxes with fresh state after a save. */}
+              {role !== 'SUPER_ADMIN' && (
+                <div className="rounded-xl border px-3 py-3 space-y-3" style={{ borderColor: 'var(--brand)', background: 'var(--surface-2)' }}>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>Selling-point access</p>
+                  <form key={[...assigned].sort().join(',')} action={updateSellingPointsAction} className="space-y-3">
+                    <input type="hidden" name="id" value={u.id} />
+                    <p className="text-xs text-karni-700">
+                      Tick the points this {role === 'ADMIN' ? 'admin' : 'salesperson'} may use. Leave all unticked for full access.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {sellingPoints.map((sp) => (
+                        <label key={sp.id} className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" name="sellingPoints" value={sp.id} defaultChecked={assigned.has(sp.id)} className="accent-karni-600" />
+                          <span style={{ color: 'var(--ink)' }}>{sp.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button className="btn-primary" type="submit">Save access</button>
+                  </form>
+                </div>
+              )}
+
               <details className="rounded-xl border border-karni-100 px-3 py-2">
                 <summary className="cursor-pointer text-sm text-karni-700 select-none hover:text-karni-900">
-                  Role &amp; access
+                  Role &amp; birthday
                 </summary>
                 <form action={updateAccessAction} className="pt-3 space-y-3">
                   <input type="hidden" name="id" value={u.id} />
@@ -283,11 +326,10 @@ export default async function AdminUsersPage() {
                     <label className="label">Birthday</label>
                     <BirthdayField name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
                   </div>
-                  <SellingPointPicker sellingPoints={sellingPoints} selected={assigned} />
                   {u.id === me?.id && (
                     <p className="text-xs text-karni-700">You can&apos;t remove your own super-admin access here.</p>
                   )}
-                  <button className="btn-secondary" type="submit">Save role &amp; access</button>
+                  <button className="btn-secondary" type="submit">Save role &amp; birthday</button>
                 </form>
               </details>
 
