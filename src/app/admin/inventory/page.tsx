@@ -18,7 +18,7 @@ type Params = Promise<{
   q?: string;
 }>;
 
-const LIST_CAP = 240;
+const LIST_CAP = 50;
 
 function bucket(map: Map<string, { units: number; value: number }>, key: string | null | undefined, units: number, value: number) {
   const k = key ?? '—';
@@ -49,30 +49,55 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
     : (scope === null ? null : { sellingPointId: { in: scope } });
   const q = (sp.q || '').trim();
 
-  // Pull every non-archived variant matching the attribute filters, with its
-  // inventory rows (scoped to the chosen selling point when set). This lets us
-  // surface BOTH in-stock and out-of-stock variants — out-of-stock variants
-  // simply carry zero (or no) inventory rows.
-  const variants = await prisma.variant.findMany({
-    where: {
-      status: { not: 'ARCHIVED' },
-      ...(categories.length ? { category: { in: categories } } : {}),
-      ...(collections.length ? { collection: { in: collections } } : {}),
-      ...(subcollections.length ? { subcollection: { in: subcollections } } : {}),
-      ...(sizes.length ? { size: { in: sizes } } : {}),
-      ...(colors.length ? { color: { in: colors } } : {}),
-      ...(q ? { searchBlob: { contains: q.toLowerCase() } } : {}),
-    },
-    select: {
-      id: true, sku: true, designName: true, category: true, collection: true, subcollection: true,
-      size: true, color: true, priceAmd: true, costAmd: true, reorderPoint: true, imageUrl: true,
-      barcode: true, status: true, weightG: true,
-      inventoryItems: {
-        ...(invItemWhere ? { where: invItemWhere } : {}),
-        select: { quantity: true, sellingPoint: { select: { id: true, name: true } } },
-      },
-    },
+  // Facets for the dropdowns — "leave one out" scoped so each dropdown only
+  // offers values still present under the other active filters.
+  const baseStatus = { status: { not: 'ARCHIVED' as const } };
+  const facetWhere = (excluded: 'category' | 'collection' | 'subcollection' | 'size' | 'color') => ({
+    ...baseStatus,
+    ...(excluded !== 'category' && categories.length ? { category: { in: categories } } : {}),
+    ...(excluded !== 'collection' && collections.length ? { collection: { in: collections } } : {}),
+    ...(excluded !== 'subcollection' && subcollections.length ? { subcollection: { in: subcollections } } : {}),
+    ...(excluded !== 'size' && sizes.length ? { size: { in: sizes } } : {}),
+    ...(excluded !== 'color' && colors.length ? { color: { in: colors } } : {}),
   });
+  const movesWhere = sellingPointId ? { sellingPointId } : (scope === null ? {} : { sellingPointId: { in: scope } });
+
+  // Pull every non-archived variant matching the attribute filters (with its
+  // scoped inventory rows so BOTH in-stock and out-of-stock surface), plus the
+  // facet, selling-point and movement data — all in one parallel batch.
+  const [variants, catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw, sellingPointsAll, recentMovements] = await Promise.all([
+    prisma.variant.findMany({
+      where: {
+        status: { not: 'ARCHIVED' },
+        ...(categories.length ? { category: { in: categories } } : {}),
+        ...(collections.length ? { collection: { in: collections } } : {}),
+        ...(subcollections.length ? { subcollection: { in: subcollections } } : {}),
+        ...(sizes.length ? { size: { in: sizes } } : {}),
+        ...(colors.length ? { color: { in: colors } } : {}),
+        ...(q ? { searchBlob: { contains: q.toLowerCase() } } : {}),
+      },
+      select: {
+        id: true, sku: true, designName: true, category: true, collection: true, subcollection: true,
+        size: true, color: true, priceAmd: true, costAmd: true, reorderPoint: true, imageUrl: true,
+        barcode: true, status: true, weightG: true,
+        inventoryItems: {
+          ...(invItemWhere ? { where: invItemWhere } : {}),
+          select: { quantity: true, sellingPoint: { select: { id: true, name: true } } },
+        },
+      },
+    }),
+    prisma.variant.findMany({ where: { ...facetWhere('category'), category: { not: null } }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('collection'), collection: { not: null } }, distinct: ['collection'], select: { collection: true }, orderBy: { collection: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('subcollection'), subcollection: { not: null } }, distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('size'), size: { not: null } }, distinct: ['size'], select: { size: true }, orderBy: { size: 'asc' } }),
+    prisma.variant.findMany({ where: { ...facetWhere('color'), color: { not: null } }, distinct: ['color'], select: { color: true }, orderBy: { color: 'asc' } }),
+    prisma.sellingPoint.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    prisma.stockMovement.findMany({
+      where: movesWhere,
+      orderBy: { createdAt: 'desc' }, take: 20,
+      include: { variant: true, sellingPoint: true, performedBy: true },
+    }),
+  ]);
 
   type Computed = {
     variant: typeof variants[number];
@@ -154,37 +179,12 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   ];
   const statusMax = Math.max(inCount, lowCount, outCount, 1);
 
-  // Facets for the dropdowns — "leave one out" scoped so each dropdown only
-  // offers values still present under the other active filters.
-  const baseStatus = { status: { not: 'ARCHIVED' as const } };
-  const facetWhere = (excluded: 'category' | 'collection' | 'subcollection' | 'size' | 'color') => ({
-    ...baseStatus,
-    ...(excluded !== 'category' && categories.length ? { category: { in: categories } } : {}),
-    ...(excluded !== 'collection' && collections.length ? { collection: { in: collections } } : {}),
-    ...(excluded !== 'subcollection' && subcollections.length ? { subcollection: { in: subcollections } } : {}),
-    ...(excluded !== 'size' && sizes.length ? { size: { in: sizes } } : {}),
-    ...(excluded !== 'color' && colors.length ? { color: { in: colors } } : {}),
-  });
-  const [catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw, sellingPointsAll] = await Promise.all([
-    prisma.variant.findMany({ where: { ...facetWhere('category'), category: { not: null } }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
-    prisma.variant.findMany({ where: { ...facetWhere('collection'), collection: { not: null } }, distinct: ['collection'], select: { collection: true }, orderBy: { collection: 'asc' } }),
-    prisma.variant.findMany({ where: { ...facetWhere('subcollection'), subcollection: { not: null } }, distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' } }),
-    prisma.variant.findMany({ where: { ...facetWhere('size'), size: { not: null } }, distinct: ['size'], select: { size: true }, orderBy: { size: 'asc' } }),
-    prisma.variant.findMany({ where: { ...facetWhere('color'), color: { not: null } }, distinct: ['color'], select: { color: true }, orderBy: { color: 'asc' } }),
-    prisma.sellingPoint.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
-  ]);
   const allCategories = catsRaw.map((v) => v.category!).filter(Boolean);
   const allCollections = collsRaw.map((v) => v.collection!).filter(Boolean);
   const allSubcollections = subsRaw.map((v) => v.subcollection!).filter(Boolean);
   const allSizes = sizesRaw.map((v) => v.size!).filter(Boolean);
   const allColors = colorsRaw.map((v) => v.color!).filter(Boolean);
   const sellingPoints = scope === null ? sellingPointsAll : sellingPointsAll.filter((s) => scope.includes(s.id));
-
-  const recentMovements = await prisma.stockMovement.findMany({
-    where: sellingPointId ? { sellingPointId } : (scope === null ? {} : { sellingPointId: { in: scope } }),
-    orderBy: { createdAt: 'desc' }, take: 20,
-    include: { variant: true, sellingPoint: true, performedBy: true },
-  });
 
   // Active filter chips for the hero.
   const joinShort = (vs: string[]) => vs.length <= 2 ? vs.join(', ') : `${vs[0]} +${vs.length - 1}`;
