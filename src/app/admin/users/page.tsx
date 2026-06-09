@@ -1,7 +1,6 @@
 import { requireSuperAdmin, hashPassword, getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { publicOrigin } from '@/lib/origin';
-import { sendEmail, wrap } from '@/lib/email';
 import { randomBytes } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { CopyButton } from '@/components/CopyButton';
@@ -59,18 +58,14 @@ async function inviteAction(formData: FormData) {
     create: { email, fullName, birthday, role, inviteToken: token, isActive: true },
     update: { fullName, birthday, role, inviteToken: token, isActive: true, passwordHash: null, inviteAcceptedAt: null },
   });
-  await syncSellingPoints(user.id, role, sellingPoints);
-  const origin = await publicOrigin();
-  const url = `${origin}/invite/${token}`;
-  sendEmail({
-    to: email,
-    subject: `You're invited to Karni Sales`,
-    html: wrap(
-      `Welcome to Karni Sales, ${fullName}`,
-      `<p>You have been invited as a <strong>${ROLE_LABEL[role]}</strong>. Click the button below to set your password and sign in.</p>`,
-      { href: url, label: 'Activate my account' },
-    ),
-  }).catch((e) => console.error('[invite] email failed', e));
+  // No email is sent — the one-time activation link is shown in the user's row
+  // below for the admin to copy and share. Selling-point sync must never block
+  // the invite (and thus the link from appearing).
+  try {
+    await syncSellingPoints(user.id, role, sellingPoints);
+  } catch (e) {
+    console.error('[invite] selling-point sync failed', e);
+  }
   revalidatePath('/admin/users');
 }
 
@@ -123,21 +118,11 @@ async function resetPasswordAction(formData: FormData) {
   await requireSuperAdmin();
   const id = String(formData.get('id') || '');
   const token = randomBytes(24).toString('hex');
-  const user = await prisma.user.update({
+  // No email — the new activation link is shown in the user's row to copy.
+  await prisma.user.update({
     where: { id },
     data: { passwordHash: null, inviteToken: token, inviteAcceptedAt: null },
   });
-  const origin = await publicOrigin();
-  const url = `${origin}/invite/${token}`;
-  sendEmail({
-    to: user.email,
-    subject: 'Reset your Karni Sales password',
-    html: wrap(
-      'Password reset',
-      `<p>An admin reset your password. Click the link below to choose a new one.</p>`,
-      { href: url, label: 'Set a new password' },
-    ),
-  }).catch((e) => console.error('[reset] email failed', e));
   revalidatePath('/admin/users');
 }
 
@@ -219,7 +204,7 @@ export default async function AdminUsersPage() {
         </div>
         <SellingPointPicker sellingPoints={sellingPoints} selected={new Set()} />
         <button className="btn-primary w-full sm:w-auto" type="submit">Generate invite</button>
-        <p className="text-xs text-karni-700">A one-time activation URL will appear in the user&apos;s row below. Copy and share it. Selling points apply only when the role is Admin.</p>
+        <p className="text-xs text-karni-700">No email is sent. A one-time activation link appears in the user&apos;s row below — copy and share it yourself. Selling-point access applies to Sales and Admins.</p>
       </form>
 
       <ul className="space-y-3">
@@ -240,9 +225,12 @@ export default async function AdminUsersPage() {
                     {pending && <span className="chip chip-ok">Pending activation</span>}
                   </p>
                   <p className="text-sm text-karni-700">{u.email}</p>
-                  {u.birthday && (
-                    <p className="text-xs text-karni-700 mt-0.5">🎂 {u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</p>
-                  )}
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--ink-soft)' }}>
+                    🎂 <span className="font-medium">Birthday:</span>{' '}
+                    {u.birthday
+                      ? u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+                      : <span style={{ opacity: 0.7 }}>not set</span>}
+                  </p>
                   <div className="mt-1.5">
                     <p className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--ink-soft)' }}>Selling-point access</p>
                     {role === 'SUPER_ADMIN' ? (
@@ -324,7 +312,7 @@ export default async function AdminUsersPage() {
                   </div>
                   <div>
                     <label className="label">Birthday</label>
-                    <BirthdayField name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
+                    <BirthdayField key={u.birthday ? u.birthday.toISOString() : 'none'} name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
                   </div>
                   {u.id === me?.id && (
                     <p className="text-xs text-karni-700">You can&apos;t remove your own super-admin access here.</p>
@@ -340,11 +328,11 @@ export default async function AdminUsersPage() {
                 <div className="pt-3 space-y-3">
                   <form action={resetPasswordAction} className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium">Send a reset link</p>
-                      <p className="text-xs text-karni-700">Wipes their password and generates a new activation URL above.</p>
+                      <p className="text-sm font-medium">Generate a reset link</p>
+                      <p className="text-xs text-karni-700">Wipes their password and shows a fresh activation link above to copy. No email is sent.</p>
                     </div>
                     <input type="hidden" name="id" value={u.id} />
-                    <button className="btn-secondary" type="submit">Send reset</button>
+                    <button className="btn-secondary" type="submit">Generate link</button>
                   </form>
                   <form action={setPasswordDirectlyAction} className="space-y-2">
                     <input type="hidden" name="id" value={u.id} />
