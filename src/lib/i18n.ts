@@ -164,6 +164,14 @@ const D: Record<string, Record<Locale, string>> = {
   'inv.avgPrice': { en: 'Avg unit price', hy: 'Միջին գին', ru: 'Средняя цена' },
   'inv.search': { en: 'Search', hy: 'Որոնում', ru: 'Поиск' },
   'inv.checkedInBy': { en: 'First checked in by', hy: 'Առաջին անգամ ընդունել է', ru: 'Впервые принял' },
+  'inv.reorderPoint': { en: 'Reorder point', hy: 'Համալրման շեմ', ru: 'Точка дозаказа' },
+  'inv.onHand': { en: 'On hand', hy: 'Առկա', ru: 'В наличии' },
+  'inv.byPoint': { en: 'By selling point', hy: 'Ըստ վաճառակետի', ru: 'По точкам продаж' },
+  'inv.barcode': { en: 'Barcode', hy: 'Շտրիխկոդ', ru: 'Штрихкод' },
+  'inv.weight': { en: 'Weight', hy: 'Քաշ', ru: 'Вес' },
+  'inv.statusField': { en: 'Status', hy: 'Կարգավիճակ', ru: 'Статус' },
+  'inv.openProduct': { en: 'Open product →', hy: 'Բացել ապրանքը →', ru: 'Открыть товар →' },
+  'inv.tapForDetail': { en: 'Tap a row for full detail', hy: 'Հպեք տողին՝ ամբողջ տվյալների համար', ru: 'Нажмите строку для деталей' },
 
   // Login
   'l.signInToContinue': { en: 'Sign in to continue.', hy: 'Մուտք գործեք՝ շարունակելու համար։', ru: 'Войдите, чтобы продолжить.' },
