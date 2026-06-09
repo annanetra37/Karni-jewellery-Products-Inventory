@@ -20,14 +20,6 @@ type Params = Promise<{
 
 const LIST_CAP = 50;
 
-function bucket(map: Map<string, { units: number; value: number }>, key: string | null | undefined, units: number, value: number) {
-  const k = key ?? '—';
-  const cur = map.get(k) || { units: 0, value: 0 };
-  cur.units += units;
-  cur.value += value;
-  map.set(k, cur);
-}
-
 export default async function AdminInventoryPage({ searchParams }: { searchParams: Params }) {
   const me = await requireAdmin();
   const scope = await sellingPointScope(me);
@@ -62,30 +54,85 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   });
   const movesWhere = sellingPointId ? { sellingPointId } : (scope === null ? {} : { sellingPointId: { in: scope } });
 
-  // Pull every non-archived variant matching the attribute filters (with its
-  // scoped inventory rows so BOTH in-stock and out-of-stock surface), plus the
-  // facet, selling-point and movement data — all in one parallel batch.
-  const [variants, catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw, sellingPointsAll, recentMovements] = await Promise.all([
-    prisma.variant.findMany({
-      where: {
-        status: { not: 'ARCHIVED' },
-        ...(categories.length ? { category: { in: categories } } : {}),
-        ...(collections.length ? { collection: { in: collections } } : {}),
-        ...(subcollections.length ? { subcollection: { in: subcollections } } : {}),
-        ...(sizes.length ? { size: { in: sizes } } : {}),
-        ...(colors.length ? { color: { in: colors } } : {}),
-        ...(q ? { searchBlob: { contains: q.toLowerCase() } } : {}),
-      },
-      select: {
-        id: true, sku: true, designName: true, category: true, collection: true, subcollection: true,
-        size: true, color: true, priceAmd: true, costAmd: true, reorderPoint: true, imageUrl: true,
-        barcode: true, status: true, weightG: true,
-        inventoryItems: {
-          ...(invItemWhere ? { where: invItemWhere } : {}),
-          select: { quantity: true, sellingPoint: { select: { id: true, name: true } } },
-        },
-      },
-    }),
+  // ---- Aggregate in the database and only load the rows we actually render.
+  // Loading every variant into Node was what made this page slow. ----
+  const qLower = q.toLowerCase();
+  // Stock-tab condition over the per-variant quantity (safe fixed fragments).
+  const tabCond =
+    stock === 'in' ? 'qty > 0'
+    : stock === 'low' ? 'qty > 0 AND qty <= reorder'
+    : stock === 'out' ? 'qty <= 0'
+    : 'TRUE';
+
+  // Per-variant quantity, honoring the selling-point scope + attribute filters.
+  // Multi-value filters are passed as comma-joined strings (values never
+  // contain commas) and split in SQL — avoids array-parameter binding quirks.
+  const spJoin = `(CASE WHEN $1 <> '' THEN ii."sellingPointId" = $1
+                       WHEN $2 = '' THEN TRUE
+                       ELSE ii."sellingPointId" = ANY(string_to_array($2, ',')) END)`;
+  const VQ = `
+    WITH vq AS (
+      SELECT v.id, v."priceAmd"::float8 AS price, v."reorderPoint" AS reorder,
+             v.category, v.collection, v.size, v.color,
+             COALESCE(SUM(ii.quantity), 0)::int AS qty
+      FROM "Variant" v
+      LEFT JOIN "InventoryItem" ii ON ii."variantId" = v.id AND ${spJoin}
+      WHERE v.status <> 'ARCHIVED'
+        AND ($3 = '' OR v.category = ANY(string_to_array($3, ',')))
+        AND ($4 = '' OR v.collection = ANY(string_to_array($4, ',')))
+        AND ($5 = '' OR v.subcollection = ANY(string_to_array($5, ',')))
+        AND ($6 = '' OR v.size = ANY(string_to_array($6, ',')))
+        AND ($7 = '' OR v.color = ANY(string_to_array($7, ',')))
+        AND ($8 = '' OR v."searchBlob" ILIKE '%' || $8 || '%')
+      GROUP BY v.id
+    )`;
+  const P = [
+    sellingPointId,
+    scope ? scope.join(',') : '',
+    categories.join(','), collections.join(','), subcollections.join(','),
+    sizes.join(','), colors.join(','), qLower,
+  ] as const;
+
+  type AggRow = { label: string; units: number; value: number };
+  const aggBy = (col: string) => prisma.$queryRawUnsafe<AggRow[]>(
+    `${VQ} SELECT COALESCE(${col}, '—') AS label, COALESCE(SUM(qty),0)::int AS units, COALESCE(SUM(qty*price),0)::float8 AS value
+     FROM vq WHERE ${tabCond} GROUP BY COALESCE(${col}, '—') ORDER BY units DESC`, ...P);
+  const groupIds = (cond: string, order: string) => prisma.$queryRawUnsafe<{ id: string; qty: number }[]>(
+    `${VQ} SELECT id, qty FROM vq WHERE ${cond} ORDER BY ${order} LIMIT ${LIST_CAP}`, ...P);
+
+  const showOut = stock === 'all' || stock === 'out';
+  const showLow = stock === 'all' || stock === 'in' || stock === 'low';
+  const showHealthy = stock === 'all' || stock === 'in';
+  const emptyIds: { id: string; qty: number }[] = [];
+
+  const [
+    summaryRows, catRows, collRows, sizeRows, colorRows, spRows,
+    outIdRows, lowIdRows, healthyIdRows,
+    catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw, sellingPointsAll, recentMovements,
+  ] = await Promise.all([
+    prisma.$queryRawUnsafe<{ in_count: number; low_count: number; out_count: number; units_all: number; value_all: number; units_low: number; value_low: number }[]>(
+      `${VQ} SELECT
+         COUNT(*) FILTER (WHERE qty > 0)::int AS in_count,
+         COUNT(*) FILTER (WHERE qty > 0 AND qty <= reorder)::int AS low_count,
+         COUNT(*) FILTER (WHERE qty <= 0)::int AS out_count,
+         COALESCE(SUM(qty),0)::int AS units_all,
+         COALESCE(SUM(qty*price),0)::float8 AS value_all,
+         COALESCE(SUM(qty) FILTER (WHERE qty>0 AND qty<=reorder),0)::int AS units_low,
+         COALESCE(SUM(qty*price) FILTER (WHERE qty>0 AND qty<=reorder),0)::float8 AS value_low
+       FROM vq`, ...P),
+    aggBy('category'),
+    aggBy('collection'),
+    aggBy('size'),
+    aggBy('color'),
+    prisma.$queryRawUnsafe<AggRow[]>(
+      `${VQ} SELECT sp.name AS label, COALESCE(SUM(ii.quantity),0)::int AS units, COALESCE(SUM(ii.quantity * vq.price),0)::float8 AS value
+       FROM vq
+       JOIN "InventoryItem" ii ON ii."variantId" = vq.id AND ${spJoin}
+       JOIN "SellingPoint" sp ON sp.id = ii."sellingPointId"
+       WHERE ${tabCond} GROUP BY sp.name ORDER BY units DESC`, ...P),
+    showOut ? groupIds('qty <= 0', 'qty*price DESC, id') : Promise.resolve(emptyIds),
+    showLow ? groupIds('qty > 0 AND qty <= reorder', 'qty ASC, qty*price DESC') : Promise.resolve(emptyIds),
+    showHealthy ? groupIds('qty > reorder', 'qty*price DESC, id') : Promise.resolve(emptyIds),
     prisma.variant.findMany({ where: { ...facetWhere('category'), category: { not: null } }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
     prisma.variant.findMany({ where: { ...facetWhere('collection'), collection: { not: null } }, distinct: ['collection'], select: { collection: true }, orderBy: { collection: 'asc' } }),
     prisma.variant.findMany({ where: { ...facetWhere('subcollection'), subcollection: { not: null } }, distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' } }),
@@ -99,78 +146,51 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
     }),
   ]);
 
-  type Computed = {
-    variant: typeof variants[number];
-    qty: number;
-    value: number;
-    status: 'in' | 'low' | 'out';
-  };
-
-  const computed: Computed[] = variants.map((v) => {
-    const qty = v.inventoryItems.reduce((s, it) => s + it.quantity, 0);
-    const value = Number(v.priceAmd) * qty;
-    const status: Computed['status'] = qty <= 0 ? 'out' : qty <= v.reorderPoint ? 'low' : 'in';
-    return { variant: v, qty, value, status };
-  });
-
-  // Status split across the full attribute-filtered set (ignores the stock tab,
-  // so the breakdown card always shows the whole picture). "In stock" means
-  // qty > 0 — exactly like the analytics page — and low-stock is a SUBSET of
-  // in-stock (so inCount + outCount = total variants).
-  let inCount = 0, lowCount = 0, outCount = 0;
-  for (const c of computed) {
-    if (c.qty <= 0) { outCount++; continue; }
-    inCount++;
-    if (c.status === 'low') lowCount++;
-  }
-
-  // The stock tab scopes everything below. "In stock" = qty > 0 (includes low).
-  const visible = computed.filter((c) =>
-    stock === 'in' ? c.qty > 0
-    : stock === 'low' ? c.status === 'low'
-    : stock === 'out' ? c.qty <= 0
-    : true);
-
-  let totalUnits = 0;
-  let totalValue = 0;
-  const byCategory = new Map<string, { units: number; value: number }>();
-  const byCollection = new Map<string, { units: number; value: number }>();
-  const bySize = new Map<string, { units: number; value: number }>();
-  const byColor = new Map<string, { units: number; value: number }>();
-  const bySp = new Map<string, { units: number; value: number }>();
-
-  for (const c of visible) {
-    totalUnits += c.qty;
-    totalValue += c.value;
-    bucket(byCategory, c.variant.category, c.qty, c.value);
-    bucket(byCollection, c.variant.collection, c.qty, c.value);
-    bucket(bySize, c.variant.size, c.qty, c.value);
-    bucket(byColor, c.variant.color, c.qty, c.value);
-    for (const it of c.variant.inventoryItems) {
-      const price = Number(c.variant.priceAmd);
-      bucket(bySp, it.sellingPoint.name, it.quantity, price * it.quantity);
-    }
-  }
-
+  const s0 = summaryRows[0] || { in_count: 0, low_count: 0, out_count: 0, units_all: 0, value_all: 0, units_low: 0, value_low: 0 };
+  const inCount = s0.in_count, lowCount = s0.low_count, outCount = s0.out_count;
+  const healthyCount = Math.max(0, inCount - lowCount);
+  const totalVariants = inCount + outCount;
+  const variantsShown = stock === 'all' ? totalVariants : stock === 'in' ? inCount : stock === 'low' ? lowCount : outCount;
+  const totalUnits = stock === 'out' ? 0 : stock === 'low' ? s0.units_low : s0.units_all;
+  const totalValue = stock === 'out' ? 0 : stock === 'low' ? s0.value_low : s0.value_all;
   const avgUnitPrice = totalUnits > 0 ? totalValue / totalUnits : 0;
 
-  const sortByUnits = (m: Map<string, { units: number; value: number }>) =>
-    Array.from(m.entries()).map(([label, v]) => ({ label, value: v.units, sub: formatAmd(v.value) })).sort((a, b) => b.value - a.value);
-  const sortByValue = (m: Map<string, { units: number; value: number }>) =>
-    Array.from(m.entries()).map(([label, v]) => ({ label, value: Math.round(v.value), sub: `${v.units} u.` })).sort((a, b) => b.value - a.value);
+  const toUnits = (rows: AggRow[]) => rows.map((r) => ({ label: r.label, value: r.units, sub: formatAmd(r.value) }));
+  const toValue = (rows: AggRow[]) => rows.map((r) => ({ label: r.label, value: Math.round(r.value), sub: `${r.units} u.` }));
+  const catData = toUnits(catRows);
+  const collData = toValue(collRows).sort((a, b) => b.value - a.value);
+  const sizeData = toUnits(sizeRows).slice(0, 12);
+  const colorData = toUnits(colorRows).slice(0, 10);
+  const spData = toUnits(spRows);
 
-  const catData = sortByUnits(byCategory);
-  const collData = sortByValue(byCollection);
-  const sizeData = sortByUnits(bySize).slice(0, 12);
-  const colorData = sortByUnits(byColor).slice(0, 10);
-  const spData = sortByUnits(bySp);
+  // Load full details only for the (capped) rows that will actually be shown.
+  const detailIds = [...outIdRows, ...lowIdRows, ...healthyIdRows].map((r) => r.id);
+  const detailVariants = detailIds.length
+    ? await prisma.variant.findMany({
+        where: { id: { in: detailIds } },
+        select: {
+          id: true, sku: true, designName: true, category: true, collection: true, subcollection: true,
+          size: true, color: true, priceAmd: true, costAmd: true, reorderPoint: true, imageUrl: true,
+          barcode: true, status: true, weightG: true,
+          inventoryItems: {
+            ...(invItemWhere ? { where: invItemWhere } : {}),
+            select: { quantity: true, sellingPoint: { select: { id: true, name: true } } },
+          },
+        },
+      })
+    : [];
+  type DetailVariant = typeof detailVariants[number];
+  type Computed = { variant: DetailVariant; qty: number; value: number; status: 'in' | 'low' | 'out' };
+  const detailById = new Map(detailVariants.map((v) => [v.id, v]));
+  const mkItems = (rows: { id: string; qty: number }[], status: Computed['status']): Computed[] =>
+    rows.map((r) => {
+      const v = detailById.get(r.id);
+      return v ? { variant: v, qty: r.qty, value: Number(v.priceAmd) * r.qty, status } : null;
+    }).filter((x): x is Computed => x !== null);
 
-  // Group the (tab-scoped) items so out-of-stock and low-stock each get their
-  // own detailed, drill-down section. These groups partition `visible`, so the
-  // stock tab automatically controls which of them appear.
-  const outItems = visible.filter((c) => c.qty <= 0).sort((a, b) => b.value - a.value);
-  const lowItems = visible.filter((c) => c.status === 'low').sort((a, b) => (a.qty - b.qty) || (b.value - a.value));
-  const healthyItems = visible.filter((c) => c.status === 'in').sort((a, b) => b.value - a.value);
+  const outItems = mkItems(outIdRows, 'out');
+  const lowItems = mkItems(lowIdRows, 'low');
+  const healthyItems = mkItems(healthyIdRows, 'in');
 
   const statusRows = [
     { key: 'in', label: t('inv.statusIn'), count: inCount, color: 'var(--success)' },
@@ -262,9 +282,9 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   );
 
   const groups = [
-    { key: 'out', label: t('inv.statusOut'), chip: 'chip chip-danger', items: outItems },
-    { key: 'low', label: t('inv.statusLow'), chip: 'chip chip-warn', items: lowItems },
-    { key: 'in', label: t('inv.statusIn'), chip: 'chip chip-ok', items: healthyItems },
+    { key: 'out', label: t('inv.statusOut'), chip: 'chip chip-danger', items: outItems, count: outCount },
+    { key: 'low', label: t('inv.statusLow'), chip: 'chip chip-warn', items: lowItems, count: lowCount },
+    { key: 'in', label: t('inv.statusIn'), chip: 'chip chip-ok', items: healthyItems, count: healthyCount },
   ].filter((g) => g.items.length > 0);
 
   return (
@@ -300,7 +320,7 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('inv.variants')}</p>
-            <p className="display text-4xl font-semibold mt-1">{visible.length.toLocaleString()}</p>
+            <p className="display text-4xl font-semibold mt-1">{variantsShown.toLocaleString()}</p>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('inv.totalUnits')}</p>
@@ -323,7 +343,7 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
           <div className="flex items-baseline justify-between mb-3 gap-2">
             <p className="font-semibold">{t('inv.byStatus')}</p>
             <span className="text-xs tabular-nums" style={{ color: 'var(--ink-soft)' }}>
-              {computed.length.toLocaleString()} {t('inv.variants').toLowerCase()}
+              {totalVariants.toLocaleString()} {t('inv.variants').toLowerCase()}
             </span>
           </div>
           <ul className="space-y-3">
@@ -346,7 +366,7 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
         </div>
       </section>
 
-      {visible.length === 0 ? (
+      {variantsShown === 0 ? (
         <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>{t('inv.empty')}</div>
       ) : (
         <>
@@ -388,16 +408,16 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
             <section key={g.key} className="card">
               <div className="flex items-center justify-between mb-2 gap-2">
                 <p className="font-semibold flex items-center gap-2">
-                  <span className={g.chip}>{g.items.length.toLocaleString()}</span> {g.label}
+                  <span className={g.chip}>{g.count.toLocaleString()}</span> {g.label}
                 </p>
                 <span className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                  {g.items.length > LIST_CAP
-                    ? `${t('c.showing')} ${LIST_CAP} ${t('c.of')} ${g.items.length.toLocaleString()}`
+                  {g.count > g.items.length
+                    ? `${t('c.showing')} ${g.items.length} ${t('c.of')} ${g.count.toLocaleString()}`
                     : t('inv.tapForDetail')}
                 </span>
               </div>
-              <div>{g.items.slice(0, LIST_CAP).map(renderItem)}</div>
-              {g.items.length > LIST_CAP && (
+              <div>{g.items.map(renderItem)}</div>
+              {g.count > g.items.length && (
                 <p className="text-xs text-center mt-3" style={{ color: 'var(--ink-soft)' }}>{t('inv.refineHint')}</p>
               )}
             </section>
