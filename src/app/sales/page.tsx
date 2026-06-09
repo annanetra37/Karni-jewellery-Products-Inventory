@@ -1,4 +1,4 @@
-import { requireUser, isAdmin, sellingPointScope } from '@/lib/auth';
+import { requireUser, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { Thumb } from '@/components/Thumb';
@@ -30,15 +30,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
   const range = RANGES.some((r) => r.key === sp.range) ? sp.range! : 'today';
   const startDate = startOf(range);
 
-  const admin = isAdmin(user);
-  const scope = admin ? await sellingPointScope(user) : null;
-  // Admins see all sales (scoped to their selling points); salespeople see
-  // only their own.
+  const scope = await sellingPointScope(user);
+  // Everyone sees the sales for the selling points they have access to —
+  // super admins and unrestricted users see all. (Previously salespeople were
+  // limited to their own sales, so they couldn't see a teammate's sale.)
   const where = {
     ...(startDate ? { createdAt: { gte: startDate } } : {}),
-    ...(admin
-      ? (scope ? { sellingPointId: { in: scope } } : {})
-      : { soldById: user.id }),
+    ...(scope ? { sellingPointId: { in: scope } } : {}),
   };
 
   const [sales, agg] = await Promise.all([
@@ -63,7 +61,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
     <div className="space-y-4">
       <header>
         <h1 className="page-title">Sales</h1>
-        <p className="page-subtitle">{admin ? 'Every sale with its items, amount and customer.' : 'Your sales with items, amount and customer.'}</p>
+        <p className="page-subtitle">Every sale with its items, amount, customer and who sold it.</p>
       </header>
 
       {/* Range pills */}
@@ -109,8 +107,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                         <span className="text-xs font-normal" style={{ color: 'var(--ink-soft)' }}> · {units} {units === 1 ? 'item' : 'items'}</span>
                       </p>
                       <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                        {s.createdAt.toLocaleString()} · <span className="font-mono">{s.saleNumber}</span>
+                        {s.createdAt.toLocaleString()} · by {s.soldBy.fullName}
                       </p>
+                      <p className="text-[10px] font-mono mt-0.5" style={{ color: 'var(--ink-faint)' }}>{s.saleNumber}</p>
                     </div>
                     <div className="text-right shrink-0 flex items-center gap-2">
                       <div>
