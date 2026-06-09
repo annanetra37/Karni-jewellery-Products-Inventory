@@ -240,9 +240,12 @@ export default async function AdminUsersPage() {
                     {pending && <span className="chip chip-ok">Pending activation</span>}
                   </p>
                   <p className="text-sm text-karni-700">{u.email}</p>
-                  {u.birthday && (
-                    <p className="text-xs text-karni-700 mt-0.5">🎂 {u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</p>
-                  )}
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--ink-soft)' }}>
+                    🎂 <span className="font-medium">Birthday:</span>{' '}
+                    {u.birthday
+                      ? u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+                      : <span style={{ opacity: 0.7 }}>not set</span>}
+                  </p>
                   <div className="mt-1.5">
                     <p className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--ink-soft)' }}>Selling-point access</p>
                     {role === 'SUPER_ADMIN' ? (
@@ -324,7 +327,7 @@ export default async function AdminUsersPage() {
                   </div>
                   <div>
                     <label className="label">Birthday</label>
-                    <BirthdayField name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
+                    <BirthdayField key={u.birthday ? u.birthday.toISOString() : 'none'} name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
                   </div>
                   {u.id === me?.id && (
                     <p className="text-xs text-karni-700">You can&apos;t remove your own super-admin access here.</p>
