@@ -204,7 +204,7 @@ async function seedAdmin() {
       email,
       fullName: process.env.ADMIN_NAME || 'Owner',
       passwordHash: await hashPassword(pw),
-      role: 'ADMIN',
+      role: 'SUPER_ADMIN',
       isActive: true,
       inviteAcceptedAt: new Date(),
     },

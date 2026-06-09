@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
@@ -24,7 +24,8 @@ function bucket(map: Map<string, { units: number; value: number }>, key: string 
 }
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Params }) {
-  await requireAdmin();
+  const me = await requireAdmin();
+  const scope = await sellingPointScope(me);
   const { t } = await getT();
   const sp = await searchParams;
   const split = (v: string | undefined) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
@@ -35,17 +36,24 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const colors = split(sp.color);
   const rawSp = (sp.sellingPointId || '').trim();
 
-  // Megamall is the default selling-point filter when the URL is clean.
-  // `_all` is the sentinel for "explicit all selling points".
-  const megamall = await prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } });
-  const sellingPointId = rawSp === '_all' ? '' : (rawSp || megamall?.id || '');
-
-  const inArr = <T,>(arr: T[]) => (arr.length > 0 ? { in: arr } : undefined);
+  // Megamall is the default selling-point filter when the URL is clean (super
+  // admins only). `_all` is the sentinel for "explicit all selling points".
+  // Point-scoped admins are always confined to their assigned selling points.
+  const megamall = scope === null
+    ? await prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } })
+    : null;
+  const sellingPointId = scope === null
+    ? (rawSp === '_all' ? '' : (rawSp || megamall?.id || ''))
+    : (rawSp && rawSp !== '_all' && scope.includes(rawSp) ? rawSp : '');
+  // Always honors the admin's allowed scope, even with a stale URL.
+  const spWhere = sellingPointId
+    ? { sellingPointId }
+    : (scope === null ? {} : { sellingPointId: { in: scope } });
 
   const rows = await prisma.inventoryItem.findMany({
     where: {
       quantity: { gt: 0 },
-      ...(sellingPointId ? { sellingPointId } : {}),
+      ...spWhere,
       variant: {
         status: { not: 'ARCHIVED' },
         ...(categories.length ? { category: { in: categories } } : {}),
@@ -138,7 +146,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
   const allSubcollections = subsRaw.map((v) => v.subcollection!).filter(Boolean);
   const allSizes = sizesRaw.map((v) => v.size!).filter(Boolean);
   const allColors = colorsRaw.map((v) => v.color!).filter(Boolean);
-  const sellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
+  const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
+  const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
 
   // Active filter chips (rendered server-side so the user sees the context clearly)
   const sellingPointName = sellingPointId ? sellingPoints.find((s) => s.id === sellingPointId)?.name : '';
@@ -166,7 +175,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pa
         sizes={allSizes}
         colors={allColors}
         sellingPoints={sellingPoints.map((s) => ({ id: s.id, name: s.name }))}
-        defaultSellingPointId={megamall?.id || ''}
+        defaultSellingPointId={scope === null ? (megamall?.id || '') : '_all'}
       />
 
       {/* HERO summary — combined totals for the current filter set */}

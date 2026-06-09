@@ -1,4 +1,4 @@
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
@@ -29,7 +29,8 @@ function bucket(map: Map<string, { units: number; value: number }>, key: string 
 }
 
 export default async function AdminInventoryPage({ searchParams }: { searchParams: Params }) {
-  await requireAdmin();
+  const me = await requireAdmin();
+  const scope = await sellingPointScope(me);
   const { t } = await getT();
   const sp = await searchParams;
   const split = (v: string | undefined) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
@@ -39,7 +40,13 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   const subcollections = split(sp.subcollection);
   const sizes = split(sp.size);
   const colors = split(sp.color);
-  const sellingPointId = (sp.sellingPointId || '').trim();
+  const rawSpId = (sp.sellingPointId || '').trim();
+  // A point-scoped admin may only narrow within their assigned selling points.
+  const sellingPointId = scope === null ? rawSpId : (rawSpId && scope.includes(rawSpId) ? rawSpId : '');
+  // Inventory rows are always confined to the allowed scope.
+  const invItemWhere = sellingPointId
+    ? { sellingPointId }
+    : (scope === null ? null : { sellingPointId: { in: scope } });
   const q = (sp.q || '').trim();
 
   // Pull every non-archived variant matching the attribute filters, with its
@@ -61,7 +68,7 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
       size: true, color: true, priceAmd: true, costAmd: true, reorderPoint: true, imageUrl: true,
       barcode: true, status: true, weightG: true,
       inventoryItems: {
-        ...(sellingPointId ? { where: { sellingPointId } } : {}),
+        ...(invItemWhere ? { where: invItemWhere } : {}),
         select: { quantity: true, sellingPoint: { select: { id: true, name: true } } },
       },
     },
@@ -158,7 +165,7 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
     ...(excluded !== 'size' && sizes.length ? { size: { in: sizes } } : {}),
     ...(excluded !== 'color' && colors.length ? { color: { in: colors } } : {}),
   });
-  const [catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw, sellingPoints] = await Promise.all([
+  const [catsRaw, collsRaw, subsRaw, sizesRaw, colorsRaw, sellingPointsAll] = await Promise.all([
     prisma.variant.findMany({ where: { ...facetWhere('category'), category: { not: null } }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
     prisma.variant.findMany({ where: { ...facetWhere('collection'), collection: { not: null } }, distinct: ['collection'], select: { collection: true }, orderBy: { collection: 'asc' } }),
     prisma.variant.findMany({ where: { ...facetWhere('subcollection'), subcollection: { not: null } }, distinct: ['subcollection'], select: { subcollection: true }, orderBy: { subcollection: 'asc' } }),
@@ -171,9 +178,10 @@ export default async function AdminInventoryPage({ searchParams }: { searchParam
   const allSubcollections = subsRaw.map((v) => v.subcollection!).filter(Boolean);
   const allSizes = sizesRaw.map((v) => v.size!).filter(Boolean);
   const allColors = colorsRaw.map((v) => v.color!).filter(Boolean);
+  const sellingPoints = scope === null ? sellingPointsAll : sellingPointsAll.filter((s) => scope.includes(s.id));
 
   const recentMovements = await prisma.stockMovement.findMany({
-    where: sellingPointId ? { sellingPointId } : {},
+    where: sellingPointId ? { sellingPointId } : (scope === null ? {} : { sellingPointId: { in: scope } }),
     orderBy: { createdAt: 'desc' }, take: 20,
     include: { variant: true, sellingPoint: true, performedBy: true },
   });

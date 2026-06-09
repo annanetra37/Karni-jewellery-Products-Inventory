@@ -1,4 +1,4 @@
-import { requireAdmin, hashPassword } from '@/lib/auth';
+import { requireSuperAdmin, hashPassword, getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { publicOrigin } from '@/lib/origin';
 import { sendEmail, wrap } from '@/lib/email';
@@ -7,19 +7,46 @@ import { revalidatePath } from 'next/cache';
 import { CopyButton } from '@/components/CopyButton';
 import { PasswordInput } from '@/components/PasswordInput';
 
+type RoleStr = 'SALES' | 'ADMIN' | 'SUPER_ADMIN';
+
+const ROLE_LABEL: Record<RoleStr, string> = {
+  SUPER_ADMIN: 'Super admin',
+  ADMIN: 'Admin',
+  SALES: 'Sales',
+};
+
+function normalizeRole(v: unknown): RoleStr {
+  return v === 'ADMIN' || v === 'SUPER_ADMIN' ? v : 'SALES';
+}
+
+/** Replace a user's managed selling points (only ADMINs are point-scoped). */
+async function syncSellingPoints(userId: string, role: RoleStr, requestedIds: string[]) {
+  await prisma.adminSellingPoint.deleteMany({ where: { userId } });
+  if (role !== 'ADMIN' || requestedIds.length === 0) return;
+  const valid = new Set((await prisma.sellingPoint.findMany({ select: { id: true } })).map((s) => s.id));
+  const ids = requestedIds.filter((id) => valid.has(id));
+  if (ids.length === 0) return;
+  await prisma.adminSellingPoint.createMany({
+    data: ids.map((sellingPointId) => ({ userId, sellingPointId })),
+    skipDuplicates: true,
+  });
+}
+
 async function inviteAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  await requireSuperAdmin();
   const email = String(formData.get('email') || '').toLowerCase().trim();
   const fullName = String(formData.get('fullName') || '').trim();
-  const role = String(formData.get('role') || 'SALES') as 'SALES' | 'ADMIN';
+  const role = normalizeRole(formData.get('role'));
+  const sellingPoints = formData.getAll('sellingPoints').map(String);
   if (!email || !fullName) return;
   const token = randomBytes(24).toString('hex');
-  await prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { email },
     create: { email, fullName, role, inviteToken: token, isActive: true },
     update: { fullName, role, inviteToken: token, isActive: true, passwordHash: null, inviteAcceptedAt: null },
   });
+  await syncSellingPoints(user.id, role, sellingPoints);
   const origin = await publicOrigin();
   const url = `${origin}/invite/${token}`;
   sendEmail({
@@ -27,16 +54,30 @@ async function inviteAction(formData: FormData) {
     subject: `You're invited to Karni Sales`,
     html: wrap(
       `Welcome to Karni Sales, ${fullName}`,
-      `<p>You have been invited as a <strong>${role === 'ADMIN' ? 'admin' : 'salesperson'}</strong>. Click the button below to set your password and sign in.</p>`,
+      `<p>You have been invited as a <strong>${ROLE_LABEL[role]}</strong>. Click the button below to set your password and sign in.</p>`,
       { href: url, label: 'Activate my account' },
     ),
   }).catch((e) => console.error('[invite] email failed', e));
   revalidatePath('/admin/users');
 }
 
+async function updateAccessAction(formData: FormData) {
+  'use server';
+  const me = await requireSuperAdmin();
+  const id = String(formData.get('id') || '');
+  const role = normalizeRole(formData.get('role'));
+  const sellingPoints = formData.getAll('sellingPoints').map(String);
+  if (!id) return;
+  // Guard against a super admin accidentally demoting themselves out of access.
+  if (id === me.id && role !== 'SUPER_ADMIN') return;
+  await prisma.user.update({ where: { id }, data: { role } });
+  await syncSellingPoints(id, role, sellingPoints);
+  revalidatePath('/admin/users');
+}
+
 async function deactivateAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  await requireSuperAdmin();
   const id = String(formData.get('id') || '');
   await prisma.user.update({ where: { id }, data: { isActive: false } });
   revalidatePath('/admin/users');
@@ -44,7 +85,7 @@ async function deactivateAction(formData: FormData) {
 
 async function reactivateAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  await requireSuperAdmin();
   const id = String(formData.get('id') || '');
   await prisma.user.update({ where: { id }, data: { isActive: true } });
   revalidatePath('/admin/users');
@@ -52,7 +93,7 @@ async function reactivateAction(formData: FormData) {
 
 async function resetPasswordAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  await requireSuperAdmin();
   const id = String(formData.get('id') || '');
   const token = randomBytes(24).toString('hex');
   const user = await prisma.user.update({
@@ -75,7 +116,7 @@ async function resetPasswordAction(formData: FormData) {
 
 async function setPasswordDirectlyAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  await requireSuperAdmin();
   const id = String(formData.get('id') || '');
   const next = String(formData.get('password') || '');
   if (next.length < 8) return;
@@ -86,18 +127,43 @@ async function setPasswordDirectlyAction(formData: FormData) {
   revalidatePath('/admin/users');
 }
 
+function SellingPointPicker({ sellingPoints, selected }: {
+  sellingPoints: { id: string; name: string }[];
+  selected: Set<string>;
+}) {
+  return (
+    <div>
+      <p className="label">Selling points <span className="font-normal normal-case text-karni-700">(only used for Admins)</span></p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+        {sellingPoints.map((sp) => (
+          <label key={sp.id} className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="sellingPoints" value={sp.id} defaultChecked={selected.has(sp.id)} className="accent-karni-600" />
+            <span style={{ color: 'var(--ink)' }}>{sp.name}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function AdminUsersPage() {
-  await requireAdmin();
-  const [users, origin] = await Promise.all([
-    prisma.user.findMany({ orderBy: { createdAt: 'desc' } }),
+  await requireSuperAdmin();
+  const me = await getCurrentUser();
+  const [users, sellingPoints, origin] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { adminSellingPoints: { select: { sellingPointId: true } } },
+    }),
+    prisma.sellingPoint.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     publicOrigin(),
   ]);
+  const spName = new Map(sellingPoints.map((s) => [s.id, s.name]));
 
   return (
     <div className="space-y-4">
       <header>
         <h1 className="page-title">Users</h1>
-        <p className="page-subtitle">Invite salespeople, promote admins, reset passwords.</p>
+        <p className="page-subtitle">Assign super admins, point-scoped admins, or salespeople — and manage passwords.</p>
       </header>
 
       <form action={inviteAction} className="card space-y-3">
@@ -116,28 +182,40 @@ export default async function AdminUsersPage() {
           <label className="label" htmlFor="role">Role</label>
           <select id="role" className="input" name="role" defaultValue="SALES">
             <option value="SALES">Sales</option>
-            <option value="ADMIN">Admin</option>
+            <option value="ADMIN">Admin (specific selling points)</option>
+            <option value="SUPER_ADMIN">Super admin (full access)</option>
           </select>
         </div>
+        <SellingPointPicker sellingPoints={sellingPoints} selected={new Set()} />
         <button className="btn-primary w-full sm:w-auto" type="submit">Generate invite</button>
-        <p className="text-xs text-karni-700">A one-time activation URL will appear in the user's row below. Copy and share it.</p>
+        <p className="text-xs text-karni-700">A one-time activation URL will appear in the user&apos;s row below. Copy and share it. Selling points apply only when the role is Admin.</p>
       </form>
 
       <ul className="space-y-3">
         {users.map((u) => {
           const inviteUrl = u.inviteToken ? `${origin}/invite/${u.inviteToken}` : null;
           const pending = !!u.inviteToken;
+          const role = u.role as RoleStr;
+          const assigned = new Set(u.adminSellingPoints.map((a) => a.sellingPointId));
+          const roleChip = role === 'SUPER_ADMIN' ? 'chip-danger' : role === 'ADMIN' ? 'chip-warn' : '';
           return (
             <li key={u.id} className="card space-y-3">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold flex items-center gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold flex items-center gap-2 flex-wrap">
                     {u.fullName}
-                    <span className={`chip ${u.role === 'ADMIN' ? 'chip-warn' : ''}`}>{u.role}</span>
+                    <span className={`chip ${roleChip}`}>{ROLE_LABEL[role]}</span>
                     {!u.isActive && <span className="chip chip-danger">Disabled</span>}
                     {pending && <span className="chip chip-ok">Pending activation</span>}
                   </p>
                   <p className="text-sm text-karni-700">{u.email}</p>
+                  {role === 'ADMIN' && (
+                    <p className="text-xs text-karni-700 mt-1">
+                      {assigned.size > 0
+                        ? `Manages: ${[...assigned].map((id) => spName.get(id) || id).join(', ')}`
+                        : 'No selling points assigned yet — this admin can see nothing until you assign some.'}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   {u.isActive ? (
@@ -167,6 +245,28 @@ export default async function AdminUsersPage() {
                   </div>
                 </div>
               )}
+
+              <details className="rounded-xl border border-karni-100 px-3 py-2">
+                <summary className="cursor-pointer text-sm text-karni-700 select-none hover:text-karni-900">
+                  Role &amp; access
+                </summary>
+                <form action={updateAccessAction} className="pt-3 space-y-3">
+                  <input type="hidden" name="id" value={u.id} />
+                  <div>
+                    <label className="label">Role</label>
+                    <select className="input" name="role" defaultValue={role}>
+                      <option value="SALES">Sales</option>
+                      <option value="ADMIN">Admin (specific selling points)</option>
+                      <option value="SUPER_ADMIN">Super admin (full access)</option>
+                    </select>
+                  </div>
+                  <SellingPointPicker sellingPoints={sellingPoints} selected={assigned} />
+                  {u.id === me?.id && (
+                    <p className="text-xs text-karni-700">You can&apos;t remove your own super-admin access here.</p>
+                  )}
+                  <button className="btn-secondary" type="submit">Save role &amp; access</button>
+                </form>
+              </details>
 
               <details className="rounded-xl border border-karni-100 px-3 py-2">
                 <summary className="cursor-pointer text-sm text-karni-700 select-none hover:text-karni-900">

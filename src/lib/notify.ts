@@ -16,7 +16,7 @@ type NotifyArgs = {
 export async function notify(args: NotifyArgs, tx: Prisma.TransactionClient | typeof prisma = prisma) {
   let recipients: { id: string; email: string }[] = [];
   if (args.toAdmins) {
-    const admins = await tx.user.findMany({ where: { role: 'ADMIN', isActive: true }, select: { id: true, email: true } });
+    const admins = await tx.user.findMany({ where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true }, select: { id: true, email: true } });
     recipients = admins;
     await tx.notification.createMany({
       data: admins.map((a) => ({

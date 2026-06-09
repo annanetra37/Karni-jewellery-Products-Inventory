@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isAdmin } from '@/lib/auth';
 import { saveImage } from '@/lib/upload';
 
 export const runtime = 'nodejs';
@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   const u = await getCurrentUser();
-  if (!u || u.role !== 'ADMIN') {
+  if (!isAdmin(u)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   let form: FormData;
