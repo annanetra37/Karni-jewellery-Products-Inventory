@@ -40,6 +40,7 @@ export function ProductBrowse({
   const [categories, setCategories] = useState<Tile[]>([]);
   const [variants, setVariants] = useState<BrowseVariant[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalStock, setTotalStock] = useState(0);
   const [page, setPage] = useState(urlSync ? (Number(readUrlParam('bpg', '0')) || 0) : 0);
   const [loading, setLoading] = useState(false);
   const [stock, setStock] = useState<'all' | 'in' | 'out'>(
@@ -113,7 +114,7 @@ export function ProductBrowse({
     u.set('offset', String(page * VAR_LIMIT));
     fetch(`/api/search?${u.toString()}`)
       .then((r) => r.json())
-      .then((d) => { setVariants(d.results || []); setTotal(d.total || 0); })
+      .then((d) => { setVariants(d.results || []); setTotal(d.total || 0); setTotalStock(d.totalStock || 0); })
       .finally(() => setLoading(false));
   }, [step, collection, category, sellingPointId, stock, size, color, subcollection, page, refreshNonce]);
 
@@ -279,10 +280,15 @@ export function ProductBrowse({
           </select>
         </div>
         <StockToggle value={stock} onChange={setStock} />
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-karni-700">
-            {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
-          </p>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-karni-700">
+              {loading ? t('c.loading') : total > 0 ? `${t('c.showing')} ${start}–${end} ${t('c.of')} ${total}` : t('c.noMatches')}
+            </p>
+            {!hideStock && total > 0 && stock !== 'out' && (
+              <span className="chip chip-ok whitespace-nowrap">{totalStock.toLocaleString()} {t('c.inStock')}</span>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <button type="button" onClick={refresh} disabled={loading}
               className="btn-link inline-flex items-center gap-1.5 text-xs disabled:opacity-50"
