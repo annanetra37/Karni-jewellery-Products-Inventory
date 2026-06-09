@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db';
 import { publicOrigin } from '@/lib/origin';
 import { randomBytes } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { CopyButton } from '@/components/CopyButton';
 import { PasswordInput } from '@/components/PasswordInput';
 import { BirthdayField } from '@/components/BirthdayField';
@@ -67,6 +69,8 @@ async function inviteAction(formData: FormData) {
     console.error('[invite] selling-point sync failed', e);
   }
   revalidatePath('/admin/users');
+  // Land on the users list so the new activation link is immediately visible.
+  redirect('/admin/users');
 }
 
 async function updateAccessAction(formData: FormData) {
@@ -158,9 +162,10 @@ function SellingPointPicker({ sellingPoints, selected }: {
   );
 }
 
-export default async function AdminUsersPage() {
+export default async function AdminUsersPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   await requireSuperAdmin();
   const me = await getCurrentUser();
+  const tab = (await searchParams).tab === 'add' ? 'add' : 'users';
   const [users, sellingPoints, origin] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
@@ -178,6 +183,23 @@ export default async function AdminUsersPage() {
         <p className="page-subtitle">Assign super admins, point-scoped admins, or salespeople — and manage passwords.</p>
       </header>
 
+      {/* Tabs */}
+      <div className="inline-flex rounded-full p-0.5 gap-0.5" style={{ background: 'var(--bg-tint)', border: '1px solid var(--border-strong)' }}>
+        {([
+          { key: 'users', label: `Current users (${users.length})`, href: '/admin/users' },
+          { key: 'add', label: 'Add new user', href: '/admin/users?tab=add' },
+        ] as const).map((tb) => (
+          <Link key={tb.key} href={tb.href} scroll={false}
+            className="px-4 py-1.5 rounded-full text-sm font-semibold transition"
+            style={tab === tb.key
+              ? { background: 'var(--brand)', color: '#fff' }
+              : { color: 'var(--ink)' }}>
+            {tb.label}
+          </Link>
+        ))}
+      </div>
+
+      {tab === 'add' && (
       <form action={inviteAction} className="card space-y-3">
         <p className="font-semibold">Invite a new user</p>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -204,9 +226,11 @@ export default async function AdminUsersPage() {
         </div>
         <SellingPointPicker sellingPoints={sellingPoints} selected={new Set()} />
         <button className="btn-primary w-full sm:w-auto" type="submit">Generate invite</button>
-        <p className="text-xs text-karni-700">No email is sent. A one-time activation link appears in the user&apos;s row below — copy and share it yourself. Selling-point access applies to Sales and Admins.</p>
+        <p className="text-xs text-karni-700">No email is sent. After you generate the invite you&apos;ll land on Current users, where a one-time activation link appears in the new user&apos;s row to copy and share. Selling-point access applies to Sales and Admins.</p>
       </form>
+      )}
 
+      {tab === 'users' && (
       <ul className="space-y-3">
         {users.map((u) => {
           const inviteUrl = u.inviteToken ? `${origin}/invite/${u.inviteToken}` : null;
@@ -351,6 +375,7 @@ export default async function AdminUsersPage() {
           );
         })}
       </ul>
+      )}
     </div>
   );
 }
