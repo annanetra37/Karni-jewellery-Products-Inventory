@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, sellingPointScope } from '@/lib/auth';
 
 const Body = z.object({
   sellingPointId: z.string(),
@@ -18,6 +18,11 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { sellingPointId, lines } = parsed.data;
+
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(sellingPointId)) {
+    return NextResponse.json({ error: 'You do not have access to this selling point.' }, { status: 403 });
+  }
 
   await prisma.$transaction(async (tx) => {
     for (const l of lines) {

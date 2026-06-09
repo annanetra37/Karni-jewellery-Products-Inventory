@@ -28,10 +28,10 @@ function normalizeRole(v: unknown): RoleStr {
   return v === 'ADMIN' || v === 'SUPER_ADMIN' ? v : 'SALES';
 }
 
-/** Replace a user's managed selling points (only ADMINs are point-scoped). */
+/** Replace a user's assigned selling points. Super admins are unrestricted. */
 async function syncSellingPoints(userId: string, role: RoleStr, requestedIds: string[]) {
   await prisma.adminSellingPoint.deleteMany({ where: { userId } });
-  if (role !== 'ADMIN' || requestedIds.length === 0) return;
+  if (role === 'SUPER_ADMIN' || requestedIds.length === 0) return;
   const valid = new Set((await prisma.sellingPoint.findMany({ select: { id: true } })).map((s) => s.id));
   const ids = requestedIds.filter((id) => valid.has(id));
   if (ids.length === 0) return;
@@ -144,7 +144,7 @@ function SellingPointPicker({ sellingPoints, selected }: {
 }) {
   return (
     <div>
-      <p className="label">Selling points <span className="font-normal normal-case text-karni-700">(only used for Admins)</span></p>
+      <p className="label">Selling points <span className="font-normal normal-case text-karni-700">(restricts Sales &amp; Admins; leave all unchecked for full access)</span></p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
         {sellingPoints.map((sp) => (
           <label key={sp.id} className="flex items-center gap-2 text-sm">
@@ -227,13 +227,14 @@ export default async function AdminUsersPage() {
                   {u.birthday && (
                     <p className="text-xs text-karni-700 mt-0.5">🎂 {u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</p>
                   )}
-                  {role === 'ADMIN' && (
-                    <p className="text-xs text-karni-700 mt-1">
-                      {assigned.size > 0
-                        ? `Manages: ${[...assigned].map((id) => spName.get(id) || id).join(', ')}`
-                        : 'No selling points assigned yet — this admin can see nothing until you assign some.'}
-                    </p>
-                  )}
+                  <p className="text-xs mt-1" style={{ color: 'var(--ink-soft)' }}>
+                    <span className="font-semibold">Access: </span>
+                    {role === 'SUPER_ADMIN'
+                      ? 'All selling points (full access)'
+                      : assigned.size > 0
+                        ? [...assigned].map((id) => spName.get(id) || id).join(', ')
+                        : 'All selling points (no restriction set)'}
+                  </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   {u.isActive ? (

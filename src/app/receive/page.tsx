@@ -1,4 +1,4 @@
-import { requireUser } from '@/lib/auth';
+import { requireUser, allowedSellingPoints } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { ReceiveFlow } from './ReceiveFlow';
 import { Thumb } from '@/components/Thumb';
@@ -30,6 +30,13 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
     prisma.stockMovement.count({ where: { type: 'CHECKIN' } }),
   ]);
 
+  const allowed = await allowedSellingPoints(user, sps);
+  const allowedIds = new Set(allowed.map((s) => s.id));
+  const receiveDefault =
+    (openShift?.sellingPointId && allowedIds.has(openShift.sellingPointId) ? openShift.sellingPointId : '')
+    || (megamall && allowedIds.has(megamall.id) ? megamall.id : '')
+    || allowed[0]?.id || '';
+
   const lastPage = Math.max(0, Math.ceil(totalRecent / PER_PAGE) - 1);
   const start = totalRecent === 0 ? 0 : cp * PER_PAGE + 1;
   const end = Math.min(totalRecent, (cp + 1) * PER_PAGE);
@@ -51,8 +58,8 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
         <p className="page-subtitle">{t('r.subtitle')}</p>
       </header>
       <ReceiveFlow
-        sellingPoints={sps.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
-        defaultSellingPointId={openShift?.sellingPointId || megamall?.id || ''}
+        sellingPoints={allowed.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
+        defaultSellingPointId={receiveDefault}
       />
       <section className="card">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
