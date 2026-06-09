@@ -302,6 +302,7 @@ const D: Record<string, Record<Locale, string>> = {
   'n.newOrder': { en: 'New order', hy: 'Նոր պատվեր', ru: 'Новый заказ' },
   'n.kacca': { en: 'Kacca discrepancy', hy: 'Դրամարկղի անհամապատասխանություն', ru: 'Расхождение в кассе' },
   'n.invite': { en: 'Invite', hy: 'Հրավեր', ru: 'Приглашение' },
+  'n.birthday': { en: 'Birthday', hy: 'Ծննդյան օր', ru: 'День рождения' },
   'n.new': { en: 'New', hy: 'Նոր', ru: 'Новое' },
 
   // Browse

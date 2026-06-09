@@ -6,6 +6,15 @@ import { randomBytes } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { CopyButton } from '@/components/CopyButton';
 import { PasswordInput } from '@/components/PasswordInput';
+import { BirthdayField } from '@/components/BirthdayField';
+
+/** Parse a "YYYY-MM-DD" form value into a UTC-midnight Date, or null. */
+function parseBirthday(v: unknown): Date | null {
+  const s = String(v || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 type RoleStr = 'SALES' | 'ADMIN' | 'SUPER_ADMIN';
 
@@ -39,12 +48,13 @@ async function inviteAction(formData: FormData) {
   const fullName = String(formData.get('fullName') || '').trim();
   const role = normalizeRole(formData.get('role'));
   const sellingPoints = formData.getAll('sellingPoints').map(String);
+  const birthday = parseBirthday(formData.get('birthday'));
   if (!email || !fullName) return;
   const token = randomBytes(24).toString('hex');
   const user = await prisma.user.upsert({
     where: { email },
-    create: { email, fullName, role, inviteToken: token, isActive: true },
-    update: { fullName, role, inviteToken: token, isActive: true, passwordHash: null, inviteAcceptedAt: null },
+    create: { email, fullName, birthday, role, inviteToken: token, isActive: true },
+    update: { fullName, birthday, role, inviteToken: token, isActive: true, passwordHash: null, inviteAcceptedAt: null },
   });
   await syncSellingPoints(user.id, role, sellingPoints);
   const origin = await publicOrigin();
@@ -70,7 +80,8 @@ async function updateAccessAction(formData: FormData) {
   if (!id) return;
   // Guard against a super admin accidentally demoting themselves out of access.
   if (id === me.id && role !== 'SUPER_ADMIN') return;
-  await prisma.user.update({ where: { id }, data: { role } });
+  const birthday = parseBirthday(formData.get('birthday'));
+  await prisma.user.update({ where: { id }, data: { role, ...(birthday ? { birthday } : {}) } });
   await syncSellingPoints(id, role, sellingPoints);
   revalidatePath('/admin/users');
 }
@@ -186,6 +197,10 @@ export default async function AdminUsersPage() {
             <option value="SUPER_ADMIN">Super admin (full access)</option>
           </select>
         </div>
+        <div>
+          <label className="label">Birthday</label>
+          <BirthdayField name="birthday" />
+        </div>
         <SellingPointPicker sellingPoints={sellingPoints} selected={new Set()} />
         <button className="btn-primary w-full sm:w-auto" type="submit">Generate invite</button>
         <p className="text-xs text-karni-700">A one-time activation URL will appear in the user&apos;s row below. Copy and share it. Selling points apply only when the role is Admin.</p>
@@ -209,6 +224,9 @@ export default async function AdminUsersPage() {
                     {pending && <span className="chip chip-ok">Pending activation</span>}
                   </p>
                   <p className="text-sm text-karni-700">{u.email}</p>
+                  {u.birthday && (
+                    <p className="text-xs text-karni-700 mt-0.5">🎂 {u.birthday.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</p>
+                  )}
                   {role === 'ADMIN' && (
                     <p className="text-xs text-karni-700 mt-1">
                       {assigned.size > 0
@@ -259,6 +277,10 @@ export default async function AdminUsersPage() {
                       <option value="ADMIN">Admin (specific selling points)</option>
                       <option value="SUPER_ADMIN">Super admin (full access)</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="label">Birthday</label>
+                    <BirthdayField name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
                   </div>
                   <SellingPointPicker sellingPoints={sellingPoints} selected={assigned} />
                   {u.id === me?.id && (
