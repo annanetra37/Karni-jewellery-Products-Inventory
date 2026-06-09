@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
       SELECT v.id, v.sku, v."designName", v.category, v.collection, v.subcollection,
              v.size, v.color, v."priceAmd"::text AS "priceAmd", v."imageUrl",
              v.status::text AS status, v."reorderPoint",
-             COALESCE(ii.quantity, 0) AS quantity
+             COALESCE(SUM(ii.quantity), 0)::int AS quantity
       FROM "Variant" v
       LEFT JOIN "InventoryItem" ii
         ON ii."variantId" = v.id
@@ -61,9 +61,10 @@ export async function GET(req: NextRequest) {
         AND ($5 = '' OR v.size = $5)
         AND ($11 = '' OR v.subcollection = $11)
         AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
-        AND ($8 = 'all'
-             OR ($8 = 'in' AND COALESCE(ii.quantity, 0) > 0)
-             OR ($8 = 'out' AND COALESCE(ii.quantity, 0) = 0))
+      GROUP BY v.id
+      HAVING ($8 = 'all'
+             OR ($8 = 'in' AND COALESCE(SUM(ii.quantity), 0) > 0)
+             OR ($8 = 'out' AND COALESCE(SUM(ii.quantity), 0) = 0))
       ORDER BY GREATEST(similarity(v."searchBlob", $7), CASE WHEN v.sku ILIKE $6 THEN 1 ELSE 0 END) DESC,
                v."designName" ASC
       LIMIT $9 OFFSET $10
@@ -72,21 +73,25 @@ export async function GET(req: NextRequest) {
     );
     totalRows = await prisma.$queryRawUnsafe<{ count: bigint; stock: bigint }[]>(
       `
-      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(COALESCE(ii.quantity, 0)), 0)::bigint AS stock
-      FROM "Variant" v
-      LEFT JOIN "InventoryItem" ii
-        ON ii."variantId" = v.id
-       AND ($1 = '' OR ii."sellingPointId" = $1)
-      WHERE v.status <> 'ARCHIVED'
-        AND ($2 = '' OR v.category = $2)
-        AND ($3 = '' OR v.collection = $3)
-        AND ($4 = '' OR v.color = $4)
-        AND ($5 = '' OR v.size = $5)
-        AND ($9 = '' OR v.subcollection = $9)
-        AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
-        AND ($8 = 'all'
-             OR ($8 = 'in' AND COALESCE(ii.quantity, 0) > 0)
-             OR ($8 = 'out' AND COALESCE(ii.quantity, 0) = 0))
+      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(qty), 0)::bigint AS stock
+      FROM (
+        SELECT v.id, COALESCE(SUM(ii.quantity), 0) AS qty
+        FROM "Variant" v
+        LEFT JOIN "InventoryItem" ii
+          ON ii."variantId" = v.id
+         AND ($1 = '' OR ii."sellingPointId" = $1)
+        WHERE v.status <> 'ARCHIVED'
+          AND ($2 = '' OR v.category = $2)
+          AND ($3 = '' OR v.collection = $3)
+          AND ($4 = '' OR v.color = $4)
+          AND ($5 = '' OR v.size = $5)
+          AND ($9 = '' OR v.subcollection = $9)
+          AND (v."searchBlob" ILIKE $6 OR similarity(v."searchBlob", $7) > 0.15 OR v.sku ILIKE $6 OR v.barcode = $7)
+        GROUP BY v.id
+        HAVING ($8 = 'all'
+               OR ($8 = 'in' AND COALESCE(SUM(ii.quantity), 0) > 0)
+               OR ($8 = 'out' AND COALESCE(SUM(ii.quantity), 0) = 0))
+      ) sub
       `,
       sellingPointId, category, collection, color, size, like, q, stock, subcollection
     );
@@ -96,7 +101,7 @@ export async function GET(req: NextRequest) {
       SELECT v.id, v.sku, v."designName", v.category, v.collection, v.subcollection,
              v.size, v.color, v."priceAmd"::text AS "priceAmd", v."imageUrl",
              v.status::text AS status, v."reorderPoint",
-             COALESCE(ii.quantity, 0) AS quantity
+             COALESCE(SUM(ii.quantity), 0)::int AS quantity
       FROM "Variant" v
       LEFT JOIN "InventoryItem" ii
         ON ii."variantId" = v.id
@@ -107,9 +112,10 @@ export async function GET(req: NextRequest) {
         AND ($4 = '' OR v.color = $4)
         AND ($5 = '' OR v.size = $5)
         AND ($9 = '' OR v.subcollection = $9)
-        AND ($6 = 'all'
-             OR ($6 = 'in' AND COALESCE(ii.quantity, 0) > 0)
-             OR ($6 = 'out' AND COALESCE(ii.quantity, 0) = 0))
+      GROUP BY v.id
+      HAVING ($6 = 'all'
+             OR ($6 = 'in' AND COALESCE(SUM(ii.quantity), 0) > 0)
+             OR ($6 = 'out' AND COALESCE(SUM(ii.quantity), 0) = 0))
       ORDER BY v."designName" ASC
       LIMIT $7 OFFSET $8
       `,
@@ -117,20 +123,24 @@ export async function GET(req: NextRequest) {
     );
     totalRows = await prisma.$queryRawUnsafe<{ count: bigint; stock: bigint }[]>(
       `
-      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(COALESCE(ii.quantity, 0)), 0)::bigint AS stock
-      FROM "Variant" v
-      LEFT JOIN "InventoryItem" ii
-        ON ii."variantId" = v.id
-       AND ($1 = '' OR ii."sellingPointId" = $1)
-      WHERE v.status <> 'ARCHIVED'
-        AND ($2 = '' OR v.category = $2)
-        AND ($3 = '' OR v.collection = $3)
-        AND ($4 = '' OR v.color = $4)
-        AND ($5 = '' OR v.size = $5)
-        AND ($7 = '' OR v.subcollection = $7)
-        AND ($6 = 'all'
-             OR ($6 = 'in' AND COALESCE(ii.quantity, 0) > 0)
-             OR ($6 = 'out' AND COALESCE(ii.quantity, 0) = 0))
+      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(qty), 0)::bigint AS stock
+      FROM (
+        SELECT v.id, COALESCE(SUM(ii.quantity), 0) AS qty
+        FROM "Variant" v
+        LEFT JOIN "InventoryItem" ii
+          ON ii."variantId" = v.id
+         AND ($1 = '' OR ii."sellingPointId" = $1)
+        WHERE v.status <> 'ARCHIVED'
+          AND ($2 = '' OR v.category = $2)
+          AND ($3 = '' OR v.collection = $3)
+          AND ($4 = '' OR v.color = $4)
+          AND ($5 = '' OR v.size = $5)
+          AND ($7 = '' OR v.subcollection = $7)
+        GROUP BY v.id
+        HAVING ($6 = 'all'
+               OR ($6 = 'in' AND COALESCE(SUM(ii.quantity), 0) > 0)
+               OR ($6 = 'out' AND COALESCE(SUM(ii.quantity), 0) = 0))
+      ) sub
       `,
       sellingPointId, category, collection, color, size, stock, subcollection
     );
