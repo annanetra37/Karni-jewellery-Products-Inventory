@@ -80,6 +80,7 @@ model User {
   birthday         DateTime? @db.Date
   role             Role     @default(SALES)
   isActive         Boolean  @default(true)
+  isOwner          Boolean  @default(false) // business owner who shares the safe
   inviteToken      String?  @unique
   inviteAcceptedAt DateTime?
   createdById      String?
@@ -97,6 +98,8 @@ model User {
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   notifications    Notification[]
   adminSellingPoints AdminSellingPoint[]
+  safeWithdrawals  SafeTransaction[] @relation("SafeOwner")
+  safeRecorded     SafeTransaction[] @relation("SafeBy")
 
   @@index([birthday])
 }
@@ -184,6 +187,33 @@ model SellingPoint {
   orders         Order[]
   cashSessions   CashDrawerSession[]
   admins         AdminSellingPoint[]
+  safeTransactions SafeTransaction[]
+}
+
+enum SafeTxType {
+  DEPOSIT     // cash moved from a drawer into the safe
+  WITHDRAWAL  // money taken out of the safe by an owner
+}
+
+// Ledger of money moving into / out of the owners' safe.
+model SafeTransaction {
+  id             String     @id @default(cuid())
+  type           SafeTxType
+  amountAmd      Decimal    @db.Decimal(12, 2)
+  sellingPointId String?    // source drawer for a deposit
+  ownerId        String?    // which owner took a withdrawal
+  performedById  String     // who recorded it
+  note           String?
+  occurredAt     DateTime   @default(now())
+  createdAt      DateTime   @default(now())
+
+  sellingPoint SellingPoint? @relation(fields: [sellingPointId], references: [id])
+  owner        User?         @relation("SafeOwner", fields: [ownerId], references: [id])
+  performedBy  User          @relation("SafeBy", fields: [performedById], references: [id])
+
+  @@index([type, occurredAt])
+  @@index([ownerId])
+  @@index([sellingPointId, occurredAt])
 }
 
 // Scopes a point-restricted ADMIN to the selling points they may manage.
