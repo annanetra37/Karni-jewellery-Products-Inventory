@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic';
 function toDate(v: unknown): Date {
   const s = String(v || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(`${s}T12:00:00.000Z`);
+    // End of the chosen day — cash taken to the safe happens at/after the
+    // shift's closing count, so this keeps it inside the handover gap.
+    const d = new Date(`${s}T23:59:59.000Z`);
     if (!Number.isNaN(d.getTime())) return d;
   }
   return new Date();
@@ -125,32 +127,35 @@ export default async function SafePage() {
   });
 
   // Reconciliation: next opening should equal previous closing minus the safe
-  // deposits taken from that drawer in between.
-  const depositsBetween = (pointId: string, from: Date, to: Date) =>
-    txs.filter((tx) => tx.type === 'DEPOSIT' && tx.sellingPointId === pointId && tx.occurredAt > from && tx.occurredAt <= to)
-      .reduce((s, tx) => s + Number(tx.amountAmd), 0);
+  // deposits taken from that drawer between the close and the next open.
   const byPoint = new Map<string, typeof sessions>();
   for (const s of sessions) {
     const arr = byPoint.get(s.sellingPointId) || [];
     arr.push(s);
     byPoint.set(s.sellingPointId, arr);
   }
-  type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; openedAt: Date };
+  const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
+  const matchedDeposit = new Set<string>();
+  type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; closedAt: Date; openedAt: Date };
   const recon: Recon[] = [];
   for (const arr of byPoint.values()) {
     for (let i = 0; i < arr.length - 1; i++) {
       const prev = arr[i], next = arr[i + 1];
       if (prev.status === 'OPEN' || prev.closingCountAmd == null || !prev.closingAt) continue;
+      const inGap = deposits.filter((d) => d.sellingPointId === prev.sellingPointId && d.occurredAt > prev.closingAt! && d.occurredAt <= next.openingAt);
+      inGap.forEach((d) => matchedDeposit.add(d.id));
+      const deposited = inGap.reduce((s, d) => s + Number(d.amountAmd), 0);
       const closing = Number(prev.closingCountAmd);
-      const deposited = depositsBetween(prev.sellingPointId, prev.closingAt, next.openingAt);
       const opening = Number(next.openingCountAmd);
       const expected = closing - deposited;
-      recon.push({ point: prev.sellingPoint.name, closing, deposited, opening, expected, diff: opening - expected, openedAt: next.openingAt });
+      recon.push({ point: prev.sellingPoint.name, closing, deposited, opening, expected, diff: opening - expected, closedAt: prev.closingAt, openedAt: next.openingAt });
     }
   }
   recon.sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
   const reconShown = recon.slice(0, 15);
   const flags = recon.filter((r) => Math.abs(r.diff) > 0.01).length;
+  // Deposits not yet checked against a handover (no shift opened after them).
+  const pendingDeposits = deposits.filter((d) => !matchedDeposit.has(d.id));
 
   return (
     <div className="space-y-5">
@@ -286,6 +291,22 @@ export default async function SafePage() {
       <section className="card">
         <p className="font-semibold mb-1">{t('sf.reconciliation')}</p>
         <p className="text-xs text-karni-700 mb-3">{t('sf.reconHint')}</p>
+
+        {pendingDeposits.length > 0 && (
+          <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--bg-tint)' }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink)' }}>{t('sf.pending')}</p>
+            <p className="text-[11px] text-karni-700 mb-2">{t('sf.pendingHint')}</p>
+            <ul className="space-y-1 text-xs">
+              {pendingDeposits.slice(0, 10).map((d) => (
+                <li key={d.id} className="flex items-center justify-between gap-2">
+                  <span>{d.occurredAt.toLocaleDateString()} · {d.sellingPoint ? d.sellingPoint.name : t('sf.unspecified')}</span>
+                  <b className="tabular-nums">{formatAmd(Number(d.amountAmd))}</b>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <ul className="space-y-2 text-sm">
           {reconShown.map((r, i) => {
             const bad = Math.abs(r.diff) > 0.01;
@@ -294,7 +315,7 @@ export default async function SafePage() {
                 <div className="min-w-0">
                   <p className="font-medium">{r.point}</p>
                   <p className="text-xs text-karni-700">
-                    {formatAmd(r.closing)} − {formatAmd(r.deposited)} = {formatAmd(r.expected)} · {formatAmd(r.opening)}
+                    {t('sf.closed')} {r.closedAt.toLocaleDateString()}: {formatAmd(r.closing)} − {t('sf.movedToSafe')} {formatAmd(r.deposited)} = {formatAmd(r.expected)} → {t('sf.opened')} {r.openedAt.toLocaleDateString()}: {formatAmd(r.opening)}
                   </p>
                 </div>
                 <span className={`chip ${bad ? 'chip-danger' : 'chip-ok'}`}>
