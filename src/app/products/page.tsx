@@ -9,7 +9,7 @@ export default async function ProductsPage() {
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold">Catalog</h1>
-      <ProductSearch sellingPoints={allowed} autoFocus />
+      <ProductSearch sellingPoints={allowed} urlSync autoFocus />
     </div>
   );
 }
