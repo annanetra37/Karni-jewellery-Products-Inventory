@@ -82,24 +82,34 @@ export default async function SafePage() {
   const ownersFlagged = ownerUsers.length > 0;
   const n = Math.max(1, owners.length);
 
-  let totalDeposits = 0, totalWithdrawals = 0;
+  let totalDeposits = 0, totalWithdrawals = 0, totalPersonal = 0, totalInvestment = 0;
   const withdrawnByOwner = new Map<string, number>();
+  const personalByOwner = new Map<string, number>();
+  const investByOwner = new Map<string, number>();
+  const add = (m: Map<string, number>, id: string, v: number) => m.set(id, (m.get(id) || 0) + v);
   for (const tx of txs) {
     const amt = Number(tx.amountAmd);
     if (tx.type === 'DEPOSIT') { totalDeposits += amt; continue; }
     totalWithdrawals += amt;
+    const inv = tx.reason === 'INVESTMENT';
+    if (inv) totalInvestment += amt; else totalPersonal += amt;
+    const reasonMap = inv ? investByOwner : personalByOwner;
     if (tx.splitAll) {
-      for (const o of owners) withdrawnByOwner.set(o.id, (withdrawnByOwner.get(o.id) || 0) + amt / n);
+      for (const o of owners) { add(withdrawnByOwner, o.id, amt / n); add(reasonMap, o.id, amt / n); }
     } else if (tx.ownerId) {
-      withdrawnByOwner.set(tx.ownerId, (withdrawnByOwner.get(tx.ownerId) || 0) + amt);
+      add(withdrawnByOwner, tx.ownerId, amt);
+      add(reasonMap, tx.ownerId, amt);
     }
   }
   const safeBalance = totalDeposits - totalWithdrawals;
   const share = totalDeposits / n;
-  const ownerRows = owners.map((o) => {
-    const withdrawn = withdrawnByOwner.get(o.id) || 0;
-    return { name: o.fullName, withdrawn, balance: share - withdrawn };
-  });
+  const ownerRows = owners.map((o) => ({
+    name: o.fullName,
+    withdrawn: withdrawnByOwner.get(o.id) || 0,
+    personal: personalByOwner.get(o.id) || 0,
+    investment: investByOwner.get(o.id) || 0,
+    balance: share - (withdrawnByOwner.get(o.id) || 0),
+  }));
 
   // Daily safe balance time series (chronological, cumulative).
   const byDay = new Map<string, number>();
@@ -179,16 +189,24 @@ export default async function SafePage() {
         </p>
         <ul className="space-y-2">
           {ownerRows.map((o) => (
-            <li key={o.name} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
-              <span className="font-medium">{o.name}</span>
-              <span className="text-right text-sm">
-                <span className="tabular-nums" style={{ color: 'var(--ink-soft)' }}>{t('sf.taken')} {formatAmd(o.withdrawn)}</span>
-                <b className="ml-3 tabular-nums">{formatAmd(o.balance)}</b>
-              </span>
+            <li key={o.name} className="border-b border-karni-100 pb-2 last:border-0">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium">{o.name}</span>
+                <b className="tabular-nums">{formatAmd(o.balance)}</b>
+              </div>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--ink-soft)' }}>
+                {formatAmd(share)} {t('sf.share')} · {t('sf.taken')} {formatAmd(o.withdrawn)}
+                {(o.personal > 0 || o.investment > 0) && <> ({t('sf.personal')} {formatAmd(o.personal)} · {t('sf.investment')} {formatAmd(o.investment)})</>}
+              </p>
             </li>
           ))}
           {ownerRows.length === 0 && <li className="text-sm text-karni-700">{t('sf.noOwners')}</li>}
         </ul>
+        {(totalPersonal > 0 || totalInvestment > 0) && (
+          <p className="text-xs mt-3 pt-2 border-t border-karni-100" style={{ color: 'var(--ink-soft)' }}>
+            <span className="font-semibold">{t('sf.byReason')}:</span> {t('sf.personal')} {formatAmd(totalPersonal)} · {t('sf.investment')} {formatAmd(totalInvestment)}
+          </p>
+        )}
       </section>
 
       {/* Record forms */}

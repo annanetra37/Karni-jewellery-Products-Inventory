@@ -128,6 +128,8 @@ const D: Record<string, Record<Locale, string>> = {
   'sf.splitNote': { en: 'The safe is split evenly among the owners. Each owner’s balance = their share of deposits − what they’ve taken.', hy: 'Սեյֆը հավասար բաժանվում է սեփականատերերի միջև։ Յուրաքանչյուրի մնացորդը = մուտքերի իր բաժինը − վերցրածը։', ru: 'Сейф делится поровну между владельцами. Баланс каждого = его доля от внесённого − то, что он взял.' },
   'sf.ownersHint': { en: 'Showing super admins — mark the real owners with the “Business owner” toggle on the Users page.', hy: 'Ցուցադրվում են սուպեր ադմինները — նշեք իրական սեփականատերերին Օգտվողների էջում։', ru: 'Показаны супер-админы — отметьте реальных владельцев на странице «Пользователи».' },
   'sf.taken': { en: 'taken', hy: 'վերցրած', ru: 'взято' },
+  'sf.share': { en: 'share', hy: 'բաժին', ru: 'доля' },
+  'sf.byReason': { en: 'Withdrawals by reason', hy: 'Դուրսբերումներն ըստ պատճառի', ru: 'Снятия по причине' },
   'sf.moveToSafe': { en: 'Move cash to the safe', hy: 'Կանխիկ տեղափոխել սեյֆ', ru: 'Переместить наличные в сейф' },
   'sf.moveToSafeHint': { en: 'Record cash taken out of a drawer and placed in the safe.', hy: 'Գրանցեք դրամարկղից վերցված և սեյֆ դրված կանխիկը։', ru: 'Запишите наличные, взятые из кассы и положенные в сейф.' },
   'sf.amount': { en: 'Amount (AMD)', hy: 'Գումար (֏)', ru: 'Сумма (֏)' },
