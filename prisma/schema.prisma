@@ -201,7 +201,9 @@ model SafeTransaction {
   type           SafeTxType
   amountAmd      Decimal    @db.Decimal(12, 2)
   sellingPointId String?    // source drawer for a deposit
-  ownerId        String?    // which owner took a withdrawal
+  ownerId        String?    // which owner took a withdrawal (null when split)
+  splitAll       Boolean    @default(false) // withdrawal shared equally by all owners
+  reason         String?    // PERSONAL | INVESTMENT (withdrawals)
   performedById  String     // who recorded it
   note           String?
   occurredAt     DateTime   @default(now())

@@ -1,6 +1,7 @@
-import { requireAdmin } from '@/lib/auth';
+import { requireSuperAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
 import { LineChart } from '@/components/Charts';
 
@@ -17,7 +18,7 @@ function toDate(v: unknown): Date {
 
 async function recordDeposit(formData: FormData) {
   'use server';
-  const u = await requireAdmin();
+  const u = await requireSuperAdmin();
   const amount = Number(formData.get('amount') || 0);
   if (!amount || amount <= 0) return;
   await prisma.safeTransaction.create({
@@ -35,15 +36,19 @@ async function recordDeposit(formData: FormData) {
 
 async function recordWithdrawal(formData: FormData) {
   'use server';
-  const u = await requireAdmin();
+  const u = await requireSuperAdmin();
   const amount = Number(formData.get('amount') || 0);
-  const ownerId = String(formData.get('ownerId') || '');
-  if (!amount || amount <= 0 || !ownerId) return;
+  const ownerSel = String(formData.get('ownerId') || '');
+  const reason = String(formData.get('reason') || '') === 'INVESTMENT' ? 'INVESTMENT' : 'PERSONAL';
+  if (!amount || amount <= 0 || !ownerSel) return;
+  const splitAll = ownerSel === 'BOTH';
   await prisma.safeTransaction.create({
     data: {
       type: 'WITHDRAWAL',
       amountAmd: amount,
-      ownerId,
+      ownerId: splitAll ? null : ownerSel,
+      splitAll,
+      reason,
       performedById: u.id,
       note: String(formData.get('note') || '').trim() || null,
       occurredAt: toDate(formData.get('occurredAt')),
@@ -55,7 +60,8 @@ async function recordWithdrawal(formData: FormData) {
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export default async function SafePage() {
-  await requireAdmin();
+  await requireSuperAdmin();
+  const { t } = await getT();
 
   const [txs, sellingPoints, ownerUsers, superAdmins, sessions] = await Promise.all([
     prisma.safeTransaction.findMany({
@@ -72,22 +78,24 @@ export default async function SafePage() {
     }),
   ]);
 
-  // Owners = users flagged as owners; if none are flagged yet, fall back to super admins.
   const owners = ownerUsers.length > 0 ? ownerUsers : superAdmins;
   const ownersFlagged = ownerUsers.length > 0;
+  const n = Math.max(1, owners.length);
 
   let totalDeposits = 0, totalWithdrawals = 0;
   const withdrawnByOwner = new Map<string, number>();
   for (const tx of txs) {
     const amt = Number(tx.amountAmd);
-    if (tx.type === 'DEPOSIT') totalDeposits += amt;
-    else {
-      totalWithdrawals += amt;
-      if (tx.ownerId) withdrawnByOwner.set(tx.ownerId, (withdrawnByOwner.get(tx.ownerId) || 0) + amt);
+    if (tx.type === 'DEPOSIT') { totalDeposits += amt; continue; }
+    totalWithdrawals += amt;
+    if (tx.splitAll) {
+      for (const o of owners) withdrawnByOwner.set(o.id, (withdrawnByOwner.get(o.id) || 0) + amt / n);
+    } else if (tx.ownerId) {
+      withdrawnByOwner.set(tx.ownerId, (withdrawnByOwner.get(tx.ownerId) || 0) + amt);
     }
   }
   const safeBalance = totalDeposits - totalWithdrawals;
-  const share = owners.length > 0 ? totalDeposits / owners.length : 0;
+  const share = totalDeposits / n;
   const ownerRows = owners.map((o) => {
     const withdrawn = withdrawnByOwner.get(o.id) || 0;
     return { name: o.fullName, withdrawn, balance: share - withdrawn };
@@ -106,20 +114,18 @@ export default async function SafePage() {
     return { label: k.slice(5), value: Math.round(running) };
   });
 
-  // Reconciliation: per selling point, between consecutive sessions the next
-  // opening should equal the previous closing minus the safe deposits taken in
-  // between. Flag when it doesn't add up.
+  // Reconciliation: next opening should equal previous closing minus the safe
+  // deposits taken from that drawer in between.
   const depositsBetween = (pointId: string, from: Date, to: Date) =>
     txs.filter((tx) => tx.type === 'DEPOSIT' && tx.sellingPointId === pointId && tx.occurredAt > from && tx.occurredAt <= to)
       .reduce((s, tx) => s + Number(tx.amountAmd), 0);
-
   const byPoint = new Map<string, typeof sessions>();
   for (const s of sessions) {
     const arr = byPoint.get(s.sellingPointId) || [];
     arr.push(s);
     byPoint.set(s.sellingPointId, arr);
   }
-  type Recon = { point: string; closedAt: Date; closing: number; deposited: number; opening: number; expected: number; diff: number; openedAt: Date };
+  type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; openedAt: Date };
   const recon: Recon[] = [];
   for (const arr of byPoint.values()) {
     for (let i = 0; i < arr.length - 1; i++) {
@@ -129,7 +135,7 @@ export default async function SafePage() {
       const deposited = depositsBetween(prev.sellingPointId, prev.closingAt, next.openingAt);
       const opening = Number(next.openingCountAmd);
       const expected = closing - deposited;
-      recon.push({ point: prev.sellingPoint.name, closedAt: prev.closingAt, closing, deposited, opening, expected, diff: opening - expected, openedAt: next.openingAt });
+      recon.push({ point: prev.sellingPoint.name, closing, deposited, opening, expected, diff: opening - expected, openedAt: next.openingAt });
     }
   }
   recon.sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
@@ -139,27 +145,27 @@ export default async function SafePage() {
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="page-title">Safe &amp; money movements</h1>
-        <p className="page-subtitle">Cash moved into the owners&apos; safe, withdrawals, balances and reconciliation.</p>
+        <h1 className="page-title">{t('sf.title')}</h1>
+        <p className="page-subtitle">{t('sf.subtitle')}</p>
       </header>
 
       {/* Summary */}
       <section className="rounded-2xl p-5 shadow-lift border" style={{ background: 'var(--brand)', color: '#f4ecd9', borderColor: 'var(--brand-deep)' }}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>In the safe now</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.inSafe')}</p>
             <p className="display text-4xl font-semibold mt-1 tabular-nums">{formatAmd(safeBalance)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Total deposited</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.deposited')}</p>
             <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalDeposits)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Total withdrawn</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.withdrawn')}</p>
             <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalWithdrawals)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Reconciliation flags</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.flags')}</p>
             <p className="display text-3xl font-semibold mt-1">{flags}</p>
           </div>
         </div>
@@ -167,92 +173,101 @@ export default async function SafePage() {
 
       {/* Per-owner ownership */}
       <section className="card">
-        <p className="font-semibold mb-1">Owner balances</p>
+        <p className="font-semibold mb-1">{t('sf.ownerBalances')}</p>
         <p className="text-xs text-karni-700 mb-3">
-          The safe is split evenly among {owners.length} owner{owners.length === 1 ? '' : 's'}. Each owner&apos;s balance = their share of deposits − what they&apos;ve taken.
-          {!ownersFlagged && ' (Showing super admins — mark the real owners with the “Business owner” toggle on the Users page.)'}
+          {t('sf.splitNote')}{!ownersFlagged && ` ${t('sf.ownersHint')}`}
         </p>
         <ul className="space-y-2">
           {ownerRows.map((o) => (
             <li key={o.name} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
               <span className="font-medium">{o.name}</span>
               <span className="text-right text-sm">
-                <span className="tabular-nums" style={{ color: 'var(--ink-soft)' }}>taken {formatAmd(o.withdrawn)}</span>
+                <span className="tabular-nums" style={{ color: 'var(--ink-soft)' }}>{t('sf.taken')} {formatAmd(o.withdrawn)}</span>
                 <b className="ml-3 tabular-nums">{formatAmd(o.balance)}</b>
               </span>
             </li>
           ))}
-          {ownerRows.length === 0 && <li className="text-sm text-karni-700">No owners found.</li>}
+          {ownerRows.length === 0 && <li className="text-sm text-karni-700">{t('sf.noOwners')}</li>}
         </ul>
       </section>
 
       {/* Record forms */}
       <section className="grid md:grid-cols-2 gap-3">
         <form action={recordDeposit} className="card space-y-3">
-          <p className="font-semibold">Move cash to the safe</p>
-          <p className="text-xs text-karni-700">Record cash taken out of a drawer and placed in the safe.</p>
+          <p className="font-semibold">{t('sf.moveToSafe')}</p>
+          <p className="text-xs text-karni-700">{t('sf.moveToSafeHint')}</p>
           <div>
-            <label className="label">Amount (AMD)</label>
+            <label className="label">{t('sf.amount')}</label>
             <input className="input" name="amount" type="number" step="0.01" min="0" required />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="label">From drawer</label>
+              <label className="label">{t('sf.fromDrawer')}</label>
               <select className="input" name="sellingPointId">
-                <option value="">— (unspecified)</option>
+                <option value="">{t('sf.unspecified')}</option>
                 {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Date</label>
+              <label className="label">{t('sf.date')}</label>
               <input className="input" name="occurredAt" type="date" />
             </div>
           </div>
           <div>
-            <label className="label">Note</label>
-            <input className="input" name="note" placeholder="optional" />
+            <label className="label">{t('sf.note')}</label>
+            <input className="input" name="note" placeholder={t('sf.optional')} />
           </div>
-          <button className="btn-primary w-full" type="submit">Record deposit</button>
+          <button className="btn-primary w-full" type="submit">{t('sf.recordDeposit')}</button>
         </form>
 
         <form action={recordWithdrawal} className="card space-y-3">
-          <p className="font-semibold">Take money from the safe</p>
-          <p className="text-xs text-karni-700">Record money an owner took out (investment, personal, etc.).</p>
+          <p className="font-semibold">{t('sf.takeFromSafe')}</p>
+          <p className="text-xs text-karni-700">{t('sf.takeFromSafeHint')}</p>
           <div>
-            <label className="label">Amount (AMD)</label>
+            <label className="label">{t('sf.amount')}</label>
             <input className="input" name="amount" type="number" step="0.01" min="0" required />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="label">Owner</label>
+              <label className="label">{t('sf.owner')}</label>
               <select className="input" name="ownerId" required>
-                <option value="">Pick owner…</option>
+                <option value="">{t('sf.pick')}</option>
                 {owners.map((o) => <option key={o.id} value={o.id}>{o.fullName}</option>)}
+                <option value="BOTH">{t('sf.bothOwners')}</option>
               </select>
             </div>
             <div>
-              <label className="label">Date</label>
-              <input className="input" name="occurredAt" type="date" />
+              <label className="label">{t('sf.reason')}</label>
+              <select className="input" name="reason" defaultValue="PERSONAL">
+                <option value="PERSONAL">{t('sf.personal')}</option>
+                <option value="INVESTMENT">{t('sf.investment')}</option>
+              </select>
             </div>
           </div>
-          <div>
-            <label className="label">Reason / note</label>
-            <input className="input" name="note" placeholder="optional" />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">{t('sf.date')}</label>
+              <input className="input" name="occurredAt" type="date" />
+            </div>
+            <div>
+              <label className="label">{t('sf.note')}</label>
+              <input className="input" name="note" placeholder={t('sf.optional')} />
+            </div>
           </div>
-          <button className="btn-secondary w-full" type="submit">Record withdrawal</button>
+          <button className="btn-secondary w-full" type="submit">{t('sf.recordWithdrawal')}</button>
         </form>
       </section>
 
       {/* Time series */}
       <section className="card">
-        <p className="font-semibold mb-3">Safe balance over time</p>
-        <LineChart series={series} formatValue={(n) => formatAmd(n)} />
+        <p className="font-semibold mb-3">{t('sf.balanceOverTime')}</p>
+        <LineChart series={series} formatValue={(x) => formatAmd(x)} />
       </section>
 
       {/* Reconciliation */}
       <section className="card">
-        <p className="font-semibold mb-1">Drawer ↔ safe reconciliation</p>
-        <p className="text-xs text-karni-700 mb-3">Next opening should equal previous closing minus what was moved to the safe in between. Mismatches are flagged.</p>
+        <p className="font-semibold mb-1">{t('sf.reconciliation')}</p>
+        <p className="text-xs text-karni-700 mb-3">{t('sf.reconHint')}</p>
         <ul className="space-y-2 text-sm">
           {reconShown.map((r, i) => {
             const bad = Math.abs(r.diff) > 0.01;
@@ -261,41 +276,46 @@ export default async function SafePage() {
                 <div className="min-w-0">
                   <p className="font-medium">{r.point}</p>
                   <p className="text-xs text-karni-700">
-                    closed {formatAmd(r.closing)} − safe {formatAmd(r.deposited)} = {formatAmd(r.expected)} · opened {formatAmd(r.opening)}
+                    {formatAmd(r.closing)} − {formatAmd(r.deposited)} = {formatAmd(r.expected)} · {formatAmd(r.opening)}
                   </p>
                 </div>
                 <span className={`chip ${bad ? 'chip-danger' : 'chip-ok'}`}>
-                  {bad ? `Off by ${formatAmd(r.diff)}` : 'OK'}
+                  {bad ? `${t('sf.offBy')} ${formatAmd(r.diff)}` : t('sf.ok')}
                 </span>
               </li>
             );
           })}
-          {reconShown.length === 0 && <li className="text-karni-700">No handovers to reconcile yet.</li>}
+          {reconShown.length === 0 && <li className="text-karni-700">{t('sf.noHandovers')}</li>}
         </ul>
       </section>
 
       {/* Movements log */}
       <section className="card">
-        <p className="font-semibold mb-3">All movements</p>
+        <p className="font-semibold mb-3">{t('sf.allMovements')}</p>
         <ul className="space-y-2 text-sm">
-          {txs.slice(0, 100).map((tx) => (
-            <li key={tx.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
-              <div className="min-w-0">
-                <p className="font-medium">
-                  <span className={`chip mr-1 ${tx.type === 'DEPOSIT' ? 'chip-ok' : 'chip-warn'}`}>{tx.type === 'DEPOSIT' ? 'To safe' : 'From safe'}</span>
-                  {tx.type === 'DEPOSIT'
-                    ? (tx.sellingPoint ? `from ${tx.sellingPoint.name}` : 'deposit')
-                    : (tx.owner ? `by ${tx.owner.fullName}` : 'withdrawal')}
-                  {tx.note ? <span className="text-xs text-karni-700"> · {tx.note}</span> : null}
-                </p>
-                <p className="text-xs text-karni-700">{tx.occurredAt.toLocaleDateString()} · recorded by {tx.performedBy.fullName}</p>
-              </div>
-              <b className={`tabular-nums ${tx.type === 'DEPOSIT' ? '' : 'text-red-700'}`}>
-                {tx.type === 'DEPOSIT' ? '+' : '−'}{formatAmd(Number(tx.amountAmd))}
-              </b>
-            </li>
-          ))}
-          {txs.length === 0 && <li className="text-karni-700">No movements yet.</li>}
+          {txs.slice(0, 100).map((tx) => {
+            const reasonLabel = tx.reason === 'INVESTMENT' ? t('sf.investment') : tx.reason === 'PERSONAL' ? t('sf.personal') : '';
+            const who = tx.type === 'DEPOSIT'
+              ? (tx.sellingPoint ? `${t('sf.from')} ${tx.sellingPoint.name}` : t('sf.deposit'))
+              : (tx.splitAll ? t('sf.both') : (tx.owner ? `${t('sf.by')} ${tx.owner.fullName}`.trim() : t('sf.withdrawal')));
+            return (
+              <li key={tx.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    <span className={`chip mr-1 ${tx.type === 'DEPOSIT' ? 'chip-ok' : 'chip-warn'}`}>{tx.type === 'DEPOSIT' ? t('sf.toSafe') : t('sf.fromSafe')}</span>
+                    {who}
+                    {reasonLabel && <span className="text-xs text-karni-700"> · {reasonLabel}</span>}
+                    {tx.note ? <span className="text-xs text-karni-700"> · {tx.note}</span> : null}
+                  </p>
+                  <p className="text-xs text-karni-700">{tx.occurredAt.toLocaleDateString()} · {t('sf.recordedBy')} {tx.performedBy.fullName}</p>
+                </div>
+                <b className={`tabular-nums ${tx.type === 'DEPOSIT' ? '' : 'text-red-700'}`}>
+                  {tx.type === 'DEPOSIT' ? '+' : '−'}{formatAmd(Number(tx.amountAmd))}
+                </b>
+              </li>
+            );
+          })}
+          {txs.length === 0 && <li className="text-karni-700">{t('sf.noMovements')}</li>}
         </ul>
       </section>
     </div>
