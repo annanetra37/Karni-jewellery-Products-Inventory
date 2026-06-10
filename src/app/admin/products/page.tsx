@@ -18,6 +18,7 @@ export default async function AdminProductsPage() {
       <ProductSearch
         sellingPoints={sps.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
         linkBase="/admin/products"
+        urlSync
         autoFocus
       />
     </div>
