@@ -1,8 +1,9 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import type { User } from '@prisma/client';
 import { BottomNav } from '@/components/BottomNav';
 import { BackToHome } from '@/components/BackToHome';
 import { I18nProvider } from '@/components/I18nProvider';
@@ -20,13 +21,17 @@ export const viewport: Viewport = {
   themeColor: '#2d4a3d',
 };
 
-async function unreadCount(userId: string): Promise<number> {
-  return prisma.notification.count({ where: { userId, isRead: false } });
+async function unreadCount(user: User): Promise<number> {
+  const [own, broadcasts] = await Promise.all([
+    prisma.notification.count({ where: { userId: user.id, isRead: false } }),
+    isAdmin(user) ? prisma.notification.count({ where: { userId: null, NOT: { readBy: { has: user.id } } } }) : Promise.resolve(0),
+  ]);
+  return own + broadcasts;
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
-  const unread = user ? await unreadCount(user.id) : 0;
+  const unread = user ? await unreadCount(user) : 0;
   const locale = await getLocale();
   const dict = dictFor(locale);
   const labels = await getLabels(locale);

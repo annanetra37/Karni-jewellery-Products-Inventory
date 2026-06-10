@@ -1,15 +1,23 @@
-import { requireUser, isSuperAdmin } from '@/lib/auth';
+import { requireUser, isSuperAdmin, isAdmin } from '@/lib/auth';
 import { ensureBirthdayReminders } from '@/lib/birthdays';
 import { prisma } from '@/lib/db';
 import { getT } from '@/lib/i18n-server';
 
 async function markAllRead() {
   'use server';
-  const { requireUser } = await import('@/lib/auth');
+  const { requireUser, isAdmin } = await import('@/lib/auth');
   const { prisma } = await import('@/lib/db');
   const { revalidatePath } = await import('next/cache');
   const u = await requireUser();
+  // Own notifications.
   await prisma.notification.updateMany({ where: { userId: u.id, isRead: false }, data: { isRead: true } });
+  // Admin broadcasts: record this admin as having read them.
+  if (isAdmin(u)) {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Notification" SET "readBy" = array_append("readBy", $1) WHERE "userId" IS NULL AND NOT ($1 = ANY("readBy"))`,
+      u.id,
+    );
+  }
   revalidatePath('/notifications');
 }
 
@@ -45,10 +53,21 @@ export default async function NotificationsPage() {
   if (isSuperAdmin(u)) {
     try { await ensureBirthdayReminders(); } catch (e) { console.error('[birthday] reminder check failed', e); }
   }
-  const [notifs, unread] = await Promise.all([
-    prisma.notification.findMany({ where: { userId: u.id }, orderBy: { createdAt: 'desc' }, take: 100 }),
+  const admin = isAdmin(u);
+  // Own notifications + admin-wide broadcasts (visible to every admin).
+  const [notifs, userUnread, broadcastUnread] = await Promise.all([
+    prisma.notification.findMany({
+      where: admin ? { OR: [{ userId: u.id }, { userId: null }] } : { userId: u.id },
+      orderBy: { createdAt: 'desc' }, take: 100,
+    }),
     prisma.notification.count({ where: { userId: u.id, isRead: false } }),
+    admin ? prisma.notification.count({ where: { userId: null, NOT: { readBy: { has: u.id } } } }) : Promise.resolve(0),
   ]);
+  const unread = userUnread + broadcastUnread;
+  // A notification is unread for this user when: a broadcast they haven't read,
+  // or a personal one not marked read.
+  const isUnread = (n: { userId: string | null; isRead: boolean; readBy: string[] }) =>
+    n.userId === null ? !n.readBy.includes(u.id) : !n.isRead;
   return (
     <div className="space-y-4">
       <header className="flex items-end justify-between gap-3">
@@ -67,8 +86,9 @@ export default async function NotificationsPage() {
         {notifs.map((n) => {
           const meta = META[n.type] || { key: 'n.' + n.type, tone: 'info' as const, icon: 'mail' as const };
           const tone = `chip ${meta.tone === 'warn' ? 'chip-warn' : meta.tone === 'danger' ? 'chip-danger' : meta.tone === 'ok' ? 'chip-ok' : ''}`;
+          const unreadHere = isUnread(n);
           return (
-            <li key={n.id} className={`card flex gap-3 ${n.isRead ? 'opacity-80' : 'border-karni-500 shadow-md'}`}>
+            <li key={n.id} className={`card flex gap-3 ${unreadHere ? 'border-karni-500 shadow-md' : 'opacity-80'}`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                 meta.tone === 'warn' ? 'bg-amber-100 text-amber-800' :
                 meta.tone === 'danger' ? 'bg-red-100 text-red-800' :
@@ -86,7 +106,7 @@ export default async function NotificationsPage() {
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <span className={tone}>{t(meta.key)}</span>
                   <span className="text-[11px] text-karni-700">{n.createdAt.toLocaleString()}</span>
-                  {!n.isRead && <span className="chip chip-ok">{t('n.new')}</span>}
+                  {unreadHere && <span className="chip chip-ok">{t('n.new')}</span>}
                 </div>
               </div>
             </li>
