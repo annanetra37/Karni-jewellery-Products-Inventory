@@ -82,7 +82,8 @@ async function updateAccessAction(formData: FormData) {
   // Guard against a super admin accidentally demoting themselves out of access.
   if (id === me.id && role !== 'SUPER_ADMIN') return;
   const birthday = parseBirthday(formData.get('birthday'));
-  await prisma.user.update({ where: { id }, data: { role, ...(birthday ? { birthday } : {}) } });
+  const isOwner = formData.get('isOwner') === 'on';
+  await prisma.user.update({ where: { id }, data: { role, isOwner, ...(birthday ? { birthday } : {}) } });
   // Moving to super admin clears any point restriction.
   if (role === 'SUPER_ADMIN') await prisma.adminSellingPoint.deleteMany({ where: { userId: id } });
   revalidatePath('/admin/users');
@@ -344,6 +345,10 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
                     <label className="label">Birthday</label>
                     <BirthdayField key={u.birthday ? u.birthday.toISOString() : 'none'} name="birthday" defaultValue={u.birthday ? u.birthday.toISOString().slice(0, 10) : ''} />
                   </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="isOwner" defaultChecked={u.isOwner} className="accent-karni-600" />
+                    <span style={{ color: 'var(--ink)' }}>Business owner (shares the safe)</span>
+                  </label>
                   {u.id === me?.id && (
                     <p className="text-xs text-karni-700">You can&apos;t remove your own super-admin access here.</p>
                   )}
