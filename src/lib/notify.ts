@@ -18,14 +18,16 @@ export async function notify(args: NotifyArgs, tx: Prisma.TransactionClient | ty
   if (args.toAdmins) {
     const admins = await tx.user.findMany({ where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true }, select: { id: true, email: true } });
     recipients = admins;
-    await tx.notification.createMany({
-      data: admins.map((a) => ({
-        userId: a.id,
+    // A single broadcast row (userId = null) so EVERY admin — including ones
+    // added or promoted later — sees it. Read state is tracked per admin.
+    await tx.notification.create({
+      data: {
+        userId: null,
         type: args.type,
         title: args.title,
         body: args.body,
         relatedId: args.relatedId,
-      })),
+      },
     });
   } else if (args.userId) {
     const u = await tx.user.findUnique({ where: { id: args.userId }, select: { id: true, email: true } });
