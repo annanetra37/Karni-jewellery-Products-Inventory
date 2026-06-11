@@ -136,13 +136,18 @@ export default async function SafePage() {
   }
   const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
   const matchedDeposit = new Set<string>();
+  const startOfUtcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; closedAt: Date; openedAt: Date };
   const recon: Recon[] = [];
   for (const arr of byPoint.values()) {
     for (let i = 0; i < arr.length - 1; i++) {
       const prev = arr[i], next = arr[i + 1];
       if (prev.status === 'OPEN' || prev.closingCountAmd == null || !prev.closingAt) continue;
-      const inGap = deposits.filter((d) => d.sellingPointId === prev.sellingPointId && d.occurredAt > prev.closingAt! && d.occurredAt <= next.openingAt);
+      // Attribute a deposit to this handover if it's dated on/after the closing
+      // day and before the next opening, and not already matched to an earlier
+      // handover (so each deposit counts once).
+      const lower = startOfUtcDay(prev.closingAt);
+      const inGap = deposits.filter((d) => !matchedDeposit.has(d.id) && d.sellingPointId === prev.sellingPointId && d.occurredAt >= lower && d.occurredAt < next.openingAt);
       inGap.forEach((d) => matchedDeposit.add(d.id));
       const deposited = inGap.reduce((s, d) => s + Number(d.amountAmd), 0);
       const closing = Number(prev.closingCountAmd);

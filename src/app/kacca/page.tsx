@@ -33,9 +33,14 @@ async function openShiftAction(formData: FormData) {
   // missing from the drawer, so subtract it before flagging a discrepancy.
   let safeMoved = 0;
   if (priorClosing !== null && prior?.closingAt) {
+    // Count safe deposits from this drawer since the closing DAY, so a deposit
+    // dated to that day (any time) is captured even if it was stamped before
+    // the precise closing time.
+    const cd = prior.closingAt;
+    const dayStart = new Date(Date.UTC(cd.getUTCFullYear(), cd.getUTCMonth(), cd.getUTCDate()));
     const agg = await prisma.safeTransaction.aggregate({
       _sum: { amountAmd: true },
-      where: { type: 'DEPOSIT', sellingPointId, occurredAt: { gt: prior.closingAt } },
+      where: { type: 'DEPOSIT', sellingPointId, occurredAt: { gte: dayStart } },
     });
     safeMoved = Number(agg._sum.amountAmd ?? 0);
   }
