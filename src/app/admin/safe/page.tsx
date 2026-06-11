@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic';
 function toDate(v: unknown): Date {
   const s = String(v || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(`${s}T12:00:00.000Z`);
+    // End of the chosen day — cash taken to the safe happens at/after the
+    // shift's closing count, so this keeps it inside the handover gap.
+    const d = new Date(`${s}T23:59:59.000Z`);
     if (!Number.isNaN(d.getTime())) return d;
   }
   return new Date();
@@ -82,24 +84,34 @@ export default async function SafePage() {
   const ownersFlagged = ownerUsers.length > 0;
   const n = Math.max(1, owners.length);
 
-  let totalDeposits = 0, totalWithdrawals = 0;
+  let totalDeposits = 0, totalWithdrawals = 0, totalPersonal = 0, totalInvestment = 0;
   const withdrawnByOwner = new Map<string, number>();
+  const personalByOwner = new Map<string, number>();
+  const investByOwner = new Map<string, number>();
+  const add = (m: Map<string, number>, id: string, v: number) => m.set(id, (m.get(id) || 0) + v);
   for (const tx of txs) {
     const amt = Number(tx.amountAmd);
     if (tx.type === 'DEPOSIT') { totalDeposits += amt; continue; }
     totalWithdrawals += amt;
+    const inv = tx.reason === 'INVESTMENT';
+    if (inv) totalInvestment += amt; else totalPersonal += amt;
+    const reasonMap = inv ? investByOwner : personalByOwner;
     if (tx.splitAll) {
-      for (const o of owners) withdrawnByOwner.set(o.id, (withdrawnByOwner.get(o.id) || 0) + amt / n);
+      for (const o of owners) { add(withdrawnByOwner, o.id, amt / n); add(reasonMap, o.id, amt / n); }
     } else if (tx.ownerId) {
-      withdrawnByOwner.set(tx.ownerId, (withdrawnByOwner.get(tx.ownerId) || 0) + amt);
+      add(withdrawnByOwner, tx.ownerId, amt);
+      add(reasonMap, tx.ownerId, amt);
     }
   }
   const safeBalance = totalDeposits - totalWithdrawals;
   const share = totalDeposits / n;
-  const ownerRows = owners.map((o) => {
-    const withdrawn = withdrawnByOwner.get(o.id) || 0;
-    return { name: o.fullName, withdrawn, balance: share - withdrawn };
-  });
+  const ownerRows = owners.map((o) => ({
+    name: o.fullName,
+    withdrawn: withdrawnByOwner.get(o.id) || 0,
+    personal: personalByOwner.get(o.id) || 0,
+    investment: investByOwner.get(o.id) || 0,
+    balance: share - (withdrawnByOwner.get(o.id) || 0),
+  }));
 
   // Daily safe balance time series (chronological, cumulative).
   const byDay = new Map<string, number>();
@@ -115,32 +127,35 @@ export default async function SafePage() {
   });
 
   // Reconciliation: next opening should equal previous closing minus the safe
-  // deposits taken from that drawer in between.
-  const depositsBetween = (pointId: string, from: Date, to: Date) =>
-    txs.filter((tx) => tx.type === 'DEPOSIT' && tx.sellingPointId === pointId && tx.occurredAt > from && tx.occurredAt <= to)
-      .reduce((s, tx) => s + Number(tx.amountAmd), 0);
+  // deposits taken from that drawer between the close and the next open.
   const byPoint = new Map<string, typeof sessions>();
   for (const s of sessions) {
     const arr = byPoint.get(s.sellingPointId) || [];
     arr.push(s);
     byPoint.set(s.sellingPointId, arr);
   }
-  type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; openedAt: Date };
+  const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
+  const matchedDeposit = new Set<string>();
+  type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; closedAt: Date; openedAt: Date };
   const recon: Recon[] = [];
   for (const arr of byPoint.values()) {
     for (let i = 0; i < arr.length - 1; i++) {
       const prev = arr[i], next = arr[i + 1];
       if (prev.status === 'OPEN' || prev.closingCountAmd == null || !prev.closingAt) continue;
+      const inGap = deposits.filter((d) => d.sellingPointId === prev.sellingPointId && d.occurredAt > prev.closingAt! && d.occurredAt <= next.openingAt);
+      inGap.forEach((d) => matchedDeposit.add(d.id));
+      const deposited = inGap.reduce((s, d) => s + Number(d.amountAmd), 0);
       const closing = Number(prev.closingCountAmd);
-      const deposited = depositsBetween(prev.sellingPointId, prev.closingAt, next.openingAt);
       const opening = Number(next.openingCountAmd);
       const expected = closing - deposited;
-      recon.push({ point: prev.sellingPoint.name, closing, deposited, opening, expected, diff: opening - expected, openedAt: next.openingAt });
+      recon.push({ point: prev.sellingPoint.name, closing, deposited, opening, expected, diff: opening - expected, closedAt: prev.closingAt, openedAt: next.openingAt });
     }
   }
   recon.sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
   const reconShown = recon.slice(0, 15);
   const flags = recon.filter((r) => Math.abs(r.diff) > 0.01).length;
+  // Deposits not yet checked against a handover (no shift opened after them).
+  const pendingDeposits = deposits.filter((d) => !matchedDeposit.has(d.id));
 
   return (
     <div className="space-y-5">
@@ -179,16 +194,24 @@ export default async function SafePage() {
         </p>
         <ul className="space-y-2">
           {ownerRows.map((o) => (
-            <li key={o.name} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
-              <span className="font-medium">{o.name}</span>
-              <span className="text-right text-sm">
-                <span className="tabular-nums" style={{ color: 'var(--ink-soft)' }}>{t('sf.taken')} {formatAmd(o.withdrawn)}</span>
-                <b className="ml-3 tabular-nums">{formatAmd(o.balance)}</b>
-              </span>
+            <li key={o.name} className="border-b border-karni-100 pb-2 last:border-0">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium">{o.name}</span>
+                <b className="tabular-nums">{formatAmd(o.balance)}</b>
+              </div>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--ink-soft)' }}>
+                {formatAmd(share)} {t('sf.share')} · {t('sf.taken')} {formatAmd(o.withdrawn)}
+                {(o.personal > 0 || o.investment > 0) && <> ({t('sf.personal')} {formatAmd(o.personal)} · {t('sf.investment')} {formatAmd(o.investment)})</>}
+              </p>
             </li>
           ))}
           {ownerRows.length === 0 && <li className="text-sm text-karni-700">{t('sf.noOwners')}</li>}
         </ul>
+        {(totalPersonal > 0 || totalInvestment > 0) && (
+          <p className="text-xs mt-3 pt-2 border-t border-karni-100" style={{ color: 'var(--ink-soft)' }}>
+            <span className="font-semibold">{t('sf.byReason')}:</span> {t('sf.personal')} {formatAmd(totalPersonal)} · {t('sf.investment')} {formatAmd(totalInvestment)}
+          </p>
+        )}
       </section>
 
       {/* Record forms */}
@@ -268,6 +291,22 @@ export default async function SafePage() {
       <section className="card">
         <p className="font-semibold mb-1">{t('sf.reconciliation')}</p>
         <p className="text-xs text-karni-700 mb-3">{t('sf.reconHint')}</p>
+
+        {pendingDeposits.length > 0 && (
+          <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--bg-tint)' }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink)' }}>{t('sf.pending')}</p>
+            <p className="text-[11px] text-karni-700 mb-2">{t('sf.pendingHint')}</p>
+            <ul className="space-y-1 text-xs">
+              {pendingDeposits.slice(0, 10).map((d) => (
+                <li key={d.id} className="flex items-center justify-between gap-2">
+                  <span>{d.occurredAt.toLocaleDateString()} · {d.sellingPoint ? d.sellingPoint.name : t('sf.unspecified')}</span>
+                  <b className="tabular-nums">{formatAmd(Number(d.amountAmd))}</b>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <ul className="space-y-2 text-sm">
           {reconShown.map((r, i) => {
             const bad = Math.abs(r.diff) > 0.01;
@@ -276,7 +315,7 @@ export default async function SafePage() {
                 <div className="min-w-0">
                   <p className="font-medium">{r.point}</p>
                   <p className="text-xs text-karni-700">
-                    {formatAmd(r.closing)} − {formatAmd(r.deposited)} = {formatAmd(r.expected)} · {formatAmd(r.opening)}
+                    {t('sf.closed')} {r.closedAt.toLocaleDateString()}: {formatAmd(r.closing)} − {t('sf.movedToSafe')} {formatAmd(r.deposited)} = {formatAmd(r.expected)} → {t('sf.opened')} {r.openedAt.toLocaleDateString()}: {formatAmd(r.opening)}
                   </p>
                 </div>
                 <span className={`chip ${bad ? 'chip-danger' : 'chip-ok'}`}>

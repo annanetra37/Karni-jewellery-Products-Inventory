@@ -29,7 +29,18 @@ async function openShiftAction(formData: FormData) {
     orderBy: { closingAt: 'desc' },
   });
   const priorClosing = prior?.closingCountAmd ? Number(prior.closingCountAmd) : null;
-  const mismatch = priorClosing !== null && Math.abs(priorClosing - openingCountAmd) > 0.001;
+  // Cash legitimately moved to the safe since the last close is expected to be
+  // missing from the drawer, so subtract it before flagging a discrepancy.
+  let safeMoved = 0;
+  if (priorClosing !== null && prior?.closingAt) {
+    const agg = await prisma.safeTransaction.aggregate({
+      _sum: { amountAmd: true },
+      where: { type: 'DEPOSIT', sellingPointId, occurredAt: { gt: prior.closingAt } },
+    });
+    safeMoved = Number(agg._sum.amountAmd ?? 0);
+  }
+  const expectedOpening = priorClosing === null ? null : priorClosing - safeMoved;
+  const mismatch = expectedOpening !== null && Math.abs(expectedOpening - openingCountAmd) > 0.001;
   const session = await prisma.cashDrawerSession.create({
     data: {
       sellingPointId, userId: u.id,
@@ -45,7 +56,7 @@ async function openShiftAction(formData: FormData) {
     await notify({
       type: 'KACCA_MISMATCH', toAdmins: true,
       title: `Kacca mismatch at ${sp?.name}`,
-      body: `Outgoing left ${priorClosing}, incoming counted ${openingCountAmd}.`,
+      body: `Previous closing ${priorClosing}${safeMoved ? `, ${safeMoved} moved to safe` : ''}, expected ${expectedOpening}, but opened with ${openingCountAmd} (off by ${(openingCountAmd - (expectedOpening ?? 0)).toFixed(2)}).`,
       relatedId: session.id,
     });
   }
