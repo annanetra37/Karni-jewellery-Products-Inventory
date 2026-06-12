@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getCurrentUser, isAdmin, isSuperAdmin } from '@/lib/auth';
+import { getCurrentUser, isAdmin, isSuperAdmin, sellingPointScope } from '@/lib/auth';
 import { ensureBirthdayReminders } from '@/lib/birthdays';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
@@ -28,7 +28,14 @@ export default async function HomePage() {
   }
 
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const [todaySalesCount, todayTotalAgg, openShift, lowStock] = await Promise.all([
+  // Admins (and super admins) oversee shifts they may not have opened
+  // themselves, so surface every open shift across the points they cover.
+  const scope = await sellingPointScope(user);
+  const admin = isAdmin(user);
+  const openShiftsWhere = scope
+    ? { status: 'OPEN' as const, sellingPointId: { in: scope } }
+    : { status: 'OPEN' as const };
+  const [todaySalesCount, todayTotalAgg, openShift, lowStock, openShifts] = await Promise.all([
     prisma.sale.count({ where: { createdAt: { gte: todayStart } } }),
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { createdAt: { gte: todayStart } } }),
     prisma.cashDrawerSession.findFirst({
@@ -36,7 +43,17 @@ export default async function HomePage() {
       include: { sellingPoint: true },
     }),
     prisma.inventoryItem.count({ where: { quantity: { lte: 2 } } }),
+    admin
+      ? prisma.cashDrawerSession.findMany({
+          where: openShiftsWhere,
+          orderBy: { openingAt: 'asc' },
+          include: { sellingPoint: true, openingBy: true },
+        })
+      : Promise.resolve([]),
   ]);
+  // On the home page, only show OTHER people's open shifts here — the user's own
+  // shift already has its dedicated card above.
+  const otherOpenShifts = openShifts.filter((s) => s.userId !== user.id);
 
   return (
     <div className="space-y-4">
@@ -68,6 +85,28 @@ export default async function HomePage() {
             </div>
             <span style={{ color: 'var(--ink-soft)' }}>›</span>
           </div>
+        </Link>
+      )}
+
+      {admin && otherOpenShifts.length > 0 && (
+        <Link href="/kacca" className="card-interactive block">
+          <p className="text-sm font-semibold mb-2" style={{ color: 'var(--brand-deep)' }}>{t('k.openShifts')}</p>
+          <ul className="space-y-1.5">
+            {otherOpenShifts.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: 'var(--success)' }}></span>
+                  <span className="min-w-0">
+                    <span className="font-medium">{s.sellingPoint.name}</span>
+                    <span style={{ color: 'var(--ink-soft)' }}> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                  </span>
+                </span>
+                <span className="text-xs shrink-0" style={{ color: 'var(--ink-soft)' }}>
+                  {t('k.at')} {s.openingAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </li>
+            ))}
+          </ul>
         </Link>
       )}
 
