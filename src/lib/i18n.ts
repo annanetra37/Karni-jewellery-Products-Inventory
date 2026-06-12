@@ -320,6 +320,10 @@ const D: Record<string, Record<Locale, string>> = {
   'k.alreadyOpen': { en: 'A shift is already open at this selling point by', hy: 'Այս վաճառակետում արդեն բաց է հերթափոխ՝', ru: 'На этой точке уже открыта смена пользователем' },
   'k.mustClose': { en: 'They must close it first.', hy: 'Նրանք նախ պետք է փակեն այն։', ru: 'Сначала её нужно закрыть.' },
   'k.forbidden': { en: 'You do not have access to that selling point.', hy: 'Դուք այդ վաճառակետի հասանելիություն չունեք։', ru: 'У вас нет доступа к этой точке продаж.' },
+  'k.openShifts': { en: 'Open shifts right now', hy: 'Այս պահին բաց հերթափոխներ', ru: 'Открытые смены сейчас' },
+  'k.noOpenShifts': { en: 'No shifts are open right now.', hy: 'Այս պահին բաց հերթափոխ չկա։', ru: 'Сейчас нет открытых смен.' },
+  'k.openedBy': { en: 'opened by', hy: 'բացել է', ru: 'открыл(а)' },
+  'k.at': { en: 'at', hy: 'ժամը', ru: 'в' },
 
   // Orders
   'o.title': { en: 'Orders', hy: 'Պատվերներ', ru: 'Заказы' },

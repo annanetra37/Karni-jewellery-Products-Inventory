@@ -12,6 +12,7 @@ type C = {
   address: string | null;
   instagram: string | null;
   gender: string | null;
+  createdAt?: string | null;
 };
 
 type Draft = {
@@ -30,6 +31,13 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 function dateOnly(v: string | null): string {
   return v ? v.slice(0, 10) : '';
+}
+
+function addedLabel(v: string | null | undefined): string {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function birthdayLabel(v: string | null): string {
@@ -232,6 +240,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
                     {c.gender && <span>{c.gender}</span>}
                     {c.instagram && <span>IG {c.instagram.startsWith('@') ? c.instagram : `@${c.instagram}`}</span>}
                     {c.address && <span className="truncate">{c.address}</span>}
+                    {c.createdAt && <span style={{ color: 'var(--ink-faint)' }}>Added {addedLabel(c.createdAt)}</span>}
                   </div>
                 </div>
                 <button className="btn-link text-xs shrink-0" onClick={() => startEdit(c)}>Edit</button>
