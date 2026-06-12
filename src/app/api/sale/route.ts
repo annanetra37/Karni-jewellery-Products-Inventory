@@ -4,6 +4,12 @@ import { prisma } from '@/lib/db';
 import { getCurrentUser, sellingPointScope } from '@/lib/auth';
 import { nextNumber, saleNumber } from '@/lib/counter';
 import { notify } from '@/lib/notify';
+import { formatAmd } from '@/lib/currency';
+import { publicOriginFromReq } from '@/lib/origin';
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
 
 const Body = z.object({
   sellingPointId: z.string(),
@@ -156,5 +162,69 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+  // Congratulate the owners on every sale: an in-app notification plus a rich
+  // email with the purchase details and a link to view it in the portal.
+  try {
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        customer: { select: { fullName: true } },
+        sellingPoint: { select: { name: true } },
+        soldBy: { select: { fullName: true } },
+        lineItems: { include: { variant: { select: { designName: true, sku: true, color: true, size: true } } } },
+      },
+    });
+    if (sale) {
+      const total = Number(sale.totalAmd);
+      const units = sale.lineItems.reduce((n, li) => n + li.quantity, 0);
+      const who = sale.customer?.fullName || 'Walk-in';
+      const origin = publicOriginFromReq(req);
+      const link = `${origin}/sale/${sale.id}/receipt`;
+
+      const rows = sale.lineItems.map((li) => {
+        const name = li.variant.designName;
+        const variant = [li.variant.color, li.variant.size].filter(Boolean).join(' · ');
+        return `<tr>
+          <td style="padding:8px 0;border-bottom:1px solid #eee5cf;">
+            <div style="font-weight:600;">${escapeHtml(name)}</div>
+            ${variant ? `<div style="font-size:12px;color:#8a938b;">${escapeHtml(variant)}</div>` : ''}
+            <div style="font-size:11px;color:#b0b6af;font-family:monospace;">${escapeHtml(li.variant.sku)}</div>
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid #eee5cf;text-align:right;white-space:nowrap;">
+            ${li.quantity} × ${escapeHtml(formatAmd(Number(li.unitPriceAmd)))}<br>
+            <strong>${escapeHtml(formatAmd(Number(li.lineTotalAmd)))}</strong>
+          </td>
+        </tr>`;
+      }).join('');
+
+      const bodyHtml = `
+        <p style="font-size:18px;margin:0 0 4px;">🎉 A new purchase just came in!</p>
+        <p style="margin:0 0 16px;color:#3a4a3f;">
+          <strong>${escapeHtml(formatAmd(total))}</strong> · ${units} ${units === 1 ? 'item' : 'items'}
+        </p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">${rows}</table>
+        <table style="width:100%;font-size:13px;color:#3a4a3f;border-collapse:collapse;">
+          <tr><td style="padding:2px 0;color:#8a938b;">Customer</td><td style="text-align:right;">${escapeHtml(who)}</td></tr>
+          <tr><td style="padding:2px 0;color:#8a938b;">Selling point</td><td style="text-align:right;">${escapeHtml(sale.sellingPoint.name)}</td></tr>
+          <tr><td style="padding:2px 0;color:#8a938b;">Sold by</td><td style="text-align:right;">${escapeHtml(sale.soldBy.fullName)}</td></tr>
+          <tr><td style="padding:2px 0;color:#8a938b;">Payment</td><td style="text-align:right;">${escapeHtml(sale.paymentMethod || 'CASH')}</td></tr>
+          <tr><td style="padding:2px 0;color:#8a938b;">Sale no.</td><td style="text-align:right;font-family:monospace;">${escapeHtml(sale.saleNumber)}</td></tr>
+        </table>`;
+
+      await notify({
+        type: 'NEW_SALE',
+        toAdmins: true,
+        title: `🎉 Congratulations — new purchase! ${formatAmd(total)}`,
+        body: `${who} bought ${units} ${units === 1 ? 'item' : 'items'} for ${formatAmd(total)} at ${sale.sellingPoint.name} (sold by ${sale.soldBy.fullName}).`,
+        bodyHtml,
+        cta: { href: link, label: 'View purchase in portal' },
+        relatedId: sale.id,
+      });
+    }
+  } catch (e) {
+    // Never let a notification failure break the sale response.
+    console.error('[sale] purchase notification failed', e);
+  }
+
   return NextResponse.json({ id: saleId });
 }

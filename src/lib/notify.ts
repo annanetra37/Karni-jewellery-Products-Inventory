@@ -11,6 +11,10 @@ type NotifyArgs = {
   userId?: string;
   /** Also send by email when Resend is configured. */
   email?: boolean;
+  /** Rich HTML for the email body; falls back to the escaped `body` text. */
+  bodyHtml?: string;
+  /** Optional call-to-action button in the email. */
+  cta?: { href: string; label: string };
 };
 
 export async function notify(args: NotifyArgs, tx: Prisma.TransactionClient | typeof prisma = prisma) {
@@ -45,11 +49,11 @@ export async function notify(args: NotifyArgs, tx: Prisma.TransactionClient | ty
 
   if (args.email !== false && recipients.length > 0) {
     // Fire-and-forget: don't block the caller.
-    const body = args.body ? `<p>${escapeHtml(args.body)}</p>` : '';
+    const body = args.bodyHtml ?? (args.body ? `<p>${escapeHtml(args.body)}</p>` : '');
     sendEmail({
       to: recipients.map((r) => r.email),
       subject: args.title,
-      html: wrap(args.title, body),
+      html: wrap(args.title, body, args.cta),
     }).catch((e) => console.error('[notify] email fire-forget failed', e));
   }
 }

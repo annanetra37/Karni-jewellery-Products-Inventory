@@ -66,6 +66,7 @@ enum CashSessionStatus {
 
 enum NotificationType {
   NEW_ORDER
+  NEW_SALE
   LOW_STOCK
   KACCA_MISMATCH
   INVITE
