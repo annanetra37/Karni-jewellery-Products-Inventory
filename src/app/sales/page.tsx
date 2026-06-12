@@ -1,7 +1,8 @@
-import { requireUser, sellingPointScope } from '@/lib/auth';
+import { requireUser, sellingPointScope, isSuperAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { Thumb } from '@/components/Thumb';
+import { SaleEditor } from '@/components/SaleEditor';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
   const startDate = startOf(range);
 
   const scope = await sellingPointScope(user);
+  const canEdit = isSuperAdmin(user);
   // Everyone sees the sales for the selling points they have access to —
   // super admins and unrestricted users see all. (Previously salespeople were
   // limited to their own sales, so they couldn't see a teammate's sale.)
@@ -45,7 +47,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
-        customer: { select: { fullName: true, phone: true } },
+        customer: { select: { id: true, fullName: true, phone: true } },
         soldBy: { select: { fullName: true } },
         sellingPoint: { select: { name: true } },
         lineItems: { include: { variant: { select: { designName: true, sku: true, color: true, size: true, imageUrl: true } } } },
@@ -147,7 +149,17 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       ))}
                     </ul>
 
-                    <Link href={`/sale/${s.id}/receipt`} className="btn-link text-xs inline-block">Open receipt →</Link>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Link href={`/sale/${s.id}/receipt`} className="btn-link text-xs inline-block">Open receipt →</Link>
+                      {canEdit && (
+                        <SaleEditor
+                          saleId={s.id}
+                          payment={(s.paymentMethod || 'CASH') as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'}
+                          customerId={s.customer?.id ?? null}
+                          customerName={s.customer?.fullName ?? null}
+                        />
+                      )}
+                    </div>
                   </div>
                 </details>
               </li>
