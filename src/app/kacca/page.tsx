@@ -128,7 +128,12 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
     ? { status: 'OPEN' as const, sellingPointId: { in: scope } }
     : { status: 'OPEN' as const, userId: user.id };
   const recentWhere = scope ? { sellingPointId: { in: scope } } : (isAdmin(user) ? {} : { userId: user.id });
-  const [sps, openShift, recentSessions] = await Promise.all([
+  // Admins (and super admins) get a live overview of every shift currently open
+  // across the points they oversee — which point, opened by whom, and when.
+  const openShiftsWhere = scope
+    ? { status: 'OPEN' as const, sellingPointId: { in: scope } }
+    : { status: 'OPEN' as const };
+  const [sps, openShift, recentSessions, openShifts] = await Promise.all([
     prisma.sellingPoint.findMany({ where: { isActive: true, type: { in: ['PHYSICAL', 'CONSIGNMENT'] } }, orderBy: { name: 'asc' } }),
     prisma.cashDrawerSession.findFirst({
       where: openWhere,
@@ -140,6 +145,13 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       orderBy: { openingAt: 'desc' }, take: 10,
       include: { sellingPoint: true, openingBy: true, closingBy: true, user: true },
     }),
+    isAdmin(user)
+      ? prisma.cashDrawerSession.findMany({
+          where: openShiftsWhere,
+          orderBy: { openingAt: 'asc' },
+          include: { sellingPoint: true, openingBy: true },
+        })
+      : Promise.resolve([]),
   ]);
   const allowedSps = await allowedSellingPoints(user, sps);
 
@@ -184,6 +196,32 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           <p className="text-xs text-karni-700">{t('k.handoverHint')}</p>
           <button className="btn-primary w-full" type="submit">{t('k.startBtn')}</button>
         </form>
+      )}
+
+      {isAdmin(user) && (
+        <section className="card">
+          <p className="font-medium mb-2">{t('k.openShifts')}</p>
+          {openShifts.length === 0 ? (
+            <p className="text-sm text-karni-700">{t('k.noOpenShifts')}</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {openShifts.map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                  <span className="inline-flex items-center gap-2 min-w-0">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="font-medium">{s.sellingPoint.name}</span>
+                      <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                    </span>
+                  </span>
+                  <span className="text-xs text-karni-700 text-right shrink-0">
+                    {t('k.at')} {s.openingAt.toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       <section className="card">
