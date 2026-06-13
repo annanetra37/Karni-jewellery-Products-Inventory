@@ -300,6 +300,7 @@ model Sale {
   customerId     String?
   soldById       String
   subtotalAmd    Decimal  @db.Decimal(12, 2)
+  discountAmd    Decimal  @default(0) @db.Decimal(12, 2)
   totalAmd       Decimal  @db.Decimal(12, 2)
   currency       String   @default("AMD")
   paymentMethod  PaymentMethod? @default(CASH)

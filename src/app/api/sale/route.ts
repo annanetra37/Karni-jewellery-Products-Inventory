@@ -6,6 +6,7 @@ import { nextNumber, saleNumber } from '@/lib/counter';
 import { notify } from '@/lib/notify';
 import { formatAmd } from '@/lib/currency';
 import { publicOriginFromReq } from '@/lib/origin';
+import { DiscountSchema, resolveDiscount } from '@/lib/discount';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -15,6 +16,7 @@ const Body = z.object({
   sellingPointId: z.string(),
   customerId: z.string().nullable().optional(),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
+  discount: DiscountSchema.nullable().optional(),
   lines: z.array(z.object({
     variantId: z.string(),
     quantity: z.number().int().min(1),
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
   if (!u) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
-  const { sellingPointId, customerId, paymentMethod, lines } = parsed.data;
+  const { sellingPointId, customerId, paymentMethod, discount, lines } = parsed.data;
 
   // Enforce the seller's selling-point scope server-side (UI restriction alone
   // is not enough).
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
       }
 
       const subtotal = prepared.reduce((s, p) => s + p.lineTotalAmd, 0);
+      const discountAmd = resolveDiscount(subtotal, discount);
       const n = await nextNumber(tx, 'sale');
       const sNumber = saleNumber(n);
 
@@ -95,7 +98,8 @@ export async function POST(req: NextRequest) {
           customerId: customerId || null,
           soldById: u.id,
           subtotalAmd: subtotal,
-          totalAmd: subtotal,
+          discountAmd,
+          totalAmd: subtotal - discountAmd,
           paymentMethod: paymentMethod || 'CASH',
           lineItems: {
             create: prepared.map((p) => ({

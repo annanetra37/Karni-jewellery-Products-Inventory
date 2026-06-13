@@ -6,6 +6,7 @@ import { ProductSearch } from '@/components/ProductSearch';
 import { ProductBrowse } from '@/components/ProductBrowse';
 import { BirthdayPicker } from '@/components/BirthdayPicker';
 import { useT } from '@/components/I18nProvider';
+import { resolveDiscount } from '@/lib/discount';
 
 type SP = { id: string; name: string; type: string };
 type CartLine = {
@@ -33,7 +34,13 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [newName, setNewName] = useState(''); const [newPhone, setNewPhone] = useState(''); const [newEmail, setNewEmail] = useState('');
   const [newBirthday, setNewBirthday] = useState('');
 
-  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
+  // Default to Search — it always lists the full catalogue (empty query shows
+  // everything), whereas Browse only works when products carry collection /
+  // category metadata, which can leave it looking empty.
+  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('search');
+  const [pickerOpen, setPickerOpen] = useState(true);
+  const [discKind, setDiscKind] = useState<'AMOUNT' | 'PERCENT'>('AMOUNT');
+  const [discValue, setDiscValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
   const { t } = useT();
@@ -73,6 +80,10 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
 
   const subtotal = cart.reduce((s, l) => s + l.quantity * l.unitPriceAmd, 0);
   const totalQty = cart.reduce((s, l) => s + l.quantity, 0);
+  const discountValueNum = Number(discValue) || 0;
+  const discount = discountValueNum > 0 ? { kind: discKind, value: discountValueNum } : null;
+  const discountAmd = resolveDiscount(subtotal, discount);
+  const total = subtotal - discountAmd;
 
   async function submit() {
     setErr(''); setSubmitting(true);
@@ -94,6 +105,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
           sellingPointId: spId,
           customerId,
           paymentMethod,
+          discount,
           lines: cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
         }),
       });
@@ -133,14 +145,39 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
               </div>
             </div>
           ))}
-          <div className="flex justify-between font-bold text-lg pt-1 border-t border-karni-100">
+          <div className="flex justify-between text-sm pt-1 border-t border-karni-100">
             <span>{t('s.subtotal')}</span>
             <span>{subtotal.toLocaleString()} ֏</span>
+          </div>
+          <div className="space-y-1">
+            <label className="label">{t('s.discount')}</label>
+            <div className="flex gap-2">
+              <input className="input flex-1" type="number" min="0" step="0.01" inputMode="decimal"
+                placeholder="0" value={discValue} onChange={(e) => setDiscValue(e.target.value)} />
+              <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200 shrink-0">
+                {(['AMOUNT', 'PERCENT'] as const).map((k) => (
+                  <button key={k} type="button" onClick={() => setDiscKind(k)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${discKind === k ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700'}`}>
+                    {k === 'AMOUNT' ? '֏' : '%'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {discountAmd > 0 && (
+            <div className="flex justify-between text-sm" style={{ color: 'var(--danger)' }}>
+              <span>{t('s.discount')}</span>
+              <span>−{discountAmd.toLocaleString()} ֏</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-lg pt-1 border-t border-karni-100">
+            <span>{t('s.total')}</span>
+            <span>{total.toLocaleString()} ֏</span>
           </div>
         </div>
       )}
 
-      <details className="card" open={cart.length === 0}>
+      <details className="card" open={pickerOpen} onToggle={(e) => setPickerOpen((e.target as HTMLDetailsElement).open)}>
         <summary className="cursor-pointer font-medium select-none">
           {cart.length === 0 ? t('s.findProduct') : t('s.addAnother')}
         </summary>
@@ -240,7 +277,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
           )}
 
           <button className="btn-primary w-full text-lg py-4" disabled={submitting || !spId || cart.length === 0} onClick={submit}>
-            {submitting ? t('c.processing') : `${t('s.confirmSell')} — ${subtotal.toLocaleString()} ֏`}
+            {submitting ? t('c.processing') : `${t('s.confirmSell')} — ${total.toLocaleString()} ֏`}
           </button>
         </>
       )}
