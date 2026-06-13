@@ -116,6 +116,48 @@ async function closeShiftAction(formData: FormData) {
   redirect('/kacca');
 }
 
+async function editOpeningCountAction(formData: FormData) {
+  'use server';
+  const { requireUser, isAdmin, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  if (!isAdmin(u)) redirect('/kacca?err=forbidden');
+  const sessionId = String(formData.get('sessionId') || '');
+  const openingCountAmd = Number(formData.get('openingCountAmd') || 0);
+  const found = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!found || found.status !== 'OPEN') redirect('/kacca');
+  const session = found!;
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session.sellingPointId)) redirect('/kacca?err=forbidden');
+  // Recompute the handover mismatch against the corrected amount, using the
+  // same safe-aware expectation the shift was originally judged by.
+  const prior = await prisma.cashDrawerSession.findFirst({
+    where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] }, closingAt: { lt: session.openingAt } },
+    orderBy: { closingAt: 'desc' },
+  });
+  const priorClosing = prior?.closingCountAmd != null
+    ? Number(prior.closingCountAmd)
+    : (session.priorClosingAmd != null ? Number(session.priorClosingAmd) : null);
+  let safeMoved = 0;
+  if (priorClosing !== null && prior?.closingAt) {
+    const cd = prior.closingAt;
+    const dayStart = new Date(Date.UTC(cd.getUTCFullYear(), cd.getUTCMonth(), cd.getUTCDate()));
+    const agg = await prisma.safeTransaction.aggregate({
+      _sum: { amountAmd: true },
+      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId, occurredAt: { gte: dayStart } },
+    });
+    safeMoved = Number(agg._sum.amountAmd ?? 0);
+  }
+  const expectedOpening = priorClosing === null ? null : priorClosing - safeMoved;
+  const mismatch = expectedOpening !== null && Math.abs(expectedOpening - openingCountAmd) > 0.001;
+  await prisma.cashDrawerSession.update({
+    where: { id: sessionId },
+    data: { openingCountAmd, handoverMismatch: mismatch },
+  });
+  redirect('/kacca');
+}
+
 export default async function KaccaPage({ searchParams }: { searchParams: Promise<{ err?: string; by?: string }> }) {
   const user = await requireUser();
   const { t } = await getT();
@@ -206,17 +248,31 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           ) : (
             <ul className="space-y-2 text-sm">
               {openShifts.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0 last:pb-0">
-                  <span className="inline-flex items-center gap-2 min-w-0">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
-                    <span className="min-w-0">
-                      <span className="font-medium">{s.sellingPoint.name}</span>
-                      <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                <li key={s.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="font-medium">{s.sellingPoint.name}</span>
+                        <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-xs text-karni-700 text-right shrink-0">
-                    {t('k.at')} {s.openingAt.toLocaleString()}
-                  </span>
+                    <span className="text-xs text-karni-700 text-right shrink-0">
+                      {t('k.at')} {s.openingAt.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 mt-1 pl-4">
+                    <span className="text-xs text-karni-700">{t('h.openingCount')}: <b>{formatAmd(Number(s.openingCountAmd))}</b></span>
+                    <details className="text-xs">
+                      <summary className="btn-link cursor-pointer select-none">{t('k.editOpening')}</summary>
+                      <form action={editOpeningCountAction} className="flex items-center gap-2 mt-2">
+                        <input type="hidden" name="sessionId" value={s.id} />
+                        <input className="input py-1.5 w-32" name="openingCountAmd" type="number" step="0.01" min="0"
+                          defaultValue={Number(s.openingCountAmd)} required />
+                        <button className="btn-primary px-3 py-1.5" type="submit">{t('c.save')}</button>
+                      </form>
+                    </details>
+                  </div>
                 </li>
               ))}
             </ul>

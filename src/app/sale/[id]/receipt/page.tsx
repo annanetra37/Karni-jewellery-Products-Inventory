@@ -62,6 +62,14 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             ))}
           </tbody>
           <tfoot>
+            {Number(sale.discountAmd) > 0 && (
+              <>
+                <tr><td colSpan={2} className="pt-2 text-right text-karni-700">Subtotal</td>
+                  <td className="pt-2 text-right text-karni-700">{formatAmd(Number(sale.subtotalAmd))}</td></tr>
+                <tr><td colSpan={2} className="text-right text-karni-700">Discount</td>
+                  <td className="text-right text-karni-700">−{formatAmd(Number(sale.discountAmd))}</td></tr>
+              </>
+            )}
             <tr><td colSpan={2} className="py-2 font-bold text-right">Total</td>
               <td className="py-2 font-bold text-right">{formatAmd(Number(sale.totalAmd))}</td></tr>
           </tfoot>

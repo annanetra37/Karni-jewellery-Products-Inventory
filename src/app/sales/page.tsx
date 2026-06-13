@@ -7,7 +7,7 @@ import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
-type Search = Promise<{ range?: string }>;
+type Search = Promise<{ range?: string; date?: string }>;
 
 function startOf(range: string): Date | null {
   const d = new Date();
@@ -28,8 +28,20 @@ const RANGES = [
 export default async function SalesPage({ searchParams }: { searchParams: Search }) {
   const user = await requireUser();
   const sp = await searchParams;
+  // A specific day (?date=YYYY-MM-DD) takes precedence over the range pills.
+  const date = typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : '';
   const range = RANGES.some((r) => r.key === sp.range) ? sp.range! : 'today';
   const startDate = startOf(range);
+
+  let createdAtFilter: { gte: Date; lt?: Date } | null = null;
+  if (date) {
+    const dayStart = new Date(`${date}T00:00:00`);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    createdAtFilter = { gte: dayStart, lt: dayEnd };
+  } else if (startDate) {
+    createdAtFilter = { gte: startDate };
+  }
 
   const scope = await sellingPointScope(user);
   const canEdit = isSuperAdmin(user);
@@ -37,7 +49,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
   // super admins and unrestricted users see all. (Previously salespeople were
   // limited to their own sales, so they couldn't see a teammate's sale.)
   const where = {
-    ...(startDate ? { createdAt: { gte: startDate } } : {}),
+    ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
     ...(scope ? { sellingPointId: { in: scope } } : {}),
   };
 
@@ -71,13 +83,27 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
         {RANGES.map((r) => (
           <Link key={r.key} href={`/sales?range=${r.key}`} scroll={false}
             className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
-            style={range === r.key
+            style={!date && range === r.key
               ? { background: 'var(--brand)', color: '#fff' }
               : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
             {r.label}
           </Link>
         ))}
       </div>
+
+      {/* Pick a specific day */}
+      <form method="get" className="flex flex-wrap items-center gap-2">
+        <label className="text-xs font-semibold" style={{ color: 'var(--ink-soft)' }}>On a specific day:</label>
+        <input type="date" name="date" defaultValue={date} max={new Date().toISOString().slice(0, 10)}
+          className="px-3 py-1.5 rounded-lg text-sm border" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)', color: 'var(--ink)' }} />
+        <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'var(--brand)', color: '#fff' }}>Show day</button>
+        {date && <Link href="/sales?range=today" scroll={false} className="btn-link text-xs">Clear</Link>}
+      </form>
+      {date && (
+        <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>
+          Showing {new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
+      )}
 
       {/* Summary */}
       <section className="rounded-2xl p-5 shadow-lift border" style={{ background: 'var(--brand)', color: '#f4ecd9', borderColor: 'var(--brand-deep)' }}>
@@ -129,6 +155,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       <span><span className="font-semibold">Sold by:</span> {s.soldBy.fullName}</span>
                       <span><span className="font-semibold">Point:</span> {s.sellingPoint.name}</span>
                       {s.customer?.phone && <span><span className="font-semibold">Phone:</span> {s.customer.phone}</span>}
+                      {Number(s.discountAmd) > 0 && <span><span className="font-semibold">Discount:</span> −{formatAmd(Number(s.discountAmd))} (of {formatAmd(Number(s.subtotalAmd))})</span>}
                     </div>
 
                     <ul className="space-y-2">
@@ -157,6 +184,18 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                           payment={(s.paymentMethod || 'CASH') as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'}
                           customerId={s.customer?.id ?? null}
                           customerName={s.customer?.fullName ?? null}
+                          sellingPointId={s.sellingPointId}
+                          subtotal={Number(s.subtotalAmd)}
+                          discountAmd={Number(s.discountAmd)}
+                          lines={s.lineItems.map((li) => ({
+                            id: li.id,
+                            designName: li.variant.designName,
+                            sku: li.variant.sku,
+                            color: li.variant.color,
+                            size: li.variant.size,
+                            quantity: li.quantity,
+                            unitPriceAmd: Number(li.unitPriceAmd),
+                          }))}
                         />
                       )}
                     </div>
