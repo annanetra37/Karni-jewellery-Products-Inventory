@@ -16,6 +16,11 @@ const DEFAULTS: Record<string, { hy: string; ru: string }> = {
   'chain bracelet': { hy: 'Շղթա-ապարանջան', ru: 'Цепочка-браслет' },
   'chain necklace': { hy: 'Շղթա-վզնոց', ru: 'Цепочка-колье' },
   'earrings 2 pcs.': { hy: 'Ականջօղեր (2 հատ)', ru: 'Серьги (2 шт.)' },
+  'pendant 2 pieces': { hy: 'Կախազարդ (2 հատ)', ru: 'Кулон (2 шт.)' },
+  'pendant 2 pcs.': { hy: 'Կախազարդ (2 հատ)', ru: 'Кулон (2 шт.)' },
+  'pendant 2 pcs': { hy: 'Կախազարդ (2 հատ)', ru: 'Кулон (2 шт.)' },
+  'bracelet thread': { hy: 'Թելե ապարանջան', ru: 'Браслет на нити' },
+  'thread bracelet': { hy: 'Թելե ապարանջան', ru: 'Браслет на нити' },
   'ring twin': { hy: 'Կրկնակի մատանի', ru: 'Двойное кольцо' },
   // Collections
   'Alphabet': { hy: 'Այբուբեն', ru: 'Алфавит' },
@@ -50,7 +55,19 @@ export async function getLabels(locale: Locale): Promise<Record<string, string>>
   return map;
 }
 
-/** A label translator: returns the localized name, or the original. */
+/** Normalize a label key so lookups tolerate casing / spacing differences in
+ *  the stored catalog names (e.g. "Pendant 2 Pieces" vs "pendant 2 pieces"). */
+export function normLabelKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** A label translator: returns the localized name, or the original. Matches the
+ *  exact stored name first, then falls back to a case/space-insensitive match. */
 export function makeLabeler(labels: Record<string, string>) {
-  return (name?: string | null) => (name ? (labels[name] ?? name) : '');
+  const index: Record<string, string> = {};
+  for (const [k, v] of Object.entries(labels)) index[normLabelKey(k)] = v;
+  return (name?: string | null) => {
+    if (!name) return '';
+    return labels[name] ?? index[normLabelKey(name)] ?? name;
+  };
 }
