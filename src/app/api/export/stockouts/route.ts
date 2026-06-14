@@ -76,23 +76,25 @@ export async function GET(req: NextRequest) {
 
   for (const c of candidates) {
     const isOut = c.quantity <= 0;
-    const ms = byPair.get(`${c.variantId}|${c.sellingPointId}`) || [];
-    // Walk backwards from the current quantity to the movement that crossed it
-    // into the current state.
-    let running = c.quantity;
-    let crossing: Move | null = null;
+    const ms = byPair.get(`${c.variantId}|${c.sellingPointId}`) || []; // newest → oldest
+    // Walk back over the item's CURRENT depleted streak — the unbroken run of
+    // recent movements that each left it at/below the reorder point — and find
+    // the earliest sale in it. This matches the low-stock notification, which
+    // fires whenever a sale leaves the quantity at/below the reorder point
+    // (including items that were received already low and then sold). It only
+    // excludes items driven low purely by non-sale moves (received low and
+    // never sold, manual adjustments, transfers, damage).
+    let running = c.quantity; // post-quantity of the current (newest) movement
+    let earliestSale: Move | null = null;
     for (const m of ms) {
-      const prev = running - m.qtyDelta;
-      const crossed = isOut
-        ? prev > 0 && running <= 0
-        : prev > c.reorderPoint && running <= c.reorderPoint;
-      if (crossed) { crossing = m; break; }
-      running = prev;
+      if (running > c.reorderPoint) break; // this move left it above reorder → streak ends
+      if (m.type === 'SALE') earliestSale = m; // keep the oldest sale seen so far
+      running -= m.qtyDelta; // step to the previous movement's post-quantity
     }
-    if (!crossing || crossing.type !== 'SALE') continue; // not caused by a sale
-    if (from && crossing.createdAt < from) continue;
-    if (to && crossing.createdAt >= to) continue;
-    rows.push({ ...c, state: isOut ? 'OUT' : 'LOW', wentAt: crossing.createdAt, saleNumber: crossing.sale?.saleNumber ?? '' });
+    if (!earliestSale) continue; // current low/out state not driven by a sale
+    if (from && earliestSale.createdAt < from) continue;
+    if (to && earliestSale.createdAt >= to) continue;
+    rows.push({ ...c, state: isOut ? 'OUT' : 'LOW', wentAt: earliestSale.createdAt, saleNumber: earliestSale.sale?.saleNumber ?? '' });
   }
 
   rows.sort((a, b) => b.wentAt.getTime() - a.wentAt.getTime());
