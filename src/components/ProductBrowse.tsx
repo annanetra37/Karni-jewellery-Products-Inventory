@@ -72,7 +72,14 @@ export function ProductBrowse({
     setLoading(true);
     fetch(`/api/browse/categories?collection=${encodeURIComponent(collection)}`)
       .then((r) => r.json())
-      .then((d) => setCategories(d.items || []))
+      .then((d) => {
+        const items = d.items || [];
+        setCategories(items);
+        // A collection whose products carry no category would otherwise be a
+        // dead end ("No categories in this collection") — skip straight to its
+        // products instead so the items are always reachable.
+        if (items.length === 0) { setCategory(''); setStep('var'); }
+      })
       .finally(() => setLoading(false));
   }, [step, collection, refreshNonce]);
 
@@ -147,11 +154,19 @@ export function ProductBrowse({
     });
   }, [urlSync, collection, category, subcollection, size, color, stock, page]);
 
-  function pickCollection(name: string) { setCollection(name); setCategory(''); setStep('cat'); }
-  function pickCategory(name: string) { setCategory(name); setStep('var'); }
+  // Always start a fresh drill-down with no leftover filters from a previously
+  // browsed path, so picking a new collection/category shows everything.
+  function pickCollection(name: string) { resetFilters(); setCollection(name); setCategory(''); setStep('cat'); }
+  function pickCategory(name: string) { resetFilters(); setCategory(name); setStep('var'); }
+  function showAllItems() { resetFilters(); setCollection(''); setCategory(''); setStep('var'); }
   function back() {
-    if (step === 'var') setStep('cat');
-    else if (step === 'cat') { setCollection(''); setStep('col'); }
+    if (step === 'var') {
+      // If we're showing everything (no collection) or a collection with no
+      // sub-categories (no category), go back to the collections list — not to
+      // an empty category step.
+      if (!collection || !category) { setCollection(''); setCategory(''); setStep('col'); }
+      else setStep('cat');
+    } else if (step === 'cat') { setCollection(''); setStep('col'); }
   }
 
   const crumbs = (
@@ -168,7 +183,9 @@ export function ProductBrowse({
         <span className="text-karni-700 truncate">
           {step === 'col' && t('b.pickCollection')}
           {step === 'cat' && <>{tl(collection)} <span className="text-karni-400">·</span> {t('b.pickCategory')}</>}
-          {step === 'var' && <>{tl(collection)} <span className="text-karni-400">·</span> {tl(category)}</>}
+          {step === 'var' && (!collection
+            ? t('b.allItems')
+            : <>{tl(collection)}{category && <> <span className="text-karni-400">·</span> {tl(category)}</>}</>)}
         </span>
       </div>
       {step !== 'var' && (
@@ -190,6 +207,11 @@ export function ProductBrowse({
     return (
       <div className="space-y-3">
         {crumbs}
+        <button type="button" onClick={showAllItems}
+          className="w-full flex items-center justify-between rounded-2xl border border-karni-200 bg-karni-50 px-4 py-3 font-semibold text-karni-900 hover:bg-karni-100 transition">
+          <span>{t('b.allItems')}</span>
+          <span aria-hidden="true">→</span>
+        </button>
         {loading && <p className="text-xs text-karni-700 text-center">Loading…</p>}
         <ul className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {collections.map((c) => (

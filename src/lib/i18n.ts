@@ -379,6 +379,7 @@ const D: Record<string, Record<Locale, string>> = {
   // Browse
   'b.title': { en: 'Browse the catalog', hy: 'Կատալոգի դիտում', ru: 'Просмотр каталога' },
   'b.pickCollection': { en: 'Pick a collection', hy: 'Ընտրեք հավաքածու', ru: 'Выберите коллекцию' },
+  'b.allItems': { en: 'All items', hy: 'Բոլոր ապրանքները', ru: 'Все товары' },
   'b.searchFilter': { en: 'Search & filter →', hy: 'Որոնում և զտում →', ru: 'Поиск и фильтры →' },
   'b.pickCategory': { en: 'Pick a category', hy: 'Ընտրեք կատեգորիա', ru: 'Выберите категорию' },
   'b.allCollections': { en: '← All collections', hy: '← Բոլոր հավաքածուները', ru: '← Все коллекции' },
