@@ -19,6 +19,12 @@ function startOf(range: string): Date | null {
   return d; // today
 }
 
+/** Step a YYYY-MM-DD date string by whole days (pure calendar math). */
+function addDaysISO(iso: string, delta: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
+}
+
 const RANGES = [
   { key: 'today', label: 'Today' },
   { key: '7d', label: 'Last 7 days' },
@@ -91,14 +97,31 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
         ))}
       </div>
 
-      {/* Pick a specific day */}
-      <form method="get" className="flex flex-wrap items-center gap-2">
-        <label className="text-xs font-semibold" style={{ color: 'var(--ink-soft)' }}>On a specific day:</label>
-        <input type="date" name="date" defaultValue={date} max={yerevanISODate()}
-          className="px-3 py-1.5 rounded-lg text-sm border" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)', color: 'var(--ink)' }} />
-        <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'var(--brand)', color: '#fff' }}>Show day</button>
-        {date && <Link href="/sales?range=today" scroll={false} className="btn-link text-xs">Clear</Link>}
-      </form>
+      {/* Pick a specific day, with prev/next-day steppers */}
+      {(() => {
+        const today = yerevanISODate();
+        const base = date || today;
+        const prevDay = addDaysISO(base, -1);
+        const nextDay = addDaysISO(base, 1);
+        const nextDisabled = nextDay > today;
+        const arrow = 'inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold border';
+        const arrowStyle = { background: 'var(--surface)', borderColor: 'var(--border-strong)', color: 'var(--ink)' };
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/sales?date=${prevDay}`} scroll={false} className={arrow} style={arrowStyle} aria-label="Previous day" title="Previous day">‹</Link>
+            <form method="get" className="flex items-center gap-2">
+              <label className="text-xs font-semibold" style={{ color: 'var(--ink-soft)' }}>On a specific day:</label>
+              <input type="date" name="date" defaultValue={date} max={today}
+                className="px-3 py-1.5 rounded-lg text-sm border" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)', color: 'var(--ink)' }} />
+              <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'var(--brand)', color: '#fff' }}>Show day</button>
+            </form>
+            {nextDisabled
+              ? <span className={`${arrow} opacity-40`} style={arrowStyle} aria-disabled="true">›</span>
+              : <Link href={`/sales?date=${nextDay}`} scroll={false} className={arrow} style={arrowStyle} aria-label="Next day" title="Next day">›</Link>}
+            {date && <Link href="/sales?range=today" scroll={false} className="btn-link text-xs">Clear</Link>}
+          </div>
+        );
+      })()}
       {date && (
         <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>
           Showing {yerevanDateStringStart(date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Yerevan' })}
