@@ -36,7 +36,7 @@ export function BottomNav() {
   const pathname = usePathname();
   const { t } = useT();
   return (
-    <nav className="no-print fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-karni-100 z-30 shadow-[0_-2px_12px_rgba(60,35,12,0.05)]">
+    <nav className="no-print fixed bottom-0 inset-x-0 bg-white border-t border-karni-100 z-30 shadow-[0_-2px_12px_rgba(60,35,12,0.05)]" style={{ transform: 'translateZ(0)', willChange: 'transform' }}>
       <div className="mx-auto max-w-5xl grid grid-cols-5">
         {items.map((it) => {
           const active = pathname === it.href || pathname.startsWith(it.href + '/');
