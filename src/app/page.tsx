@@ -80,7 +80,7 @@ export default async function HomePage() {
             <span style={{ color: 'var(--ink-soft)' }}>›</span>
           </div>
         </Link>
-      ) : (
+      ) : otherOpenShifts.length === 0 ? (
         <Link href="/kacca" className="card-interactive block">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -90,7 +90,7 @@ export default async function HomePage() {
             <span style={{ color: 'var(--ink-soft)' }}>›</span>
           </div>
         </Link>
-      )}
+      ) : null}
 
       {admin && otherOpenShifts.length > 0 && (
         <Link href="/kacca" className="card-interactive block">
