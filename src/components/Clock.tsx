@@ -10,24 +10,42 @@ const DATE_FMT = new Intl.DateTimeFormat('en-GB', {
 });
 
 /**
- * Live Yerevan-time clock. It writes the time straight to the DOM via refs on
- * an interval, so it never triggers a React re-render — frequent re-renders
- * were interrupting momentum scrolling on mobile (the page jumped to the top).
- * The width is reserved so the ticking digits don't reflow the layout.
+ * Live Yerevan-time clock. It writes straight to the DOM via refs (no React
+ * re-render) and — importantly on mobile — pauses those writes while the page
+ * is being scrolled, so a tick can never disturb a scroll gesture. The width
+ * is reserved so the digits don't reflow the layout.
  */
 export function Clock() {
   const timeRef = useRef<HTMLParagraphElement>(null);
   const dateRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
+    let scrolling = false;
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      scrolling = true;
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => { scrolling = false; }, 250);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    let lastTime = '';
+    let lastDate = '';
     const tick = () => {
+      if (scrolling || document.hidden) return;
       const now = new Date();
-      if (timeRef.current) timeRef.current.textContent = TIME_FMT.format(now);
-      if (dateRef.current) dateRef.current.textContent = `${DATE_FMT.format(now)} · Yerevan`;
+      const t = TIME_FMT.format(now);
+      const d = `${DATE_FMT.format(now)} · Yerevan`;
+      if (t !== lastTime && timeRef.current) { timeRef.current.textContent = t; lastTime = t; }
+      if (d !== lastDate && dateRef.current) { dateRef.current.textContent = d; lastDate = d; }
     };
     tick();
     const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      if (scrollTimer) clearTimeout(scrollTimer);
+      window.removeEventListener('scroll', onScroll);
+    };
   }, []);
 
   return (
