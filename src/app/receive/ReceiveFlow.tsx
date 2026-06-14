@@ -147,7 +147,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
               disabled={refreshing || !spId}
               className="btn-link inline-flex items-center gap-1.5 text-xs disabled:opacity-50"
               aria-label={t('r.refreshStock')}
-              title={lastRefresh ? `${t('r.refreshStock')} · ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : t('r.refreshStock')}
+              title={lastRefresh ? `${t('r.refreshStock')} · ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Yerevan' })}` : t('r.refreshStock')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
                 aria-hidden="true" className={refreshing ? 'animate-spin' : ''}>

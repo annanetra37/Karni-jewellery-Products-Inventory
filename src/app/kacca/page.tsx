@@ -1,6 +1,7 @@
 import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { yerevanDayStart } from '@/lib/datetime';
 import Link from 'next/link';
 import { getT } from '@/lib/i18n-server';
 
@@ -36,8 +37,7 @@ async function openShiftAction(formData: FormData) {
     // Count safe deposits from this drawer since the closing DAY, so a deposit
     // dated to that day (any time) is captured even if it was stamped before
     // the precise closing time.
-    const cd = prior.closingAt;
-    const dayStart = new Date(Date.UTC(cd.getUTCFullYear(), cd.getUTCMonth(), cd.getUTCDate()));
+    const dayStart = yerevanDayStart(prior.closingAt);
     const agg = await prisma.safeTransaction.aggregate({
       _sum: { amountAmd: true },
       where: { type: 'DEPOSIT', sellingPointId, occurredAt: { gte: dayStart } },
@@ -141,8 +141,7 @@ async function editOpeningCountAction(formData: FormData) {
     : (session.priorClosingAmd != null ? Number(session.priorClosingAmd) : null);
   let safeMoved = 0;
   if (priorClosing !== null && prior?.closingAt) {
-    const cd = prior.closingAt;
-    const dayStart = new Date(Date.UTC(cd.getUTCFullYear(), cd.getUTCMonth(), cd.getUTCDate()));
+    const dayStart = yerevanDayStart(prior.closingAt);
     const agg = await prisma.safeTransaction.aggregate({
       _sum: { amountAmd: true },
       where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId, occurredAt: { gte: dayStart } },
