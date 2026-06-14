@@ -34,10 +34,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [newName, setNewName] = useState(''); const [newPhone, setNewPhone] = useState(''); const [newEmail, setNewEmail] = useState('');
   const [newBirthday, setNewBirthday] = useState('');
 
-  // Default to Search — it always lists the full catalogue (empty query shows
-  // everything), whereas Browse only works when products carry collection /
-  // category metadata, which can leave it looking empty.
-  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('search');
+  const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [pickerOpen, setPickerOpen] = useState(true);
   const [discKind, setDiscKind] = useState<'AMOUNT' | 'PERCENT'>('AMOUNT');
   const [discValue, setDiscValue] = useState('');
