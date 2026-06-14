@@ -1,11 +1,15 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { yerevanISODate } from '@/lib/datetime';
 
 export default async function ReportsPage() {
   await requireAdmin();
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
   const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
+  const today = yerevanISODate();
+  const since7 = yerevanISODate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const since30 = yerevanISODate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
 
   const [todayAgg, weekAgg, byPoint, bySalesperson, topSkus, recentSessions] = await Promise.all([
     prisma.sale.aggregate({ _sum: { totalAmd: true }, _count: true, where: { createdAt: { gte: dayStart } } }),
@@ -37,6 +41,19 @@ export default async function ReportsPage() {
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold">Reports</h1>
+
+      <section className="card space-y-2">
+        <p className="font-medium">Sale-driven stock-outs</p>
+        <p className="text-xs text-karni-700">
+          Export the products that went <b>low or out of stock because of a sale</b> (not every low/out item),
+          with the date it happened, plus collection and category.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <a className="btn-secondary text-sm" href={`/api/export/stockouts?from=${since7}&to=${today}`}>Last 7 days (CSV)</a>
+          <a className="btn-secondary text-sm" href={`/api/export/stockouts?from=${since30}&to=${today}`}>Last 30 days (CSV)</a>
+          <a className="btn-secondary text-sm" href="/api/export/stockouts">All time (CSV)</a>
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="card">
