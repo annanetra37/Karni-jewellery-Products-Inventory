@@ -3,6 +3,7 @@ import { getCurrentUser, isAdmin, isSuperAdmin, sellingPointScope } from '@/lib/
 import { ensureBirthdayReminders } from '@/lib/birthdays';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { Clock } from '@/components/Clock';
 import { getT } from '@/lib/i18n-server';
 
 export default async function HomePage() {
@@ -57,10 +58,13 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-4">
-      <section>
-        <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t('h.welcome')}</p>
-        <h1 className="page-title">{user.fullName}</h1>
-        <p className="page-subtitle">{t('h.signedInAs')} {user.email} · <span className="chip">{user.role}</span></p>
+      <section className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t('h.welcome')}</p>
+          <h1 className="page-title">{user.fullName}</h1>
+          <p className="page-subtitle">{t('h.signedInAs')} {user.email} · <span className="chip">{user.role}</span></p>
+        </div>
+        <Clock />
       </section>
 
       {openShift ? (
