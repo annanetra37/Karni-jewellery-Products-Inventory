@@ -2,7 +2,8 @@ import { requireAdmin, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
-import { MetricCard, BarChart, DonutChart, LineChart } from '@/components/Charts';
+import { MetricCard, BarChart, DonutChart } from '@/components/Charts';
+import { LineChartHover } from '@/components/LineChartHover';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
 
@@ -238,7 +239,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
           <section className="card">
             <p className="font-semibold mb-3">{t('sa.revenueOverTime')}</p>
-            <LineChart series={timeline} formatValue={(n) => formatAmd(n)} />
+            <LineChartHover series={timeline} unit="֏" />
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">

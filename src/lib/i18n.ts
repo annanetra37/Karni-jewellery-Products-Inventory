@@ -110,7 +110,7 @@ const D: Record<string, Record<Locale, string>> = {
   'h.lowOrOut': { en: 'low / out', hy: 'քիչ / վերջացած', ru: 'мало / нет' },
   'h.users': { en: 'Users', hy: 'Օգտվողներ', ru: 'Пользователи' },
   'h.products': { en: 'Products', hy: 'Ապրանքներ', ru: 'Товары' },
-  'h.inventory': { en: 'Inventory', hy: 'Պահեստ', ru: 'Склад' },
+  'h.inventory': { en: 'Inventory Analytics', hy: 'Պահեստի վերլուծություն', ru: 'Аналитика склада' },
   'h.collectionPhotos': { en: 'Collection photos', hy: 'Հավաքածուի լուսանկարներ', ru: 'Фото коллекций' },
   'h.categoryPhotos': { en: 'Category photos', hy: 'Կատեգորիայի լուսանկարներ', ru: 'Фото категорий' },
   'h.reports': { en: 'Reports', hy: 'Հաշվետվություններ', ru: 'Отчёты' },
@@ -201,7 +201,7 @@ const D: Record<string, Record<Locale, string>> = {
   'an.estMargin': { en: 'Est. margin', hy: 'Մոտավոր մարժա', ru: 'Прогноз. маржа' },
 
   // Inventory explorer
-  'inv.title': { en: 'Inventory', hy: 'Պահեստ', ru: 'Склад' },
+  'inv.title': { en: 'Inventory Analytics', hy: 'Պահեստի վերլուծություն', ru: 'Аналитика склада' },
   'inv.subtitle': {
     en: 'Explore everything in stock and out of stock. Filter, visualize and drill in.',
     hy: 'Ուսումնասիրեք առկա և բացակայող ապրանքները։ Զտեք, վերլուծեք և խորացեք։',
@@ -387,6 +387,33 @@ const D: Record<string, Record<Locale, string>> = {
   'b.oneSize': { en: 'One size', hy: 'Մեկ չափս', ru: 'Один размер' },
   'b.noCollections': { en: 'No collections yet.', hy: 'Հավաքածուներ դեռ չկան։', ru: 'Коллекций пока нет.' },
   'b.noCategories': { en: 'No categories in this collection.', hy: 'Այս հավաքածուում կատեգորիաներ չկան։', ru: 'В этой коллекции нет категорий.' },
+
+  // Sales analytics
+  'sa.title': { en: 'Sales analytics', hy: 'Վաճառքի վերլուծություն', ru: 'Аналитика продаж' },
+  'sa.subtitle': { en: 'Trends, breakdowns and top performers.', hy: 'Միտումներ, բաշխումներ և լավագույնները։', ru: 'Тренды, разбивки и лидеры.' },
+  'sa.rangeToday': { en: 'Today', hy: 'Այսօր', ru: 'Сегодня' },
+  'sa.range7d': { en: 'Last 7 days', hy: 'Վերջին 7 օր', ru: 'Последние 7 дней' },
+  'sa.range30d': { en: 'Last 30 days', hy: 'Վերջին 30 օր', ru: 'Последние 30 дней' },
+  'sa.range90d': { en: 'Last 90 days', hy: 'Վերջին 90 օր', ru: 'Последние 90 дней' },
+  'sa.rangeAll': { en: 'All time', hy: 'Ամբողջ ժամանակ', ru: 'Всё время' },
+  'sa.salesCount': { en: 'Sales', hy: 'Վաճառքներ', ru: 'Продажи' },
+  'sa.revenue': { en: 'Revenue', hy: 'Հասույթ', ru: 'Выручка' },
+  'sa.avgSale': { en: 'Avg. sale', hy: 'Միջին վաճառք', ru: 'Средний чек' },
+  'sa.uniqueCustomers': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
+  'sa.empty': { en: 'No sales in this period.', hy: 'Այս ժամանակահատվածում վաճառք չկա։', ru: 'Нет продаж за этот период.' },
+  'sa.unitsSold': { en: 'Units sold', hy: 'Վաճառված միավորներ', ru: 'Продано единиц' },
+  'sa.byPayment': { en: 'By payment', hy: 'Ըստ վճարման', ru: 'По оплате' },
+  'sa.bySellingPoint': { en: 'By selling point', hy: 'Ըստ վաճառակետի', ru: 'По точке продаж' },
+  'sa.revenueOverTime': { en: 'Revenue over time', hy: 'Հասույթը ժամանակի ընթացքում', ru: 'Выручка по времени' },
+  'sa.bySalesperson': { en: 'By salesperson', hy: 'Ըստ վաճառողի', ru: 'По продавцу' },
+  'sa.byCategory': { en: 'By category', hy: 'Ըստ կատեգորիայի', ru: 'По категории' },
+  'sa.byCollection': { en: 'By collection', hy: 'Ըստ հավաքածուի', ru: 'По коллекции' },
+  'sa.topCustomers': { en: 'Top customers', hy: 'Լավագույն հաճախորդներ', ru: 'Топ клиентов' },
+  'sa.topSkus': { en: 'Top products', hy: 'Լավագույն ապրանքներ', ru: 'Топ товаров' },
+  'sa.salesperson': { en: 'Salesperson', hy: 'Վաճառող', ru: 'Продавец' },
+  'sa.paymentMethod': { en: 'Payment', hy: 'Վճարում', ru: 'Оплата' },
+  'sa.allPayments': { en: 'All payments', hy: 'Բոլոր վճարումները', ru: 'Все оплаты' },
+  'sa.allSalespeople': { en: 'All salespeople', hy: 'Բոլոր վաճառողները', ru: 'Все продавцы' },
 };
 
 export function t(key: string, locale: Locale): string {

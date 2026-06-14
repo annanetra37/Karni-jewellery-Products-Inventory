@@ -4,7 +4,7 @@ import { formatAmd } from '@/lib/currency';
 import { yerevanDayStart } from '@/lib/datetime';
 import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
-import { LineChart } from '@/components/Charts';
+import { LineChartHover } from '@/components/LineChartHover';
 
 export const dynamic = 'force-dynamic';
 
@@ -290,7 +290,7 @@ export default async function SafePage() {
       {/* Time series */}
       <section className="card">
         <p className="font-semibold mb-3">{t('sf.balanceOverTime')}</p>
-        <LineChart series={series} formatValue={(x) => formatAmd(x)} />
+        <LineChartHover series={series} unit="֏" />
       </section>
 
       {/* Reconciliation */}
