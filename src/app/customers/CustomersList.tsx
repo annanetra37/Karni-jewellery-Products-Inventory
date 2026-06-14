@@ -37,7 +37,7 @@ function addedLabel(v: string | null | undefined): string {
   if (!v) return '';
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Yerevan' });
 }
 
 function birthdayLabel(v: string | null): string {

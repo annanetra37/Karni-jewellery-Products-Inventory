@@ -1,6 +1,7 @@
 import { requireSuperAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { yerevanDayStart } from '@/lib/datetime';
 import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
 import { LineChart } from '@/components/Charts';
@@ -136,7 +137,7 @@ export default async function SafePage() {
   }
   const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
   const matchedDeposit = new Set<string>();
-  const startOfUtcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const startOfDay = (d: Date) => yerevanDayStart(d);
   type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; closedAt: Date; openedAt: Date };
   const recon: Recon[] = [];
   for (const arr of byPoint.values()) {
@@ -146,7 +147,7 @@ export default async function SafePage() {
       // Attribute a deposit to this handover if it's dated on/after the closing
       // day and before the next opening, and not already matched to an earlier
       // handover (so each deposit counts once).
-      const lower = startOfUtcDay(prev.closingAt);
+      const lower = startOfDay(prev.closingAt);
       const inGap = deposits.filter((d) => !matchedDeposit.has(d.id) && d.sellingPointId === prev.sellingPointId && d.occurredAt >= lower && d.occurredAt < next.openingAt);
       inGap.forEach((d) => matchedDeposit.add(d.id));
       const deposited = inGap.reduce((s, d) => s + Number(d.amountAmd), 0);

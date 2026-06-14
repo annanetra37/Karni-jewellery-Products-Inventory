@@ -1,6 +1,7 @@
 import { requireUser, sellingPointScope, isSuperAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 import { Thumb } from '@/components/Thumb';
 import { SaleEditor } from '@/components/SaleEditor';
 import Link from 'next/link';
@@ -35,9 +36,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
 
   let createdAtFilter: { gte: Date; lt?: Date } | null = null;
   if (date) {
-    const dayStart = new Date(`${date}T00:00:00`);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
+    const dayStart = yerevanDateStringStart(date);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
     createdAtFilter = { gte: dayStart, lt: dayEnd };
   } else if (startDate) {
     createdAtFilter = { gte: startDate };
@@ -94,14 +94,14 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
       {/* Pick a specific day */}
       <form method="get" className="flex flex-wrap items-center gap-2">
         <label className="text-xs font-semibold" style={{ color: 'var(--ink-soft)' }}>On a specific day:</label>
-        <input type="date" name="date" defaultValue={date} max={new Date().toISOString().slice(0, 10)}
+        <input type="date" name="date" defaultValue={date} max={yerevanISODate()}
           className="px-3 py-1.5 rounded-lg text-sm border" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)', color: 'var(--ink)' }} />
         <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: 'var(--brand)', color: '#fff' }}>Show day</button>
         {date && <Link href="/sales?range=today" scroll={false} className="btn-link text-xs">Clear</Link>}
       </form>
       {date && (
         <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>
-          Showing {new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          Showing {yerevanDateStringStart(date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Yerevan' })}
         </p>
       )}
 
