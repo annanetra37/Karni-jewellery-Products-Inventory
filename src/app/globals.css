@@ -41,10 +41,21 @@
 * { -webkit-tap-highlight-color: transparent; }
 
 html, body {
-  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
-  background-attachment: fixed;
+  background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
+}
+
+/* A fixed gradient backdrop as a composited layer. Using
+   `background-attachment: fixed` here instead caused severe scroll jank on
+   mobile (full-screen repaint every frame — the page jumped to the top). */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
 }
 
 body {
