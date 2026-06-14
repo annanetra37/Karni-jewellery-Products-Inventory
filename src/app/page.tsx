@@ -59,10 +59,10 @@ export default async function HomePage() {
   return (
     <div className="space-y-4">
       <section className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t('h.welcome')}</p>
           <h1 className="page-title">{user.fullName}</h1>
-          <p className="page-subtitle">{t('h.signedInAs')} {user.email} · <span className="chip">{user.role}</span></p>
+          <p className="page-subtitle break-words">{t('h.signedInAs')} {user.email} · <span className="chip">{user.role}</span></p>
         </div>
         <Clock />
       </section>
