@@ -116,6 +116,10 @@ const D: Record<string, Record<Locale, string>> = {
   'h.reports': { en: 'Reports', hy: 'Հաշվետվություններ', ru: 'Отчёты' },
   'h.analytics': { en: 'Analytics', hy: 'Վերլուծություն', ru: 'Аналитика' },
   'h.safe': { en: 'Safe / Money', hy: 'Սեյֆ / Փող', ru: 'Сейф / Деньги' },
+  'h.salesAnalytics': { en: 'Sales Analytics', hy: 'Վաճառքի վերլուծություն', ru: 'Аналитика продаж' },
+  'h.inStockAnalytics': { en: 'In Stock Analytics', hy: 'Մնացորդի վերլուծություն', ru: 'Аналитика остатков' },
+  'h.karniAnalytics': { en: 'Karni Analytics', hy: 'Karni վերլուծություն', ru: 'Karni аналитика' },
+  'h.photos': { en: 'Photos', hy: 'Լուսանկարներ', ru: 'Фото' },
 
   // Safe & money
   'sf.title': { en: 'Safe & money', hy: 'Սեյֆ և փող', ru: 'Сейф и деньги' },
