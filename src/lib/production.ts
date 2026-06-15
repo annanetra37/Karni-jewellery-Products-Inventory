@@ -100,6 +100,18 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
 
   const orderRows: OrderRow[] = [];
   for (const o of orders) {
+    const customer = o.customerName || o.customer?.fullName || '';
+    const location = o.sellingPoint?.name || String(o.channel);
+    // An order can be created with no structured line items (just a note /
+    // custom request). Still surface it as one row so the workshop sees it.
+    if (o.lineItems.length === 0) {
+      orderRows.push({
+        product: '(no items listed — see notes)', sku: '', collection: null, category: null,
+        location, status: o.status, qty: 0, deadline: o.deadline, createdAt: o.createdAt,
+        reference: o.orderNumber, customer, details: '', note: o.note ?? '',
+      });
+      continue;
+    }
     for (const li of o.lineItems) {
       const details = [
         li.metalType && `Metal: ${li.metalType}`,
@@ -111,9 +123,9 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
         product: li.variant?.designName || li.description || '(custom item)',
         sku: li.variant?.sku || '',
         collection: li.variant?.collection ?? null, category: li.variant?.category ?? null,
-        location: o.sellingPoint?.name || String(o.channel),
+        location,
         status: o.status, qty: li.quantity, deadline: o.deadline, createdAt: o.createdAt,
-        reference: o.orderNumber, customer: o.customerName || o.customer?.fullName || '', details,
+        reference: o.orderNumber, customer, details,
         note: o.note ?? '',
       });
     }
