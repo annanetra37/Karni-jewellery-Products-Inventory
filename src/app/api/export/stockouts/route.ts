@@ -26,19 +26,19 @@ export async function GET(req: NextRequest) {
 
   const { stock, orders } = await getProductionList({ from, to });
 
-  const header = ['Type', 'Product', 'SKU', 'Collection', 'Category', 'Location', 'Status', 'Qty', 'Reorder point', 'Date (Yerevan)', 'Deadline (Yerevan)', 'Reference', 'Customer', 'Production details'];
+  const header = ['Type', 'Product', 'SKU', 'Collection', 'Category', 'Location', 'Status', 'Qty', 'Reorder point', 'Date (Yerevan)', 'Deadline (Yerevan)', 'Reference', 'Customer', 'Production details', 'Order notes'];
   const lines = [header.map(csvCell).join(',')];
   for (const r of stock) {
     lines.push([
       'Low/out stock', r.product, r.sku, r.collection ?? '', r.category ?? '', r.location,
-      r.state, r.qty, r.reorderPoint, formatYerevanDateTime(r.wentAt), '', r.saleNumber, '', '',
+      r.state, r.qty, r.reorderPoint, formatYerevanDateTime(r.wentAt), '', r.saleNumber, '', '', '',
     ].map(csvCell).join(','));
   }
   for (const r of orders) {
     lines.push([
       'Order', r.product, r.sku, r.collection ?? '', r.category ?? '', r.location,
       r.status, r.qty, '', formatYerevanDateTime(r.createdAt),
-      r.deadline ? formatYerevanDateTime(r.deadline) : '', r.reference, r.customer, r.details,
+      r.deadline ? formatYerevanDateTime(r.deadline) : '', r.reference, r.customer, r.details, r.note,
     ].map(csvCell).join(','));
   }
   const csv = '﻿' + lines.join('\r\n'); // BOM so Excel reads UTF-8 (Armenian) correctly
