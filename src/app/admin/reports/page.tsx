@@ -1,15 +1,12 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
-import { yerevanISODate } from '@/lib/datetime';
+import Link from 'next/link';
 
 export default async function ReportsPage() {
   await requireAdmin();
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
   const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
-  const today = yerevanISODate();
-  const since7 = yerevanISODate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-  const since30 = yerevanISODate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
 
   const [todayAgg, weekAgg, byPoint, bySalesperson, topSkus, recentSessions] = await Promise.all([
     prisma.sale.aggregate({ _sum: { totalAmd: true }, _count: true, where: { createdAt: { gte: dayStart } } }),
@@ -45,15 +42,12 @@ export default async function ReportsPage() {
       <section className="card space-y-2">
         <p className="font-medium">Production list (stock-outs + orders)</p>
         <p className="text-xs text-karni-700">
-          Export for the workshop: products that went <b>low or out of stock because of a sale</b>
-          (with the date and collection/category), <b>plus every open order</b> (NEW / in progress)
-          with its quantity, deadline and production specs. The date range below filters the
-          stock-out rows; all open orders are always included.
+          View — in the portal — the products that went <b>low or out of stock because of a sale</b>
+          plus <b>every open order</b> to produce, then download a CSV if needed.
         </p>
         <div className="flex flex-wrap gap-2">
-          <a className="btn-secondary text-sm" href={`/api/export/stockouts?from=${since7}&to=${today}`}>Last 7 days (CSV)</a>
-          <a className="btn-secondary text-sm" href={`/api/export/stockouts?from=${since30}&to=${today}`}>Last 30 days (CSV)</a>
-          <a className="btn-secondary text-sm" href="/api/export/stockouts">All time (CSV)</a>
+          <Link className="btn-primary text-sm" href="/admin/production">Open production list →</Link>
+          <a className="btn-secondary text-sm" href="/api/export/stockouts">Download all (CSV)</a>
         </div>
       </section>
 
