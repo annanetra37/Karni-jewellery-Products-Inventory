@@ -22,7 +22,7 @@ export type StockRow = {
 export type OrderRow = {
   product: string; sku: string; collection: string | null; category: string | null;
   location: string; status: string; qty: number; deadline: Date | null; createdAt: Date;
-  reference: string; customer: string; details: string;
+  reference: string; customer: string; details: string; note: string;
 };
 
 /**
@@ -86,8 +86,10 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
   stock.sort((a, b) => b.wentAt.getTime() - a.wentAt.getTime());
 
   // ---- Open orders to produce ----------------------------------------------
+  // Everything not finished: NEW, IN_PROGRESS and READY (exclude FULFILLED /
+  // CANCELLED). The workshop sees the full active pipeline.
   const orders = await prisma.order.findMany({
-    where: { status: { in: ['NEW', 'IN_PROGRESS'] } },
+    where: { status: { in: ['NEW', 'IN_PROGRESS', 'READY'] } },
     orderBy: [{ deadline: 'asc' }, { createdAt: 'desc' }],
     include: {
       customer: { select: { fullName: true } },
@@ -112,6 +114,7 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
         location: o.sellingPoint?.name || String(o.channel),
         status: o.status, qty: li.quantity, deadline: o.deadline, createdAt: o.createdAt,
         reference: o.orderNumber, customer: o.customerName || o.customer?.fullName || '', details,
+        note: o.note ?? '',
       });
     }
   }

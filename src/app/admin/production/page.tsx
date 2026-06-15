@@ -96,7 +96,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
                 <tr className="text-left border-b" style={{ borderColor: 'var(--border)' }}>
                   <th className="py-1.5 pr-3">Product</th><th className="pr-3">SKU</th><th className="pr-3 text-right">Qty</th>
                   <th className="pr-3">Status</th><th className="pr-3">Deadline</th><th className="pr-3">Order</th>
-                  <th className="pr-3">Customer</th><th className="pr-3">Production details</th>
+                  <th className="pr-3">Customer</th><th className="pr-3">Production details</th><th className="pr-3">Order notes</th>
                 </tr>
               </thead>
               <tbody>
@@ -110,6 +110,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
                     <td className="pr-3 font-mono text-[11px]" style={{ color: 'var(--ink-soft)' }}>{r.reference}</td>
                     <td className="pr-3">{r.customer || '—'}</td>
                     <td className="pr-3" style={{ color: 'var(--ink-soft)' }}>{r.details || '—'}</td>
+                    <td className="pr-3" style={{ color: 'var(--ink-soft)' }}>{r.note || '—'}</td>
                   </tr>
                 ))}
               </tbody>
