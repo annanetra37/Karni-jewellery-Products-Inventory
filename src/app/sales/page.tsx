@@ -1,4 +1,4 @@
-import { requireUser, sellingPointScope, isSuperAdmin } from '@/lib/auth';
+import { requireUser, sellingPointScope, isSuperAdmin, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
@@ -34,10 +34,12 @@ const RANGES = [
 
 export default async function SalesPage({ searchParams }: { searchParams: Search }) {
   const user = await requireUser();
+  const admin = isAdmin(user);
   const sp = await searchParams;
-  // A specific day (?date=YYYY-MM-DD) takes precedence over the range pills.
-  const date = typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : '';
-  const range = RANGES.some((r) => r.key === sp.range) ? sp.range! : 'today';
+  // Only admins/super admins may browse other days/ranges; sales users always
+  // see today's sales (date/range params are ignored for them).
+  const date = admin && typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : '';
+  const range = admin && RANGES.some((r) => r.key === sp.range) ? sp.range! : 'today';
   const startDate = startOf(range);
 
   let createdAtFilter: { gte: Date; lt?: Date } | null = null;
@@ -84,6 +86,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
         <p className="page-subtitle">Every sale with its items, amount, customer and who sold it.</p>
       </header>
 
+      {/* Date navigation — admins and super admins only */}
+      {admin && (
+      <>
       {/* Range pills */}
       <div className="flex flex-wrap gap-1.5">
         {RANGES.map((r) => (
@@ -126,6 +131,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
         <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>
           Showing {yerevanDateStringStart(date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Yerevan' })}
         </p>
+      )}
+      </>
       )}
 
       {/* Summary */}
