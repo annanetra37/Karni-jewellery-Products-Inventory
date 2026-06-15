@@ -43,10 +43,12 @@ export default async function ReportsPage() {
       <h1 className="text-xl font-bold">Reports</h1>
 
       <section className="card space-y-2">
-        <p className="font-medium">Sale-driven stock-outs</p>
+        <p className="font-medium">Production list (stock-outs + orders)</p>
         <p className="text-xs text-karni-700">
-          Export the products that went <b>low or out of stock because of a sale</b> (not every low/out item),
-          with the date it happened, plus collection and category.
+          Export for the workshop: products that went <b>low or out of stock because of a sale</b>
+          (with the date and collection/category), <b>plus every open order</b> (NEW / in progress)
+          with its quantity, deadline and production specs. The date range below filters the
+          stock-out rows; all open orders are always included.
         </p>
         <div className="flex flex-wrap gap-2">
           <a className="btn-secondary text-sm" href={`/api/export/stockouts?from=${since7}&to=${today}`}>Last 7 days (CSV)</a>
