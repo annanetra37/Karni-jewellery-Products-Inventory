@@ -41,14 +41,14 @@ export default async function HomePage() {
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { createdAt: { gte: todayStart } } }),
     prisma.cashDrawerSession.findFirst({
       where: { userId: user.id, status: 'OPEN' },
-      include: { sellingPoint: true },
+      include: { sellingPoint: true, breaks: { where: { endedAt: null } } },
     }),
     prisma.inventoryItem.count({ where: { quantity: { lte: 2 } } }),
     admin
       ? prisma.cashDrawerSession.findMany({
           where: openShiftsWhere,
           orderBy: { openingAt: 'asc' },
-          include: { sellingPoint: true, openingBy: true },
+          include: { sellingPoint: true, openingBy: true, breaks: { where: { endedAt: null } } },
         })
       : Promise.resolve([]),
   ]);
@@ -72,8 +72,9 @@ export default async function HomePage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--success)' }}></span>
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: openShift.breaks.length > 0 ? 'var(--warn)' : 'var(--success)' }}></span>
                 <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>{t('h.shiftOpenAt')} {openShift.sellingPoint.name}</p>
+                {openShift.breaks.length > 0 && <span className="chip chip-warn">{t('k.onHold')}</span>}
               </div>
               <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('h.openingCount')} {formatAmd(Number(openShift.openingCountAmd))} · {t('h.started')} {openShift.openingAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
             </div>
@@ -99,10 +100,11 @@ export default async function HomePage() {
             {otherOpenShifts.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
                 <span className="inline-flex items-center gap-2 min-w-0">
-                  <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: 'var(--success)' }}></span>
+                  <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: s.breaks.length > 0 ? 'var(--warn)' : 'var(--success)' }}></span>
                   <span className="min-w-0">
                     <span className="font-medium">{s.sellingPoint.name}</span>
                     <span style={{ color: 'var(--ink-soft)' }}> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                    {s.breaks.length > 0 && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
                   </span>
                 </span>
                 <span className="text-xs shrink-0" style={{ color: 'var(--ink-soft)' }}>

@@ -84,6 +84,39 @@ async function openShiftAction(formData: FormData) {
   redirect('/kacca');
 }
 
+async function startBreakAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  // No-op if a break is already running.
+  const openBreak = await prisma.shiftBreak.findFirst({ where: { sessionId, endedAt: null } });
+  if (!openBreak) await prisma.shiftBreak.create({ data: { sessionId } });
+  redirect('/kacca');
+}
+
+async function endBreakAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  const openBreak = await prisma.shiftBreak.findFirst({ where: { sessionId, endedAt: null }, orderBy: { startedAt: 'desc' } });
+  if (openBreak) await prisma.shiftBreak.update({ where: { id: openBreak.id }, data: { endedAt: new Date() } });
+  redirect('/kacca');
+}
+
 async function closeShiftAction(formData: FormData) {
   'use server';
   const { requireUser } = await import('@/lib/auth');
@@ -206,7 +239,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
     prisma.cashDrawerSession.findFirst({
       where: openWhere,
       orderBy: { openingAt: 'asc' },
-      include: { sellingPoint: true, openingBy: true },
+      include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'desc' } } },
     }),
     prisma.cashDrawerSession.findMany({
       where: recentWhere,
@@ -217,7 +250,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       ? prisma.cashDrawerSession.findMany({
           where: openShiftsWhere,
           orderBy: { openingAt: 'asc' },
-          include: { sellingPoint: true, openingBy: true },
+          include: { sellingPoint: true, openingBy: true, breaks: { where: { endedAt: null } } },
         })
       : Promise.resolve([]),
   ]);
@@ -238,20 +271,55 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {openShift ? (
-        <div className="card space-y-3 bg-emerald-50 border-emerald-200">
-          <p className="font-medium">{t('k.shiftOpen')}</p>
+      {openShift ? (() => {
+        const activeBreak = openShift.breaks.find((b) => b.endedAt == null) ?? null;
+        const onHold = !!activeBreak;
+        return (
+        <div className={`card space-y-3 ${onHold ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+          <p className="font-medium">
+            {t('k.shiftOpen')}
+            {onHold && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
+          </p>
           <p className="text-sm">{openShift.sellingPoint.name} · {t('k.opened')} {openShift.openingAt.toLocaleString()}</p>
           <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b> · {t('o.by').toLowerCase()} {openShift.openingBy.fullName}</p>
-          <form action={closeShiftAction} className="space-y-2">
+
+          {/* Break controls */}
+          {onHold ? (
+            <div className="rounded-xl p-3 bg-amber-100/60 border border-amber-200 space-y-2">
+              <p className="text-sm font-medium text-amber-900">{t('k.onBreakSince')} {activeBreak!.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              <form action={endBreakAction}>
+                <input type="hidden" name="sessionId" value={openShift.id} />
+                <button className="btn-primary w-full" type="submit">{t('k.endBreak')}</button>
+              </form>
+            </div>
+          ) : (
+            <form action={startBreakAction}>
+              <input type="hidden" name="sessionId" value={openShift.id} />
+              <button className="btn-secondary w-full" type="submit">{t('k.startBreak')}</button>
+            </form>
+          )}
+
+          {openShift.breaks.length > 0 && (
+            <ul className="text-xs space-y-0.5" style={{ color: 'var(--ink-soft)' }}>
+              {openShift.breaks.map((b) => (
+                <li key={b.id}>
+                  {t('k.break')}: {b.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {b.endedAt ? b.endedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '…'}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
             <input type="hidden" name="sessionId" value={openShift.id} />
             <label className="label">{t('k.closingCount')}</label>
             <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
             <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
-            <button className="btn-primary w-full" type="submit">{t('k.endShift')}</button>
+            <button className="btn-primary w-full" type="submit" disabled={onHold}>{t('k.endShift')}</button>
+            {onHold && <p className="text-xs text-amber-800">{t('k.endBreakFirst')}</p>}
           </form>
         </div>
-      ) : (
+        );
+      })() : (
         <form action={openShiftAction} className="card space-y-3">
           <p className="font-medium">{t('k.startShift')}</p>
           <label className="label">{t('c.sellingPoint')}</label>
@@ -277,10 +345,11 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                 <li key={s.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3">
                     <span className="inline-flex items-center gap-2 min-w-0">
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                      <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${s.breaks.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
                       <span className="min-w-0">
                         <span className="font-medium">{s.sellingPoint.name}</span>
                         <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                        {s.breaks.length > 0 && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
                       </span>
                     </span>
                     <span className="text-xs text-karni-700 text-right shrink-0">
