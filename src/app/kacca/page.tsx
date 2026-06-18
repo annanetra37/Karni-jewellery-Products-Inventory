@@ -1,7 +1,6 @@
 import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
-import { yerevanDayStart } from '@/lib/datetime';
 import Link from 'next/link';
 import { getT } from '@/lib/i18n-server';
 
@@ -24,44 +23,61 @@ async function openShiftAction(formData: FormData) {
   if (existing) {
     redirect(`/kacca?err=alreadyOpen&by=${encodeURIComponent(existing.openingBy.fullName)}`);
   }
-  // Find the most recent closed session at this point to compare.
-  const prior = await prisma.cashDrawerSession.findFirst({
-    where: { sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] } },
-    orderBy: { closingAt: 'desc' },
-  });
-  const priorClosing = prior?.closingCountAmd ? Number(prior.closingCountAmd) : null;
-  // Cash legitimately moved to the safe since the last close is expected to be
-  // missing from the drawer, so subtract it before flagging a discrepancy.
-  let safeMoved = 0;
-  if (priorClosing !== null && prior?.closingAt) {
-    // Count safe deposits from this drawer since the closing DAY, so a deposit
-    // dated to that day (any time) is captured even if it was stamped before
-    // the precise closing time.
-    const dayStart = yerevanDayStart(prior.closingAt);
-    const agg = await prisma.safeTransaction.aggregate({
-      _sum: { amountAmd: true },
-      where: { type: 'DEPOSIT', sellingPointId, occurredAt: { gte: dayStart } },
-    });
-    safeMoved = Number(agg._sum.amountAmd ?? 0);
-  }
-  const expectedOpening = priorClosing === null ? null : priorClosing - safeMoved;
-  const mismatch = expectedOpening !== null && Math.abs(expectedOpening - openingCountAmd) > 0.001;
+  const { reconcileHandovers, isHandoverMismatch } = await import('@/lib/reconcile');
+  const now = new Date();
+  // Reconcile this opening against history the same way the safe page does:
+  // expected opening = prior closing − drawer cash moved to the safe, where
+  // cash sales rung up AFTER the prior close don't count as drawer cash.
+  const [priorSessions, depositRows, cashSaleRows, spRow] = await Promise.all([
+    prisma.cashDrawerSession.findMany({
+      where: { sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] } },
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: { select: { name: true } } },
+    }),
+    prisma.safeTransaction.findMany({
+      where: { type: 'DEPOSIT', sellingPointId },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
+    }),
+    prisma.sale.findMany({
+      where: { paymentMethod: 'CASH', sellingPointId },
+      select: { sellingPointId: true, createdAt: true, totalAmd: true },
+    }),
+    prisma.sellingPoint.findUnique({ where: { id: sellingPointId }, select: { name: true } }),
+  ]);
+  const pointName = spRow?.name ?? '';
+  const reconSessions = [
+    ...priorSessions.map((s) => ({
+      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+      closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+    })),
+    // A virtual session representing the opening being recorded right now.
+    { sellingPointId, pointName, status: 'OPEN', openingAt: now, openingCountAmd, closingAt: null, closingCountAmd: null },
+  ];
+  const { handovers } = reconcileHandovers(
+    reconSessions,
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+  );
+  // The handover for THIS opening is the one that ends at `now`.
+  const thisHandover = handovers.find((h) => h.openedAt.getTime() === now.getTime()) ?? null;
+  const priorClosing = thisHandover ? thisHandover.closing : null;
+  const mismatch = thisHandover ? isHandoverMismatch(thisHandover) : false;
   const session = await prisma.cashDrawerSession.create({
     data: {
       sellingPointId, userId: u.id,
-      openingCountAmd, openingById: u.id,
+      openingCountAmd, openingById: u.id, openingAt: now,
       priorClosingAmd: priorClosing ?? undefined,
       handoverMismatch: mismatch,
       status: 'OPEN',
     },
   });
-  if (mismatch) {
+  if (mismatch && thisHandover) {
     const { notify } = await import('@/lib/notify');
-    const sp = await prisma.sellingPoint.findUnique({ where: { id: sellingPointId } });
     await notify({
       type: 'KACCA_MISMATCH', toAdmins: true,
-      title: `Kacca mismatch at ${sp?.name}`,
-      body: `Previous closing ${priorClosing}${safeMoved ? `, ${safeMoved} moved to safe` : ''}, expected ${expectedOpening}, but opened with ${openingCountAmd} (off by ${(openingCountAmd - (expectedOpening ?? 0)).toFixed(2)}).`,
+      title: `Kacca mismatch at ${pointName}`,
+      body: `Previous closing ${thisHandover.closing}${thisHandover.drawerToSafe ? `, ${thisHandover.drawerToSafe} moved from drawer to safe` : ''}, expected ${thisHandover.expected}, but opened with ${openingCountAmd} (off by ${thisHandover.diff.toFixed(2)}).`,
       relatedId: session.id,
     });
   }
@@ -130,26 +146,37 @@ async function editOpeningCountAction(formData: FormData) {
   const session = found!;
   const scope = await sellingPointScope(u);
   if (scope && !scope.includes(session.sellingPointId)) redirect('/kacca?err=forbidden');
-  // Recompute the handover mismatch against the corrected amount, using the
-  // same safe-aware expectation the shift was originally judged by.
-  const prior = await prisma.cashDrawerSession.findFirst({
-    where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] }, closingAt: { lt: session.openingAt } },
-    orderBy: { closingAt: 'desc' },
-  });
-  const priorClosing = prior?.closingCountAmd != null
-    ? Number(prior.closingCountAmd)
-    : (session.priorClosingAmd != null ? Number(session.priorClosingAmd) : null);
-  let safeMoved = 0;
-  if (priorClosing !== null && prior?.closingAt) {
-    const dayStart = yerevanDayStart(prior.closingAt);
-    const agg = await prisma.safeTransaction.aggregate({
-      _sum: { amountAmd: true },
-      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId, occurredAt: { gte: dayStart } },
-    });
-    safeMoved = Number(agg._sum.amountAmd ?? 0);
-  }
-  const expectedOpening = priorClosing === null ? null : priorClosing - safeMoved;
-  const mismatch = expectedOpening !== null && Math.abs(expectedOpening - openingCountAmd) > 0.001;
+  // Recompute the handover mismatch against the corrected amount using the
+  // shared reconciliation (safe-aware, after-close-sale-aware).
+  const { reconcileHandovers, isHandoverMismatch } = await import('@/lib/reconcile');
+  const [pointSessions, depositRows, cashSaleRows] = await Promise.all([
+    prisma.cashDrawerSession.findMany({
+      where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: { select: { name: true } } },
+    }),
+    prisma.safeTransaction.findMany({
+      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
+    }),
+    prisma.sale.findMany({
+      where: { paymentMethod: 'CASH', sellingPointId: session.sellingPointId },
+      select: { sellingPointId: true, createdAt: true, totalAmd: true },
+    }),
+  ]);
+  const { handovers } = reconcileHandovers(
+    pointSessions.map((s) => ({
+      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt,
+      // Use the corrected amount for the session being edited.
+      openingCountAmd: s.id === sessionId ? openingCountAmd : (s.openingCountAmd == null ? null : Number(s.openingCountAmd)),
+      closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+    })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+  );
+  const thisHandover = handovers.find((h) => h.openedAt.getTime() === session.openingAt.getTime()) ?? null;
+  const mismatch = thisHandover ? isHandoverMismatch(thisHandover) : false;
   await prisma.cashDrawerSession.update({
     where: { id: sessionId },
     data: { openingCountAmd, handoverMismatch: mismatch },
