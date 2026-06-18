@@ -389,9 +389,21 @@ model CashDrawerSession {
   user         User         @relation("ShiftUser", fields: [userId], references: [id])
   openingBy    User         @relation("CashOpenBy", fields: [openingById], references: [id])
   closingBy    User?        @relation("CashCloseBy", fields: [closingById], references: [id])
+  breaks       ShiftBreak[]
 
   @@index([sellingPointId, status])
   @@index([userId, openingAt])
+}
+
+model ShiftBreak {
+  id        String    @id @default(cuid())
+  sessionId String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  session CashDrawerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
 }
 
 model Notification {

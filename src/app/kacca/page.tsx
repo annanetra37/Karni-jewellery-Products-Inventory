@@ -1,7 +1,6 @@
 import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
-import { yerevanDayStart } from '@/lib/datetime';
 import Link from 'next/link';
 import { getT } from '@/lib/i18n-server';
 
@@ -24,47 +23,97 @@ async function openShiftAction(formData: FormData) {
   if (existing) {
     redirect(`/kacca?err=alreadyOpen&by=${encodeURIComponent(existing.openingBy.fullName)}`);
   }
-  // Find the most recent closed session at this point to compare.
-  const prior = await prisma.cashDrawerSession.findFirst({
-    where: { sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] } },
-    orderBy: { closingAt: 'desc' },
-  });
-  const priorClosing = prior?.closingCountAmd ? Number(prior.closingCountAmd) : null;
-  // Cash legitimately moved to the safe since the last close is expected to be
-  // missing from the drawer, so subtract it before flagging a discrepancy.
-  let safeMoved = 0;
-  if (priorClosing !== null && prior?.closingAt) {
-    // Count safe deposits from this drawer since the closing DAY, so a deposit
-    // dated to that day (any time) is captured even if it was stamped before
-    // the precise closing time.
-    const dayStart = yerevanDayStart(prior.closingAt);
-    const agg = await prisma.safeTransaction.aggregate({
-      _sum: { amountAmd: true },
-      where: { type: 'DEPOSIT', sellingPointId, occurredAt: { gte: dayStart } },
-    });
-    safeMoved = Number(agg._sum.amountAmd ?? 0);
-  }
-  const expectedOpening = priorClosing === null ? null : priorClosing - safeMoved;
-  const mismatch = expectedOpening !== null && Math.abs(expectedOpening - openingCountAmd) > 0.001;
+  const { reconcileHandovers, isHandoverMismatch } = await import('@/lib/reconcile');
+  const now = new Date();
+  // Reconcile this opening against history the same way the safe page does:
+  // expected opening = prior closing − drawer cash moved to the safe, where
+  // cash sales rung up AFTER the prior close don't count as drawer cash.
+  const [priorSessions, depositRows, cashSaleRows, spRow] = await Promise.all([
+    prisma.cashDrawerSession.findMany({
+      where: { sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] } },
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: { select: { name: true } } },
+    }),
+    prisma.safeTransaction.findMany({
+      where: { type: 'DEPOSIT', sellingPointId },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
+    }),
+    prisma.sale.findMany({
+      where: { paymentMethod: 'CASH', sellingPointId },
+      select: { sellingPointId: true, createdAt: true, totalAmd: true },
+    }),
+    prisma.sellingPoint.findUnique({ where: { id: sellingPointId }, select: { name: true } }),
+  ]);
+  const pointName = spRow?.name ?? '';
+  const reconSessions = [
+    ...priorSessions.map((s) => ({
+      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+      closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+    })),
+    // A virtual session representing the opening being recorded right now.
+    { sellingPointId, pointName, status: 'OPEN', openingAt: now, openingCountAmd, closingAt: null, closingCountAmd: null },
+  ];
+  const { handovers } = reconcileHandovers(
+    reconSessions,
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+  );
+  // The handover for THIS opening is the one that ends at `now`.
+  const thisHandover = handovers.find((h) => h.openedAt.getTime() === now.getTime()) ?? null;
+  const priorClosing = thisHandover ? thisHandover.closing : null;
+  const mismatch = thisHandover ? isHandoverMismatch(thisHandover) : false;
   const session = await prisma.cashDrawerSession.create({
     data: {
       sellingPointId, userId: u.id,
-      openingCountAmd, openingById: u.id,
+      openingCountAmd, openingById: u.id, openingAt: now,
       priorClosingAmd: priorClosing ?? undefined,
       handoverMismatch: mismatch,
       status: 'OPEN',
     },
   });
-  if (mismatch) {
+  if (mismatch && thisHandover) {
     const { notify } = await import('@/lib/notify');
-    const sp = await prisma.sellingPoint.findUnique({ where: { id: sellingPointId } });
     await notify({
       type: 'KACCA_MISMATCH', toAdmins: true,
-      title: `Kacca mismatch at ${sp?.name}`,
-      body: `Previous closing ${priorClosing}${safeMoved ? `, ${safeMoved} moved to safe` : ''}, expected ${expectedOpening}, but opened with ${openingCountAmd} (off by ${(openingCountAmd - (expectedOpening ?? 0)).toFixed(2)}).`,
+      title: `Kacca mismatch at ${pointName}`,
+      body: `Previous closing ${thisHandover.closing}${thisHandover.drawerToSafe ? `, ${thisHandover.drawerToSafe} moved from drawer to safe` : ''}, expected ${thisHandover.expected}, but opened with ${openingCountAmd} (off by ${thisHandover.diff.toFixed(2)}).`,
       relatedId: session.id,
     });
   }
+  redirect('/kacca');
+}
+
+async function startBreakAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  // No-op if a break is already running.
+  const openBreak = await prisma.shiftBreak.findFirst({ where: { sessionId, endedAt: null } });
+  if (!openBreak) await prisma.shiftBreak.create({ data: { sessionId } });
+  redirect('/kacca');
+}
+
+async function endBreakAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  const openBreak = await prisma.shiftBreak.findFirst({ where: { sessionId, endedAt: null }, orderBy: { startedAt: 'desc' } });
+  if (openBreak) await prisma.shiftBreak.update({ where: { id: openBreak.id }, data: { endedAt: new Date() } });
   redirect('/kacca');
 }
 
@@ -130,26 +179,37 @@ async function editOpeningCountAction(formData: FormData) {
   const session = found!;
   const scope = await sellingPointScope(u);
   if (scope && !scope.includes(session.sellingPointId)) redirect('/kacca?err=forbidden');
-  // Recompute the handover mismatch against the corrected amount, using the
-  // same safe-aware expectation the shift was originally judged by.
-  const prior = await prisma.cashDrawerSession.findFirst({
-    where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] }, closingAt: { lt: session.openingAt } },
-    orderBy: { closingAt: 'desc' },
-  });
-  const priorClosing = prior?.closingCountAmd != null
-    ? Number(prior.closingCountAmd)
-    : (session.priorClosingAmd != null ? Number(session.priorClosingAmd) : null);
-  let safeMoved = 0;
-  if (priorClosing !== null && prior?.closingAt) {
-    const dayStart = yerevanDayStart(prior.closingAt);
-    const agg = await prisma.safeTransaction.aggregate({
-      _sum: { amountAmd: true },
-      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId, occurredAt: { gte: dayStart } },
-    });
-    safeMoved = Number(agg._sum.amountAmd ?? 0);
-  }
-  const expectedOpening = priorClosing === null ? null : priorClosing - safeMoved;
-  const mismatch = expectedOpening !== null && Math.abs(expectedOpening - openingCountAmd) > 0.001;
+  // Recompute the handover mismatch against the corrected amount using the
+  // shared reconciliation (safe-aware, after-close-sale-aware).
+  const { reconcileHandovers, isHandoverMismatch } = await import('@/lib/reconcile');
+  const [pointSessions, depositRows, cashSaleRows] = await Promise.all([
+    prisma.cashDrawerSession.findMany({
+      where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: { select: { name: true } } },
+    }),
+    prisma.safeTransaction.findMany({
+      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
+    }),
+    prisma.sale.findMany({
+      where: { paymentMethod: 'CASH', sellingPointId: session.sellingPointId },
+      select: { sellingPointId: true, createdAt: true, totalAmd: true },
+    }),
+  ]);
+  const { handovers } = reconcileHandovers(
+    pointSessions.map((s) => ({
+      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt,
+      // Use the corrected amount for the session being edited.
+      openingCountAmd: s.id === sessionId ? openingCountAmd : (s.openingCountAmd == null ? null : Number(s.openingCountAmd)),
+      closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+    })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+  );
+  const thisHandover = handovers.find((h) => h.openedAt.getTime() === session.openingAt.getTime()) ?? null;
+  const mismatch = thisHandover ? isHandoverMismatch(thisHandover) : false;
   await prisma.cashDrawerSession.update({
     where: { id: sessionId },
     data: { openingCountAmd, handoverMismatch: mismatch },
@@ -179,7 +239,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
     prisma.cashDrawerSession.findFirst({
       where: openWhere,
       orderBy: { openingAt: 'asc' },
-      include: { sellingPoint: true, openingBy: true },
+      include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'desc' } } },
     }),
     prisma.cashDrawerSession.findMany({
       where: recentWhere,
@@ -190,7 +250,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       ? prisma.cashDrawerSession.findMany({
           where: openShiftsWhere,
           orderBy: { openingAt: 'asc' },
-          include: { sellingPoint: true, openingBy: true },
+          include: { sellingPoint: true, openingBy: true, breaks: { where: { endedAt: null } } },
         })
       : Promise.resolve([]),
   ]);
@@ -211,20 +271,55 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {openShift ? (
-        <div className="card space-y-3 bg-emerald-50 border-emerald-200">
-          <p className="font-medium">{t('k.shiftOpen')}</p>
+      {openShift ? (() => {
+        const activeBreak = openShift.breaks.find((b) => b.endedAt == null) ?? null;
+        const onHold = !!activeBreak;
+        return (
+        <div className={`card space-y-3 ${onHold ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+          <p className="font-medium">
+            {t('k.shiftOpen')}
+            {onHold && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
+          </p>
           <p className="text-sm">{openShift.sellingPoint.name} · {t('k.opened')} {openShift.openingAt.toLocaleString()}</p>
           <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b> · {t('o.by').toLowerCase()} {openShift.openingBy.fullName}</p>
-          <form action={closeShiftAction} className="space-y-2">
+
+          {/* Break controls */}
+          {onHold ? (
+            <div className="rounded-xl p-3 bg-amber-100/60 border border-amber-200 space-y-2">
+              <p className="text-sm font-medium text-amber-900">{t('k.onBreakSince')} {activeBreak!.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              <form action={endBreakAction}>
+                <input type="hidden" name="sessionId" value={openShift.id} />
+                <button className="btn-primary w-full" type="submit">{t('k.endBreak')}</button>
+              </form>
+            </div>
+          ) : (
+            <form action={startBreakAction}>
+              <input type="hidden" name="sessionId" value={openShift.id} />
+              <button className="btn-secondary w-full" type="submit">{t('k.startBreak')}</button>
+            </form>
+          )}
+
+          {openShift.breaks.length > 0 && (
+            <ul className="text-xs space-y-0.5" style={{ color: 'var(--ink-soft)' }}>
+              {openShift.breaks.map((b) => (
+                <li key={b.id}>
+                  {t('k.break')}: {b.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {b.endedAt ? b.endedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '…'}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
             <input type="hidden" name="sessionId" value={openShift.id} />
             <label className="label">{t('k.closingCount')}</label>
             <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
             <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
-            <button className="btn-primary w-full" type="submit">{t('k.endShift')}</button>
+            <button className="btn-primary w-full" type="submit" disabled={onHold}>{t('k.endShift')}</button>
+            {onHold && <p className="text-xs text-amber-800">{t('k.endBreakFirst')}</p>}
           </form>
         </div>
-      ) : (
+        );
+      })() : (
         <form action={openShiftAction} className="card space-y-3">
           <p className="font-medium">{t('k.startShift')}</p>
           <label className="label">{t('c.sellingPoint')}</label>
@@ -250,10 +345,11 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                 <li key={s.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3">
                     <span className="inline-flex items-center gap-2 min-w-0">
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                      <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${s.breaks.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
                       <span className="min-w-0">
                         <span className="font-medium">{s.sellingPoint.name}</span>
                         <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                        {s.breaks.length > 0 && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
                       </span>
                     </span>
                     <span className="text-xs text-karni-700 text-right shrink-0">

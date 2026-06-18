@@ -1,6 +1,7 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { reconcileHandovers } from '@/lib/reconcile';
 import Link from 'next/link';
 
 export default async function ReportsPage() {
@@ -34,6 +35,30 @@ export default async function ReportsPage() {
   const skuVariants = topSkus.length > 0
     ? await prisma.variant.findMany({ where: { id: { in: topSkus.map((t) => t.variantId) } } })
     : [];
+
+  // Live handover reconciliation (safe-aware, after-close-sale-aware), so the
+  // opening-handover discrepancy is shown next to each session.
+  const allSessions = await prisma.cashDrawerSession.findMany({
+    where: { status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
+    orderBy: { openingAt: 'asc' },
+    include: { sellingPoint: { select: { name: true } } },
+  });
+  const earliest = allSessions[0]?.openingAt ?? new Date();
+  const [depositRows, cashSaleRows] = await Promise.all([
+    prisma.safeTransaction.findMany({ where: { type: 'DEPOSIT' }, select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true } }),
+    prisma.sale.findMany({ where: { paymentMethod: 'CASH', createdAt: { gte: earliest } }, select: { sellingPointId: true, createdAt: true, totalAmd: true } }),
+  ]);
+  const { handovers } = reconcileHandovers(
+    allSessions.map((s) => ({
+      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+      closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+    })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+  );
+  const handoverByOpen = new Map<string, number>();
+  for (const h of handovers) handoverByOpen.set(`${h.sellingPointId}|${h.openedAt.getTime()}`, h.diff);
 
   return (
     <div className="space-y-3">
@@ -108,10 +133,13 @@ export default async function ReportsPage() {
         <p className="font-medium mb-2">Cash sessions</p>
         <table className="w-full text-xs">
           <thead><tr className="text-left border-b border-karni-100">
-            <th>When</th><th>Point</th><th>User</th><th>Open</th><th>Close</th><th>Diff</th><th>Status</th>
+            <th>When</th><th>Point</th><th>User</th><th>Open</th><th>Close</th><th>Close diff</th><th>Handover diff</th><th>Status</th>
           </tr></thead>
           <tbody>
-            {recentSessions.map((s) => (
+            {recentSessions.map((s) => {
+              const hDiff = handoverByOpen.get(`${s.sellingPointId}|${s.openingAt.getTime()}`);
+              const hBad = hDiff != null && Math.abs(hDiff) > 0.01;
+              return (
               <tr key={s.id} className="border-b border-karni-100">
                 <td>{s.openingAt.toLocaleDateString()}</td>
                 <td>{s.sellingPoint.name}</td>
@@ -121,9 +149,13 @@ export default async function ReportsPage() {
                 <td className={s.discrepancyAmd != null && Math.abs(Number(s.discrepancyAmd)) > 0.001 ? 'text-red-700' : ''}>
                   {s.discrepancyAmd != null ? formatAmd(Number(s.discrepancyAmd)) : '—'}
                 </td>
-                <td>{s.status}{s.handoverMismatch && ' ⚠'}</td>
+                <td className={hBad ? 'text-red-700 font-semibold' : ''}>
+                  {hDiff == null ? '—' : hBad ? formatAmd(hDiff) : 'OK'}
+                </td>
+                <td>{s.status}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </section>

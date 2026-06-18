@@ -1,10 +1,10 @@
-import { requireSuperAdmin } from '@/lib/auth';
+import { requireSuperAdmin, requireAdmin, isSuperAdmin, getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
-import { yerevanDayStart } from '@/lib/datetime';
 import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
 import { LineChartHover } from '@/components/LineChartHover';
+import { reconcileHandovers } from '@/lib/reconcile';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +63,9 @@ async function recordWithdrawal(formData: FormData) {
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export default async function SafePage() {
-  await requireSuperAdmin();
+  await requireAdmin();
+  const me = await getCurrentUser();
+  const canEdit = isSuperAdmin(me); // only super admins record deposits/withdrawals
   const { t } = await getT();
 
   const [txs, sellingPoints, ownerUsers, superAdmins, sessions] = await Promise.all([
@@ -127,41 +129,29 @@ export default async function SafePage() {
     return { label: k.slice(5), value: Math.round(running) };
   });
 
-  // Reconciliation: next opening should equal previous closing minus the safe
-  // deposits taken from that drawer between the close and the next open.
-  const byPoint = new Map<string, typeof sessions>();
-  for (const s of sessions) {
-    const arr = byPoint.get(s.sellingPointId) || [];
-    arr.push(s);
-    byPoint.set(s.sellingPointId, arr);
-  }
+  // Reconciliation: next opening should equal previous closing minus the
+  // drawer cash moved to the safe (after-close cash sales don't count — they
+  // never entered the drawer). Shared with the kacca page.
   const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
-  const matchedDeposit = new Set<string>();
-  const startOfDay = (d: Date) => yerevanDayStart(d);
-  type Recon = { point: string; closing: number; deposited: number; opening: number; expected: number; diff: number; closedAt: Date; openedAt: Date };
-  const recon: Recon[] = [];
-  for (const arr of byPoint.values()) {
-    for (let i = 0; i < arr.length - 1; i++) {
-      const prev = arr[i], next = arr[i + 1];
-      if (prev.status === 'OPEN' || prev.closingCountAmd == null || !prev.closingAt) continue;
-      // Attribute a deposit to this handover if it's dated on/after the closing
-      // day and before the next opening, and not already matched to an earlier
-      // handover (so each deposit counts once).
-      const lower = startOfDay(prev.closingAt);
-      const inGap = deposits.filter((d) => !matchedDeposit.has(d.id) && d.sellingPointId === prev.sellingPointId && d.occurredAt >= lower && d.occurredAt < next.openingAt);
-      inGap.forEach((d) => matchedDeposit.add(d.id));
-      const deposited = inGap.reduce((s, d) => s + Number(d.amountAmd), 0);
-      const closing = Number(prev.closingCountAmd);
-      const opening = Number(next.openingCountAmd);
-      const expected = closing - deposited;
-      recon.push({ point: prev.sellingPoint.name, closing, deposited, opening, expected, diff: opening - expected, closedAt: prev.closingAt, openedAt: next.openingAt });
-    }
-  }
+  const earliest = sessions[0]?.openingAt ?? new Date();
+  const cashSales = await prisma.sale.findMany({
+    where: { paymentMethod: 'CASH', createdAt: { gte: earliest } },
+    select: { sellingPointId: true, createdAt: true, totalAmd: true },
+  });
+  const { handovers: recon, matchedDepositIds } = reconcileHandovers(
+    sessions.map((s) => ({
+      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+      closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+    })),
+    deposits.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+    cashSales.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+  );
   recon.sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
   const reconShown = recon.slice(0, 15);
   const flags = recon.filter((r) => Math.abs(r.diff) > 0.01).length;
-  // Deposits not yet checked against a handover (no shift opened after them).
-  const pendingDeposits = deposits.filter((d) => !matchedDeposit.has(d.id));
+  // Deposits not matched to any handover yet (no shift opened after them).
+  const pendingDeposits = deposits.filter((d) => !matchedDepositIds.has(d.id));
 
   return (
     <div className="space-y-5">
@@ -220,7 +210,8 @@ export default async function SafePage() {
         )}
       </section>
 
-      {/* Record forms */}
+      {/* Record forms — super admins only */}
+      {canEdit && (
       <section className="grid md:grid-cols-2 gap-3">
         <form action={recordDeposit} className="card space-y-3">
           <p className="font-semibold">{t('sf.moveToSafe')}</p>
@@ -286,6 +277,7 @@ export default async function SafePage() {
           <button className="btn-secondary w-full" type="submit">{t('sf.recordWithdrawal')}</button>
         </form>
       </section>
+      )}
 
       {/* Time series */}
       <section className="card">
