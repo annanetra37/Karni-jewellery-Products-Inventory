@@ -1,8 +1,32 @@
 import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
+import { reconcileHandovers, type Handover } from '@/lib/reconcile';
 import Link from 'next/link';
 import { getT } from '@/lib/i18n-server';
+
+function MismatchDetail({ h, t }: { h: Handover; t: (k: string) => string }) {
+  return (
+    <details className="text-xs mt-1">
+      <summary className="text-red-700 font-medium cursor-pointer select-none">{t('k.handoverMismatch')} — {t('k.whyMismatch')}</summary>
+      <div className="mt-1 space-y-1" style={{ color: 'var(--ink-soft)' }}>
+        <p>
+          {t('k.hExpected')}: {formatAmd(h.closing)} ({t('k.hPrevClose')}) − {formatAmd(h.drawerToSafe)} ({t('k.hMovedToSafe')}) = <b>{formatAmd(h.expected)}</b>
+        </p>
+        {h.afterCloseCashSales > 0 && (
+          <p>{t('k.hAfterCloseNote')} {formatAmd(h.afterCloseCashSales)} ({t('k.hExcluded')}).</p>
+        )}
+        <p>{t('k.hOpenedWith')} <b>{formatAmd(h.opening)}</b> · <span className="text-red-700 font-medium">{t('k.hOffBy')} {formatAmd(h.diff)}</span></p>
+        <p className="font-medium pt-1" style={{ color: 'var(--ink)' }}>{t('k.howToFix')}:</p>
+        <ul className="list-disc pl-4 space-y-0.5">
+          <li>{t('k.fixTypo')}</li>
+          <li>{t('k.fixDeposit')}</li>
+          <li>{t('k.fixAfterSale')}</li>
+        </ul>
+      </div>
+    </details>
+  );
+}
 
 function fmtMins(mins: number): string {
   const m = Math.max(0, Math.round(mins));
@@ -265,6 +289,47 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
   ]);
   const allowedSps = await allowedSellingPoints(user, sps);
 
+  // Live handover reconciliation so we can explain any mismatch (and how to
+  // fix it) on each session. Reconcile needs the full session history for the
+  // points shown here.
+  const reconPointIds = [...new Set([
+    ...(openShift ? [openShift.sellingPointId] : []),
+    ...recentSessions.map((s) => s.sellingPointId),
+    ...openShifts.map((s) => s.sellingPointId),
+  ])];
+  const handoverMap = new Map<string, Handover>();
+  if (reconPointIds.length > 0) {
+    const [reconSessions, depositRows, cashSaleRows] = await Promise.all([
+      prisma.cashDrawerSession.findMany({
+        where: { sellingPointId: { in: reconPointIds }, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
+        orderBy: { openingAt: 'asc' },
+        include: { sellingPoint: { select: { name: true } } },
+      }),
+      prisma.safeTransaction.findMany({
+        where: { type: 'DEPOSIT', sellingPointId: { in: reconPointIds } },
+        select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
+      }),
+      prisma.sale.findMany({
+        where: { paymentMethod: 'CASH', sellingPointId: { in: reconPointIds } },
+        select: { sellingPointId: true, createdAt: true, totalAmd: true },
+      }),
+    ]);
+    const { handovers } = reconcileHandovers(
+      reconSessions.map((s) => ({
+        sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+        openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+        closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+      })),
+      depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
+      cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+    );
+    for (const h of handovers) handoverMap.set(`${h.sellingPointId}|${h.openedAt.getTime()}`, h);
+  }
+  const handoverFor = (s: { sellingPointId: string; openingAt: Date }) => {
+    const h = handoverMap.get(`${s.sellingPointId}|${s.openingAt.getTime()}`);
+    return h && Math.abs(h.diff) > 0.01 ? h : null;
+  };
+
   return (
     <div className="space-y-3">
       <h1 className="page-title">{t('k.title')}</h1>
@@ -380,6 +445,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                       </form>
                     </details>
                   </div>
+                  {handoverFor(s) && <div className="mt-1 pl-4"><MismatchDetail h={handoverFor(s)!} t={t} /></div>}
                   {/* Break detail */}
                   <div className="mt-1 pl-4 text-xs" style={{ color: 'var(--ink-soft)' }}>
                     {s.breaks.length === 0 ? (
@@ -428,7 +494,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                   {s.discrepancyAmd != null && Math.abs(Number(s.discrepancyAmd)) > 0.001 && (
                     <p className="text-red-700">Diff: {formatAmd(Number(s.discrepancyAmd))}</p>
                   )}
-                  {s.handoverMismatch && <p className="text-red-700">Handover mismatch</p>}
+                  {handoverFor(s) && <div className="text-left"><MismatchDetail h={handoverFor(s)!} t={t} /></div>}
                 </div>
               </div>
             </li>
