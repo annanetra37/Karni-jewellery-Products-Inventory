@@ -4,6 +4,15 @@ import { formatAmd } from '@/lib/currency';
 import Link from 'next/link';
 import { getT } from '@/lib/i18n-server';
 
+function fmtMins(mins: number): string {
+  const m = Math.max(0, Math.round(mins));
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+function fmtDuration(start: Date, end: Date | null): string {
+  return fmtMins(((end ?? new Date()).getTime() - start.getTime()) / 60000);
+}
+const hm = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 async function openShiftAction(formData: FormData) {
   'use server';
   const { requireUser } = await import('@/lib/auth');
@@ -244,13 +253,13 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
     prisma.cashDrawerSession.findMany({
       where: recentWhere,
       orderBy: { openingAt: 'desc' }, take: 10,
-      include: { sellingPoint: true, openingBy: true, closingBy: true, user: true },
+      include: { sellingPoint: true, openingBy: true, closingBy: true, user: true, breaks: { orderBy: { startedAt: 'asc' } } },
     }),
     isAdmin(user)
       ? prisma.cashDrawerSession.findMany({
           where: openShiftsWhere,
           orderBy: { openingAt: 'asc' },
-          include: { sellingPoint: true, openingBy: true, breaks: { where: { endedAt: null } } },
+          include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'asc' } } },
         })
       : Promise.resolve([]),
   ]);
@@ -341,15 +350,18 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
             <p className="text-sm text-karni-700">{t('k.noOpenShifts')}</p>
           ) : (
             <ul className="space-y-2 text-sm">
-              {openShifts.map((s) => (
+              {openShifts.map((s) => {
+                const onHold = s.breaks.some((b) => b.endedAt == null);
+                const totalBreakMins = s.breaks.reduce((m, b) => m + Math.round(((b.endedAt ?? new Date()).getTime() - b.startedAt.getTime()) / 60000), 0);
+                return (
                 <li key={s.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3">
                     <span className="inline-flex items-center gap-2 min-w-0">
-                      <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${s.breaks.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
+                      <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${onHold ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
                       <span className="min-w-0">
                         <span className="font-medium">{s.sellingPoint.name}</span>
                         <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
-                        {s.breaks.length > 0 && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
+                        {onHold && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
                       </span>
                     </span>
                     <span className="text-xs text-karni-700 text-right shrink-0">
@@ -368,8 +380,26 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                       </form>
                     </details>
                   </div>
+                  {/* Break detail */}
+                  <div className="mt-1 pl-4 text-xs" style={{ color: 'var(--ink-soft)' }}>
+                    {s.breaks.length === 0 ? (
+                      <span>{t('k.breaks')}: {t('k.noBreaks')}</span>
+                    ) : (
+                      <>
+                        <span className="font-medium">{t('k.breaks')} ({s.breaks.length}) · {t('k.total')} {fmtMins(totalBreakMins)}:</span>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {s.breaks.map((b) => (
+                            <li key={b.id}>
+                              {hm(b.startedAt)} – {b.endedAt ? hm(b.endedAt) : t('k.ongoing')} ({fmtDuration(b.startedAt, b.endedAt)})
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </section>
@@ -386,6 +416,11 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                   <p className="text-xs text-karni-700">
                     Opened {s.openingAt.toLocaleString()} · {s.status}
                   </p>
+                  {s.breaks.length > 0 && (
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                      {t('k.breaks')} ({s.breaks.length}): {s.breaks.map((b) => `${hm(b.startedAt)}–${b.endedAt ? hm(b.endedAt) : t('k.ongoing')}`).join(', ')} · {t('k.total')} {fmtMins(s.breaks.reduce((m, b) => m + ((b.endedAt ?? new Date()).getTime() - b.startedAt.getTime()) / 60000, 0))}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right text-xs">
                   <p>Opened: {formatAmd(Number(s.openingCountAmd))}</p>
