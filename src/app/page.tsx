@@ -114,6 +114,8 @@ export default async function HomePage() {
         </Link>
       )}
 
+      {/* Store sales figures — only admins, or a sales user with an open shift. */}
+      {(admin || openShift) && (
       <section className="grid grid-cols-2 gap-3">
         <Link href="/sales?range=today" className="card-interactive block">
           <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('h.salesToday')}</p>
@@ -126,6 +128,7 @@ export default async function HomePage() {
           <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
         </Link>
       </section>
+      )}
 
       <section className="grid grid-cols-2 gap-3">
         <Link href="/sell" className="btn-primary">{t('h.startSale')}</Link>
