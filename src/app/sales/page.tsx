@@ -35,6 +35,25 @@ const RANGES = [
 export default async function SalesPage({ searchParams }: { searchParams: Search }) {
   const user = await requireUser();
   const admin = isAdmin(user);
+  // A sales user may only see sales movements while they have an open shift.
+  if (!admin) {
+    const myShift = await prisma.cashDrawerSession.findFirst({
+      where: { userId: user.id, status: 'OPEN' }, select: { id: true },
+    });
+    if (!myShift) {
+      return (
+        <div className="space-y-4">
+          <header>
+            <h1 className="page-title">Sales</h1>
+            <p className="page-subtitle">Every sale with its items, amount, customer and who sold it.</p>
+          </header>
+          <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>
+            Open your shift in Kacca to view sales.
+          </div>
+        </div>
+      );
+    }
+  }
   const sp = await searchParams;
   // Only admins/super admins may browse other days/ranges; sales users always
   // see today's sales (date/range params are ignored for them).
