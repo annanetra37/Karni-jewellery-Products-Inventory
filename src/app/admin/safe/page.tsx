@@ -5,16 +5,17 @@ import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
 import { LineChartHover } from '@/components/LineChartHover';
 import { reconcileHandovers } from '@/lib/reconcile';
+import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
 
 function toDate(v: unknown): Date {
   const s = String(v || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    // End of the chosen day — cash taken to the safe happens at/after the
-    // shift's closing count, so this keeps it inside the handover gap.
-    const d = new Date(`${s}T23:59:59.000Z`);
-    if (!Number.isNaN(d.getTime())) return d;
+    // End of the chosen YEREVAN day, so the deposit lands after the shift's
+    // closing on that day AND keeps the correct calendar day when displayed in
+    // Yerevan time. (Stamping end-of-UTC-day pushed it to the next day.)
+    return new Date(yerevanDateStringStart(s).getTime() + 24 * 60 * 60 * 1000 - 1000);
   }
   return new Date();
 }
@@ -396,7 +397,7 @@ export default async function SafePage() {
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <form action={editSafeTxDate} className="flex items-center gap-1">
                           <input type="hidden" name="id" value={tx.id} />
-                          <input className="input py-1 text-xs" name="occurredAt" type="date" defaultValue={tx.occurredAt.toISOString().slice(0, 10)} />
+                          <input className="input py-1 text-xs" name="occurredAt" type="date" defaultValue={yerevanISODate(tx.occurredAt)} />
                           <button type="submit" className="btn-secondary px-2 py-1 text-[11px]">{t('sf.saveDate')}</button>
                         </form>
                         <form action={deleteSafeTx}>
