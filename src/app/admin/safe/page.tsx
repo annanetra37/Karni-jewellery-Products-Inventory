@@ -48,6 +48,25 @@ async function toggleDepositSource(formData: FormData) {
   revalidatePath('/admin/safe');
 }
 
+async function editSafeTxDate(formData: FormData) {
+  'use server';
+  await requireSuperAdmin();
+  const id = String(formData.get('id') || '');
+  const occurredAt = toDate(formData.get('occurredAt'));
+  if (!id) return;
+  await prisma.safeTransaction.update({ where: { id }, data: { occurredAt } });
+  revalidatePath('/admin/safe');
+}
+
+async function deleteSafeTx(formData: FormData) {
+  'use server';
+  await requireSuperAdmin();
+  const id = String(formData.get('id') || '');
+  if (!id) return;
+  await prisma.safeTransaction.delete({ where: { id } });
+  revalidatePath('/admin/safe');
+}
+
 async function recordWithdrawal(formData: FormData) {
   'use server';
   const u = await requireSuperAdmin();
@@ -371,6 +390,22 @@ export default async function SafePage() {
                       </span>
                     )}
                   </p>
+                  {canEdit && (
+                    <details className="text-[11px] mt-0.5">
+                      <summary className="btn-link cursor-pointer select-none inline-block">{t('sf.editMovement')}</summary>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <form action={editSafeTxDate} className="flex items-center gap-1">
+                          <input type="hidden" name="id" value={tx.id} />
+                          <input className="input py-1 text-xs" name="occurredAt" type="date" defaultValue={tx.occurredAt.toISOString().slice(0, 10)} />
+                          <button type="submit" className="btn-secondary px-2 py-1 text-[11px]">{t('sf.saveDate')}</button>
+                        </form>
+                        <form action={deleteSafeTx}>
+                          <input type="hidden" name="id" value={tx.id} />
+                          <button type="submit" className="btn-link text-[11px] text-red-700">{t('sf.delete')}</button>
+                        </form>
+                      </div>
+                    </details>
+                  )}
                 </div>
                 <b className={`tabular-nums ${tx.type === 'DEPOSIT' ? '' : 'text-red-700'}`}>
                   {tx.type === 'DEPOSIT' ? '+' : '−'}{formatAmd(Number(tx.amountAmd))}
