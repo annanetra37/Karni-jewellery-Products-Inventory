@@ -182,8 +182,13 @@ export default async function SafePage() {
   const recon = [...reconById.values()].filter((r) => r.priorClose != null).sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
   const reconShown = recon.slice(0, 15);
   const flags = recon.filter((r) => isMismatch(r.handoverDiff)).length;
-  // Deposits not matched to any handover yet (no shift opened after them).
-  const pendingDeposits = deposits.filter((d) => !matchedDepositIds.has(d.id));
+  // Deposits genuinely awaiting a drawer handover check: drawer cash, at a point
+  // that actually has a cash drawer, not yet matched to a later opening. Online
+  // points (no shift can ever open there) and "not from drawer" deposits don't
+  // belong here — they'd otherwise sit "awaiting" forever and just cause alarm.
+  const drawerPointIds = new Set(sessions.map((s) => s.sellingPointId));
+  const pendingDeposits = deposits.filter((d) =>
+    !matchedDepositIds.has(d.id) && d.fromDrawer && !!d.sellingPointId && drawerPointIds.has(d.sellingPointId));
 
   return (
     <div className="space-y-5">
