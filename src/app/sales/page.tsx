@@ -192,6 +192,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       <div>
                         <p className="font-bold tabular-nums">{formatAmd(Number(s.totalAmd))}</p>
                         <p className="text-[10px] uppercase" style={{ color: 'var(--ink-soft)' }}>{s.paymentMethod || 'CASH'}</p>
+                        {s.cashToSafe && (
+                          <span className="chip chip-ok text-[10px] mt-0.5 inline-block" title="Cash went straight to the safe — excluded from drawer reconciliation">→ Safe</span>
+                        )}
                       </div>
                       <svg className="shrink-0 transition-transform group-open:rotate-180" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--ink-soft)' }}>
                         <polyline points="6 9 12 15 18 9" />
