@@ -317,6 +317,8 @@ const D: Record<string, Record<Locale, string>> = {
   'r.who': { en: 'Added by', hy: 'Ով է ավելացրել', ru: 'Кто добавил' },
   'r.from': { en: 'From', hy: 'Սկսած', ru: 'С' },
   'r.to': { en: 'To', hy: 'Մինչև', ru: 'По' },
+  'r.anyCollection': { en: 'Any collection', hy: 'Ցանկացած հավաքածու', ru: 'Любая коллекция' },
+  'r.anyColor': { en: 'Any color', hy: 'Ցանկացած գույն', ru: 'Любой цвет' },
   'r.applyFilters': { en: 'Apply', hy: 'Կիրառել', ru: 'Применить' },
   'r.clearFilters': { en: 'Clear', hy: 'Մաքրել', ru: 'Сбросить' },
 
