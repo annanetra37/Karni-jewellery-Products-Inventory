@@ -278,15 +278,15 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       : Promise.resolve([]),
   ]);
   const allowedSps = await allowedSellingPoints(user, sps);
+  const admin = isAdmin(user); // only admins see drawer reconciliation history
 
   // Live handover reconciliation so we can explain any mismatch (and how to
-  // fix it) on each session. Reconcile needs the full session history for the
-  // points shown here.
-  const reconPointIds = [...new Set([
+  // fix it) on each session. Admin-only — sales reps don't see reconciliation.
+  const reconPointIds = admin ? [...new Set([
     ...(openShift ? [openShift.sellingPointId] : []),
     ...recentSessions.map((s) => s.sellingPointId),
     ...openShifts.map((s) => s.sellingPointId),
-  ])];
+  ])] : [];
   const handoverMap = new Map<string, Handover>();
   if (reconPointIds.length > 0) {
     const [reconSessions, depositRows] = await Promise.all([
@@ -456,6 +456,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
         </section>
       )}
 
+      {admin && (
       <section className="card">
         <p className="font-medium mb-2">{t('k.recentSessions')}</p>
         <ul className="space-y-2 text-sm">
@@ -487,7 +488,8 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           {recentSessions.length === 0 && <li className="text-karni-700">None yet.</li>}
         </ul>
       </section>
-      {isAdmin(user) && <Link href="/admin/reports" className="btn-ghost w-full">{t('k.allReports')}</Link>}
+      )}
+      {admin && <Link href="/admin/reports" className="btn-ghost w-full">{t('k.allReports')}</Link>}
     </div>
   );
 }
