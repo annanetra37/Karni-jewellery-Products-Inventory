@@ -1,7 +1,7 @@
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
-import { reconcileHandovers } from '@/lib/reconcile';
+import { reconcileSessions, isMismatch } from '@/lib/reconcile';
 import Link from 'next/link';
 
 export default async function ReportsPage() {
@@ -44,16 +44,15 @@ export default async function ReportsPage() {
     include: { sellingPoint: { select: { name: true } } },
   });
   const depositRows = await prisma.safeTransaction.findMany({ where: { type: 'DEPOSIT' }, select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true } });
-  const { handovers } = reconcileHandovers(
+  const { byId: reconById } = reconcileSessions(
     allSessions.map((s) => ({
-      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+      expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
     })),
     depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
-  const handoverByOpen = new Map<string, typeof handovers[number]>();
-  for (const h of handovers) handoverByOpen.set(`${h.sellingPointId}|${h.openedAt.getTime()}`, h);
 
   return (
     <div className="space-y-3">
@@ -129,14 +128,13 @@ export default async function ReportsPage() {
         <p className="text-xs text-karni-700 mb-3">Tap a session to see exactly how the close and handover figures are calculated.</p>
         <ul className="space-y-1.5">
           {recentSessions.map((s) => {
+            const r = reconById.get(s.id);
             const opening = Number(s.openingCountAmd);
             const closing = s.closingCountAmd == null ? null : Number(s.closingCountAmd);
-            const expectedClose = s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd);
-            const closeDiff = s.discrepancyAmd == null ? null : Number(s.discrepancyAmd);
-            const cashDuringShift = expectedClose == null ? null : expectedClose - opening;
-            const closeBad = closeDiff != null && Math.abs(closeDiff) > 0.01;
-            const h = handoverByOpen.get(`${s.sellingPointId}|${s.openingAt.getTime()}`);
-            const hBad = h != null && Math.abs(h.diff) > 0.01;
+            const closeDiff = r?.closeDiff ?? null;
+            const closeBad = isMismatch(closeDiff);
+            const hHas = r != null && r.handoverDiff != null;
+            const hBad = isMismatch(r?.handoverDiff);
             return (
               <li key={s.id}>
                 <details className="border-b border-karni-100 pb-1.5">
@@ -147,9 +145,8 @@ export default async function ReportsPage() {
                     </span>
                     <span className="flex items-center gap-2 text-xs shrink-0">
                       <span>{formatAmd(opening)} → {closing != null ? formatAmd(closing) : '—'}</span>
-                      <span className={closeBad ? 'chip chip-danger' : 'chip chip-ok'}>{closeBad ? `close ${formatAmd(closeDiff!)}` : 'close OK'}</span>
-                      <span className={hBad ? 'chip chip-danger' : 'chip chip-ok'}>{h == null ? 'handover —' : hBad ? `handover ${formatAmd(h.diff)}` : 'handover OK'}</span>
-                      <span className="text-karni-700">{s.status}</span>
+                      <span className={closeBad ? 'chip chip-danger' : 'chip chip-ok'}>{closing == null ? 'close —' : closeBad ? `close ${formatAmd(closeDiff!)}` : 'close OK'}</span>
+                      <span className={hBad ? 'chip chip-danger' : 'chip chip-ok'}>{!hHas ? 'handover —' : hBad ? `handover ${formatAmd(r!.handoverDiff!)}` : 'handover OK'}</span>
                     </span>
                   </summary>
 
@@ -157,13 +154,13 @@ export default async function ReportsPage() {
                     {/* Close-of-shift calculation */}
                     <div>
                       <p className="font-semibold" style={{ color: 'var(--ink)' }}>Close of shift (drawer vs sales)</p>
-                      {closing == null ? (
+                      {closing == null || r == null ? (
                         <p>Shift still open — not closed yet.</p>
                       ) : (
                         <>
-                          <p>Expected close = opening {formatAmd(opening)} + cash sales during shift {cashDuringShift != null ? formatAmd(cashDuringShift) : '—'} = <b>{expectedClose != null ? formatAmd(expectedClose) : '—'}</b></p>
+                          <p>Expected close = opening {formatAmd(opening)} + cash sales during shift {r.cashSales != null ? formatAmd(r.cashSales) : '—'}{r.fromDrawerDuringShift > 0 && <> − cash moved to safe mid-shift {formatAmd(r.fromDrawerDuringShift)}</>} = <b>{r.expectedClose != null ? formatAmd(r.expectedClose) : '—'}</b></p>
                           <p>Counted at close = <b>{formatAmd(closing)}</b></p>
-                          <p>Close diff = {formatAmd(closing)} − {expectedClose != null ? formatAmd(expectedClose) : '—'} = <span className={closeBad ? 'text-red-700 font-semibold' : ''}>{closeDiff != null ? formatAmd(closeDiff) : '—'}</span> {closeBad ? '→ DISPUTED' : '→ OK'}</p>
+                          <p>Close diff = <span className={closeBad ? 'text-red-700 font-semibold' : ''}>{closeDiff != null ? formatAmd(closeDiff) : '—'}</span> {closeBad ? '→ DISPUTED' : '→ OK'}</p>
                         </>
                       )}
                     </div>
@@ -171,17 +168,17 @@ export default async function ReportsPage() {
                     {/* Handover calculation */}
                     <div>
                       <p className="font-semibold" style={{ color: 'var(--ink)' }}>Handover (today’s open vs yesterday’s close)</p>
-                      {h == null ? (
+                      {!hHas || r == null ? (
                         <p>No earlier closed shift at this point to compare against.</p>
                       ) : (
                         <>
-                          <p>Expected open = previous close {formatAmd(h.closing)} − drawer cash moved to safe {formatAmd(h.drawerToSafe)} = <b>{formatAmd(h.expected)}</b></p>
-                          {h.nonDrawerToSafe > 0 && <p>({formatAmd(h.nonDrawerToSafe)} moved to safe was marked “not from the drawer” (e.g. after-hours sale) and excluded.)</p>}
-                          <p>Opened with = <b>{formatAmd(h.opening)}</b></p>
-                          <p>Handover diff = {formatAmd(h.opening)} − {formatAmd(h.expected)} = <span className={hBad ? 'text-red-700 font-semibold' : ''}>{formatAmd(h.diff)}</span> {hBad ? '→ mismatch' : '→ OK'}</p>
+                          <p>Expected open = previous close {formatAmd(r.priorClose!)} − drawer cash moved to safe after close {formatAmd(r.drawerToSafeAfterClose)} = <b>{formatAmd(r.expectedOpen!)}</b></p>
+                          {r.nonDrawerToSafe > 0 && <p>({formatAmd(r.nonDrawerToSafe)} moved to safe was marked “not from the drawer” (e.g. after-hours sale) and excluded.)</p>}
+                          <p>Opened with = <b>{formatAmd(r.opening)}</b></p>
+                          <p>Handover diff = <span className={hBad ? 'text-red-700 font-semibold' : ''}>{formatAmd(r.handoverDiff!)}</span> {hBad ? '→ mismatch' : '→ OK'}</p>
                           {hBad && (
                             <p className="pt-0.5" style={{ color: 'var(--ink)' }}>
-                              To fix: correct the opening count if mistyped, or record a missing drawer→safe transfer in Safe / Money.
+                              To fix: correct the opening count if mistyped, record a missing drawer→safe transfer, or mark an after-hours-sale deposit “not from the drawer” in Safe / Money.
                             </p>
                           )}
                         </>

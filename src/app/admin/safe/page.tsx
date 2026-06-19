@@ -4,7 +4,7 @@ import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
 import { LineChartHover } from '@/components/LineChartHover';
-import { reconcileHandovers } from '@/lib/reconcile';
+import { reconcileSessions, isMismatch } from '@/lib/reconcile';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
@@ -161,20 +161,22 @@ export default async function SafePage() {
   });
 
   // Reconciliation: next opening should equal previous closing minus the
-  // drawer cash moved to the safe. Only deposits flagged as "from the drawer"
-  // count. Shared with the kacca page.
+  // drawer cash moved to the safe after that close (auto-detected; only "from
+  // the drawer" deposits count). Shared with the kacca page.
   const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
-  const { handovers: recon, matchedDepositIds } = reconcileHandovers(
+  const { byId: reconById, matchedDepositIds } = reconcileSessions(
     sessions.map((s) => ({
-      sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
+      expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
     })),
     deposits.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
-  recon.sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
+  // Handover rows: sessions that have a previous close to compare against.
+  const recon = [...reconById.values()].filter((r) => r.priorClose != null).sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
   const reconShown = recon.slice(0, 15);
-  const flags = recon.filter((r) => Math.abs(r.diff) > 0.01).length;
+  const flags = recon.filter((r) => isMismatch(r.handoverDiff)).length;
   // Deposits not matched to any handover yet (no shift opened after them).
   const pendingDeposits = deposits.filter((d) => !matchedDepositIds.has(d.id));
 
@@ -339,19 +341,19 @@ export default async function SafePage() {
         )}
 
         <ul className="space-y-2 text-sm">
-          {reconShown.map((r, i) => {
-            const bad = Math.abs(r.diff) > 0.01;
+          {reconShown.map((r) => {
+            const bad = isMismatch(r.handoverDiff);
             return (
-              <li key={i} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
+              <li key={r.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
                 <div className="min-w-0">
                   <p className="font-medium">{r.point}</p>
                   <p className="text-xs text-karni-700">
-                    {t('sf.closed')} {r.closedAt.toLocaleDateString()}: {formatAmd(r.closing)} − {t('sf.movedToSafe')} {formatAmd(r.drawerToSafe)} = {formatAmd(r.expected)} → {t('sf.opened')} {r.openedAt.toLocaleDateString()}: {formatAmd(r.opening)}
+                    {t('sf.closed')} {r.priorClosedAt ? r.priorClosedAt.toLocaleDateString() : ''}: {formatAmd(r.priorClose ?? 0)} − {t('sf.movedToSafe')} {formatAmd(r.drawerToSafeAfterClose)} = {formatAmd(r.expectedOpen ?? 0)} → {t('sf.opened')} {r.openedAt.toLocaleDateString()}: {formatAmd(r.opening)}
                     {r.nonDrawerToSafe > 0 && <> · {formatAmd(r.nonDrawerToSafe)} {t('sf.nonDrawerNote')}</>}
                   </p>
                 </div>
                 <span className={`chip ${bad ? 'chip-danger' : 'chip-ok'}`}>
-                  {bad ? `${t('sf.offBy')} ${formatAmd(r.diff)}` : t('sf.ok')}
+                  {bad ? `${t('sf.offBy')} ${formatAmd(r.handoverDiff ?? 0)}` : t('sf.ok')}
                 </span>
               </li>
             );
