@@ -43,19 +43,14 @@ export default async function ReportsPage() {
     orderBy: { openingAt: 'asc' },
     include: { sellingPoint: { select: { name: true } } },
   });
-  const earliest = allSessions[0]?.openingAt ?? new Date();
-  const [depositRows, cashSaleRows] = await Promise.all([
-    prisma.safeTransaction.findMany({ where: { type: 'DEPOSIT' }, select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true } }),
-    prisma.sale.findMany({ where: { paymentMethod: 'CASH', createdAt: { gte: earliest } }, select: { sellingPointId: true, createdAt: true, totalAmd: true } }),
-  ]);
+  const depositRows = await prisma.safeTransaction.findMany({ where: { type: 'DEPOSIT' }, select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true } });
   const { handovers } = reconcileHandovers(
     allSessions.map((s) => ({
       sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
     })),
-    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
-    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
   const handoverByOpen = new Map<string, typeof handovers[number]>();
   for (const h of handovers) handoverByOpen.set(`${h.sellingPointId}|${h.openedAt.getTime()}`, h);
@@ -181,7 +176,7 @@ export default async function ReportsPage() {
                       ) : (
                         <>
                           <p>Expected open = previous close {formatAmd(h.closing)} − drawer cash moved to safe {formatAmd(h.drawerToSafe)} = <b>{formatAmd(h.expected)}</b></p>
-                          {h.afterCloseCashSales > 0 && <p>(After-close cash sales of {formatAmd(h.afterCloseCashSales)} were excluded — that cash never entered the drawer.)</p>}
+                          {h.nonDrawerToSafe > 0 && <p>({formatAmd(h.nonDrawerToSafe)} moved to safe was marked “not from the drawer” (e.g. after-hours sale) and excluded.)</p>}
                           <p>Opened with = <b>{formatAmd(h.opening)}</b></p>
                           <p>Handover diff = {formatAmd(h.opening)} − {formatAmd(h.expected)} = <span className={hBad ? 'text-red-700 font-semibold' : ''}>{formatAmd(h.diff)}</span> {hBad ? '→ mismatch' : '→ OK'}</p>
                           {hBad && (

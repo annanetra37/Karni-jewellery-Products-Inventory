@@ -205,6 +205,7 @@ model SafeTransaction {
   ownerId        String?    // which owner took a withdrawal (null when split)
   splitAll       Boolean    @default(false) // withdrawal shared equally by all owners
   reason         String?    // PERSONAL | INVESTMENT (withdrawals)
+  fromDrawer     Boolean    @default(true) // deposit: did this cash come from the drawer? (after-hours sale cash = false)
   performedById  String     // who recorded it
   note           String?
   occurredAt     DateTime   @default(now())
