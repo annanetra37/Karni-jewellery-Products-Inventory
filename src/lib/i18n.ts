@@ -311,6 +311,14 @@ const D: Record<string, Record<Locale, string>> = {
   'r.refreshStock': { en: 'Refresh stock', hy: 'Թարմացնել մնացորդը', ru: 'Обновить остаток' },
   'r.currentStock': { en: 'Current stock', hy: 'Ընթացիկ մնացորդ', ru: 'Текущий остаток' },
   'r.after': { en: 'after', hy: 'հետո', ru: 'после' },
+  'r.filters': { en: 'Filters', hy: 'Զտիչներ', ru: 'Фильтры' },
+  'r.anyone': { en: 'Anyone', hy: 'Բոլորը', ru: 'Любой' },
+  'r.anyPoint': { en: 'Any point', hy: 'Բոլոր կետերը', ru: 'Любая точка' },
+  'r.who': { en: 'Added by', hy: 'Ով է ավելացրել', ru: 'Кто добавил' },
+  'r.from': { en: 'From', hy: 'Սկսած', ru: 'С' },
+  'r.to': { en: 'To', hy: 'Մինչև', ru: 'По' },
+  'r.applyFilters': { en: 'Apply', hy: 'Կիրառել', ru: 'Применить' },
+  'r.clearFilters': { en: 'Clear', hy: 'Մաքրել', ru: 'Сбросить' },
 
   // Kacca
   'k.title': { en: 'Kacca — cash drawer', hy: 'Դրամարկղ', ru: 'Касса' },
