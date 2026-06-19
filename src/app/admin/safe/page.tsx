@@ -29,11 +29,22 @@ async function recordDeposit(formData: FormData) {
       type: 'DEPOSIT',
       amountAmd: amount,
       sellingPointId: String(formData.get('sellingPointId') || '') || null,
+      fromDrawer: String(formData.get('source') || 'drawer') !== 'other',
       performedById: u.id,
       note: String(formData.get('note') || '').trim() || null,
       occurredAt: toDate(formData.get('occurredAt')),
     },
   });
+  revalidatePath('/admin/safe');
+}
+
+async function toggleDepositSource(formData: FormData) {
+  'use server';
+  await requireSuperAdmin();
+  const id = String(formData.get('id') || '');
+  const tx = await prisma.safeTransaction.findUnique({ where: { id }, select: { type: true, fromDrawer: true } });
+  if (!tx || tx.type !== 'DEPOSIT') return;
+  await prisma.safeTransaction.update({ where: { id }, data: { fromDrawer: !tx.fromDrawer } });
   revalidatePath('/admin/safe');
 }
 
@@ -130,22 +141,16 @@ export default async function SafePage() {
   });
 
   // Reconciliation: next opening should equal previous closing minus the
-  // drawer cash moved to the safe (after-close cash sales don't count — they
-  // never entered the drawer). Shared with the kacca page.
+  // drawer cash moved to the safe. Only deposits flagged as "from the drawer"
+  // count. Shared with the kacca page.
   const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
-  const earliest = sessions[0]?.openingAt ?? new Date();
-  const cashSales = await prisma.sale.findMany({
-    where: { paymentMethod: 'CASH', createdAt: { gte: earliest } },
-    select: { sellingPointId: true, createdAt: true, totalAmd: true },
-  });
   const { handovers: recon, matchedDepositIds } = reconcileHandovers(
     sessions.map((s) => ({
       sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
     })),
-    deposits.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
-    cashSales.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+    deposits.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
   recon.sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
   const reconShown = recon.slice(0, 15);
@@ -234,6 +239,14 @@ export default async function SafePage() {
             </div>
           </div>
           <div>
+            <label className="label">{t('sf.cashSource')}</label>
+            <select className="input" name="source" defaultValue="drawer">
+              <option value="drawer">{t('sf.sourceDrawer')}</option>
+              <option value="other">{t('sf.sourceOther')}</option>
+            </select>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('sf.sourceHint')}</p>
+          </div>
+          <div>
             <label className="label">{t('sf.note')}</label>
             <input className="input" name="note" placeholder={t('sf.optional')} />
           </div>
@@ -313,7 +326,8 @@ export default async function SafePage() {
                 <div className="min-w-0">
                   <p className="font-medium">{r.point}</p>
                   <p className="text-xs text-karni-700">
-                    {t('sf.closed')} {r.closedAt.toLocaleDateString()}: {formatAmd(r.closing)} − {t('sf.movedToSafe')} {formatAmd(r.deposited)} = {formatAmd(r.expected)} → {t('sf.opened')} {r.openedAt.toLocaleDateString()}: {formatAmd(r.opening)}
+                    {t('sf.closed')} {r.closedAt.toLocaleDateString()}: {formatAmd(r.closing)} − {t('sf.movedToSafe')} {formatAmd(r.drawerToSafe)} = {formatAmd(r.expected)} → {t('sf.opened')} {r.openedAt.toLocaleDateString()}: {formatAmd(r.opening)}
+                    {r.nonDrawerToSafe > 0 && <> · {formatAmd(r.nonDrawerToSafe)} {t('sf.nonDrawerNote')}</>}
                   </p>
                 </div>
                 <span className={`chip ${bad ? 'chip-danger' : 'chip-ok'}`}>
@@ -344,7 +358,19 @@ export default async function SafePage() {
                     {reasonLabel && <span className="text-xs text-karni-700"> · {reasonLabel}</span>}
                     {tx.note ? <span className="text-xs text-karni-700"> · {tx.note}</span> : null}
                   </p>
-                  <p className="text-xs text-karni-700">{tx.occurredAt.toLocaleDateString()} · {t('sf.recordedBy')} {tx.performedBy.fullName}</p>
+                  <p className="text-xs text-karni-700">
+                    {tx.occurredAt.toLocaleDateString()} · {t('sf.recordedBy')} {tx.performedBy.fullName}
+                    {tx.type === 'DEPOSIT' && (
+                      <span> · {tx.fromDrawer ? t('sf.sourceDrawerShort') : t('sf.sourceOtherShort')}
+                        {canEdit && (
+                          <form action={toggleDepositSource} className="inline">
+                            <input type="hidden" name="id" value={tx.id} />
+                            <button type="submit" className="btn-link text-[11px] ml-1">{t('sf.changeSource')}</button>
+                          </form>
+                        )}
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <b className={`tabular-nums ${tx.type === 'DEPOSIT' ? '' : 'text-red-700'}`}>
                   {tx.type === 'DEPOSIT' ? '+' : '−'}{formatAmd(Number(tx.amountAmd))}

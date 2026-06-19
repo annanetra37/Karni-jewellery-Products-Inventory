@@ -9,19 +9,24 @@ export type ReconSession = {
   closingAt: Date | null;
   closingCountAmd: number | null;
 };
-export type ReconDeposit = { id: string; sellingPointId: string | null; occurredAt: Date; amountAmd: number };
-export type ReconCashSale = { sellingPointId: string; createdAt: Date; totalAmd: number };
+export type ReconDeposit = {
+  id: string;
+  sellingPointId: string | null;
+  occurredAt: Date;
+  amountAmd: number;
+  fromDrawer: boolean; // true = drawer cash (reduces next opening); false = e.g. after-hours sale cash
+};
 
 export type Handover = {
   point: string;
   sellingPointId: string;
   closing: number;
-  deposited: number;          // total moved to the safe in the gap
-  afterCloseCashSales: number; // cash sales rung up AFTER the close (never in the drawer)
-  drawerToSafe: number;        // safe deposits that actually came from the drawer
+  deposited: number;        // total moved to the safe in the gap
+  drawerToSafe: number;     // deposits flagged as drawer cash (reduce expected opening)
+  nonDrawerToSafe: number;  // deposits flagged as NOT from the drawer (e.g. after-hours sales)
   opening: number;
   expected: number;
-  diff: number;                // opening − expected
+  diff: number;             // opening − expected
   closedAt: Date;
   openedAt: Date;
 };
@@ -33,15 +38,14 @@ const TOL = 0.01;
  *
  *   expected next opening = previous closing − drawer cash moved to the safe
  *
- * Crucially, a safe deposit is only "drawer cash" to the extent it exceeds the
- * cash sales that were rung up AFTER the close — those sales never entered the
- * drawer, so moving their cash to the safe must NOT reduce the expected opening.
- * Each deposit is matched to exactly one handover (processed chronologically).
+ * Only deposits explicitly flagged as coming FROM THE DRAWER reduce the
+ * expected opening. Cash from after-hours sales put straight into the safe
+ * (fromDrawer = false) never entered the drawer, so it's ignored here. Each
+ * deposit is matched to exactly one handover (processed chronologically).
  */
 export function reconcileHandovers(
   sessions: ReconSession[],
   deposits: ReconDeposit[],
-  cashSales: ReconCashSale[],
 ): { handovers: Handover[]; matchedDepositIds: Set<string> } {
   const byPoint = new Map<string, ReconSession[]>();
   for (const s of sessions) {
@@ -62,16 +66,14 @@ export function reconcileHandovers(
         d.occurredAt >= lower && d.occurredAt < next.openingAt);
       inGap.forEach((d) => matched.add(d.id));
       const deposited = inGap.reduce((s, d) => s + d.amountAmd, 0);
-      const afterCloseCashSales = cashSales
-        .filter((c) => c.sellingPointId === prev.sellingPointId && c.createdAt > prev.closingAt! && c.createdAt < next.openingAt)
-        .reduce((s, c) => s + c.totalAmd, 0);
-      const drawerToSafe = Math.max(0, deposited - afterCloseCashSales);
+      const drawerToSafe = inGap.filter((d) => d.fromDrawer).reduce((s, d) => s + d.amountAmd, 0);
+      const nonDrawerToSafe = deposited - drawerToSafe;
       const closing = Number(prev.closingCountAmd);
       const opening = Number(next.openingCountAmd ?? 0);
       const expected = closing - drawerToSafe;
       out.push({
         point: prev.pointName, sellingPointId: prev.sellingPointId,
-        closing, deposited, afterCloseCashSales, drawerToSafe,
+        closing, deposited, drawerToSafe, nonDrawerToSafe,
         opening, expected, diff: opening - expected,
         closedAt: prev.closingAt, openedAt: next.openingAt,
       });

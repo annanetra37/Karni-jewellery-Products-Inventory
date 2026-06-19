@@ -13,8 +13,8 @@ function MismatchDetail({ h, t }: { h: Handover; t: (k: string) => string }) {
         <p>
           {t('k.hExpected')}: {formatAmd(h.closing)} ({t('k.hPrevClose')}) − {formatAmd(h.drawerToSafe)} ({t('k.hMovedToSafe')}) = <b>{formatAmd(h.expected)}</b>
         </p>
-        {h.afterCloseCashSales > 0 && (
-          <p>{t('k.hAfterCloseNote')} {formatAmd(h.afterCloseCashSales)} ({t('k.hExcluded')}).</p>
+        {h.nonDrawerToSafe > 0 && (
+          <p>{t('k.hAfterCloseNote')} {formatAmd(h.nonDrawerToSafe)} ({t('k.hExcluded')}).</p>
         )}
         <p>{t('k.hOpenedWith')} <b>{formatAmd(h.opening)}</b> · <span className="text-red-700 font-medium">{t('k.hOffBy')} {formatAmd(h.diff)}</span></p>
         <p className="font-medium pt-1" style={{ color: 'var(--ink)' }}>{t('k.howToFix')}:</p>
@@ -59,9 +59,9 @@ async function openShiftAction(formData: FormData) {
   const { reconcileHandovers, isHandoverMismatch } = await import('@/lib/reconcile');
   const now = new Date();
   // Reconcile this opening against history the same way the safe page does:
-  // expected opening = prior closing − drawer cash moved to the safe, where
-  // cash sales rung up AFTER the prior close don't count as drawer cash.
-  const [priorSessions, depositRows, cashSaleRows, spRow] = await Promise.all([
+  // expected opening = prior closing − drawer cash moved to the safe (only
+  // deposits flagged as coming from the drawer).
+  const [priorSessions, depositRows, spRow] = await Promise.all([
     prisma.cashDrawerSession.findMany({
       where: { sellingPointId, status: { in: ['CLOSED', 'DISPUTED'] } },
       orderBy: { openingAt: 'asc' },
@@ -69,11 +69,7 @@ async function openShiftAction(formData: FormData) {
     }),
     prisma.safeTransaction.findMany({
       where: { type: 'DEPOSIT', sellingPointId },
-      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
-    }),
-    prisma.sale.findMany({
-      where: { paymentMethod: 'CASH', sellingPointId },
-      select: { sellingPointId: true, createdAt: true, totalAmd: true },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
     }),
     prisma.sellingPoint.findUnique({ where: { id: sellingPointId }, select: { name: true } }),
   ]);
@@ -89,8 +85,7 @@ async function openShiftAction(formData: FormData) {
   ];
   const { handovers } = reconcileHandovers(
     reconSessions,
-    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
-    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
   // The handover for THIS opening is the one that ends at `now`.
   const thisHandover = handovers.find((h) => h.openedAt.getTime() === now.getTime()) ?? null;
@@ -215,7 +210,7 @@ async function editOpeningCountAction(formData: FormData) {
   // Recompute the handover mismatch against the corrected amount using the
   // shared reconciliation (safe-aware, after-close-sale-aware).
   const { reconcileHandovers, isHandoverMismatch } = await import('@/lib/reconcile');
-  const [pointSessions, depositRows, cashSaleRows] = await Promise.all([
+  const [pointSessions, depositRows] = await Promise.all([
     prisma.cashDrawerSession.findMany({
       where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
       orderBy: { openingAt: 'asc' },
@@ -223,11 +218,7 @@ async function editOpeningCountAction(formData: FormData) {
     }),
     prisma.safeTransaction.findMany({
       where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId },
-      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
-    }),
-    prisma.sale.findMany({
-      where: { paymentMethod: 'CASH', sellingPointId: session.sellingPointId },
-      select: { sellingPointId: true, createdAt: true, totalAmd: true },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
     }),
   ]);
   const { handovers } = reconcileHandovers(
@@ -238,8 +229,7 @@ async function editOpeningCountAction(formData: FormData) {
       openingCountAmd: s.id === sessionId ? openingCountAmd : (s.openingCountAmd == null ? null : Number(s.openingCountAmd)),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
     })),
-    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
-    cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
   const thisHandover = handovers.find((h) => h.openedAt.getTime() === session.openingAt.getTime()) ?? null;
   const mismatch = thisHandover ? isHandoverMismatch(thisHandover) : false;
@@ -299,7 +289,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
   ])];
   const handoverMap = new Map<string, Handover>();
   if (reconPointIds.length > 0) {
-    const [reconSessions, depositRows, cashSaleRows] = await Promise.all([
+    const [reconSessions, depositRows] = await Promise.all([
       prisma.cashDrawerSession.findMany({
         where: { sellingPointId: { in: reconPointIds }, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
         orderBy: { openingAt: 'asc' },
@@ -307,11 +297,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       }),
       prisma.safeTransaction.findMany({
         where: { type: 'DEPOSIT', sellingPointId: { in: reconPointIds } },
-        select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true },
-      }),
-      prisma.sale.findMany({
-        where: { paymentMethod: 'CASH', sellingPointId: { in: reconPointIds } },
-        select: { sellingPointId: true, createdAt: true, totalAmd: true },
+        select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
       }),
     ]);
     const { handovers } = reconcileHandovers(
@@ -320,8 +306,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
         openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
         closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
       })),
-      depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd) })),
-      cashSaleRows.map((c) => ({ sellingPointId: c.sellingPointId, createdAt: c.createdAt, totalAmd: Number(c.totalAmd) })),
+      depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
     );
     for (const h of handovers) handoverMap.set(`${h.sellingPointId}|${h.openedAt.getTime()}`, h);
   }
