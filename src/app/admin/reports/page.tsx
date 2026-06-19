@@ -2,6 +2,7 @@ import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { reconcileSessions, isMismatch } from '@/lib/reconcile';
+import { expectedCloseBySession } from '@/lib/shiftCash';
 import Link from 'next/link';
 
 export default async function ReportsPage() {
@@ -44,12 +45,16 @@ export default async function ReportsPage() {
     include: { sellingPoint: { select: { name: true } } },
   });
   const depositRows = await prisma.safeTransaction.findMany({ where: { type: 'DEPOSIT' }, select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true } });
+  const expMap = await expectedCloseBySession(allSessions.map((s) => ({
+    id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+    openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+  })));
   const { byId: reconById } = reconcileSessions(
     allSessions.map((s) => ({
       id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
-      expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
+      expectedCloseAmd: expMap.get(s.id) ?? null,
     })),
     depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );

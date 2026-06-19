@@ -26,6 +26,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [cart, setCart] = useState<CartLine[]>([]);
   const [spId, setSpId] = useState(defaultSellingPointId || (sellingPoints[0]?.id ?? ''));
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'>('CASH');
+  const [cashToSafe, setCashToSafe] = useState(false);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [custQ, setCustQ] = useState('');
@@ -102,6 +103,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
           sellingPointId: spId,
           customerId,
           paymentMethod,
+          cashToSafe: paymentMethod === 'CASH' ? cashToSafe : false,
           discount,
           lines: cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
         }),
@@ -221,6 +223,15 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 ))}
               </div>
             </div>
+            {paymentMethod === 'CASH' && (
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input type="checkbox" className="mt-1" checked={cashToSafe} onChange={(e) => setCashToSafe(e.target.checked)} />
+                <span>
+                  {t('s.cashToSafe')}
+                  <span className="block text-xs text-karni-700">{t('s.cashToSafeHint')}</span>
+                </span>
+              </label>
+            )}
           </div>
 
           <div className="card space-y-2">

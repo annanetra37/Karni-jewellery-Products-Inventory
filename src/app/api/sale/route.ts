@@ -16,6 +16,7 @@ const Body = z.object({
   sellingPointId: z.string(),
   customerId: z.string().nullable().optional(),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
+  cashToSafe: z.boolean().optional(),
   discount: DiscountSchema.nullable().optional(),
   lines: z.array(z.object({
     variantId: z.string(),
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { sellingPointId, customerId, paymentMethod, discount, lines } = parsed.data;
+  // "Cash to safe" only makes sense for a cash sale (money that bypassed the drawer).
+  const cashToSafe = (paymentMethod || 'CASH') === 'CASH' ? (parsed.data.cashToSafe ?? false) : false;
 
   // Enforce the seller's selling-point scope server-side (UI restriction alone
   // is not enough).
@@ -101,6 +104,7 @@ export async function POST(req: NextRequest) {
           discountAmd,
           totalAmd: subtotal - discountAmd,
           paymentMethod: paymentMethod || 'CASH',
+          cashToSafe,
           lineItems: {
             create: prepared.map((p) => ({
               variantId: p.variantId,
