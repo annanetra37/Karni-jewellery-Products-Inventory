@@ -281,6 +281,8 @@ const D: Record<string, Record<Locale, string>> = {
   's.pmCard': { en: 'CARD', hy: 'Քարտ', ru: 'Карта' },
   's.pmTransfer': { en: 'TRANSFER', hy: 'Փոխանցում', ru: 'Перевод' },
   's.pmOther': { en: 'OTHER', hy: 'Այլ', ru: 'Другое' },
+  's.cashToSafe': { en: 'Cash went straight to the safe (not the drawer)', hy: 'Կանխիկը ուղիղ գնաց սեյֆ (ոչ դրամարկղ)', ru: 'Наличные сразу в сейф (не в кассу)' },
+  's.cashToSafeHint': { en: 'For online / delivery orders whose cash bypassed the drawer. It still counts as revenue, but is excluded from the drawer reconciliation.', hy: 'Առցանց/առաքման պատվերների համար, որոնց կանխիկը չանցավ դրամարկղով։ Այն մնում է եկամուտ, բայց դուրս է մնում դրամարկղի հաշվարկից։', ru: 'Для онлайн / доставочных заказов, чьи наличные минуют кассу. Это всё ещё выручка, но исключается из сверки кассы.' },
   's.customer': { en: 'Customer', hy: 'Հաճախորդ', ru: 'Клиент' },
   's.birthday': { en: 'Birthday', hy: 'Ծննդյան օր', ru: 'День рождения' },
   's.birthdayRequired': { en: 'Birthday is required for a new customer.', hy: 'Նոր հաճախորդի համար ծննդյան օրը պարտադիր է։', ru: 'Для нового клиента укажите день рождения.' },

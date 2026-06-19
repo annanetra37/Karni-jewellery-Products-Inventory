@@ -305,6 +305,9 @@ model Sale {
   totalAmd       Decimal  @db.Decimal(12, 2)
   currency       String   @default("AMD")
   paymentMethod  PaymentMethod? @default(CASH)
+  // A cash sale whose money went straight to the safe (online/delivery order),
+  // so it never entered the drawer — excluded from drawer reconciliation.
+  cashToSafe     Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])

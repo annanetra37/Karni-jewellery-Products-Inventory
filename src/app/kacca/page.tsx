@@ -2,6 +2,7 @@ import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { reconcileSessions, isMismatch, type SessionRecon } from '@/lib/reconcile';
+import { expectedCloseBySession } from '@/lib/shiftCash';
 import Link from 'next/link';
 import { getT } from '@/lib/i18n-server';
 
@@ -57,6 +58,7 @@ async function openShiftAction(formData: FormData) {
     redirect(`/kacca?err=alreadyOpen&by=${encodeURIComponent(existing.openingBy.fullName)}`);
   }
   const { reconcileSessions, isMismatch } = await import('@/lib/reconcile');
+  const { expectedCloseBySession } = await import('@/lib/shiftCash');
   const now = new Date();
   // Reconcile this opening against history: expected opening = prior closing −
   // drawer cash moved to the safe after that close (auto-detected).
@@ -73,12 +75,16 @@ async function openShiftAction(formData: FormData) {
     prisma.sellingPoint.findUnique({ where: { id: sellingPointId }, select: { name: true } }),
   ]);
   const pointName = spRow?.name ?? '';
+  const expMap = await expectedCloseBySession(priorSessions.map((s) => ({
+    id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+    openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+  })));
   const reconSessions = [
     ...priorSessions.map((s) => ({
       id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
-      expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
+      expectedCloseAmd: expMap.get(s.id) ?? null,
     })),
     // A virtual session representing the opening being recorded right now.
     { id: '__new__', sellingPointId, pointName, status: 'OPEN', openingAt: now, openingCountAmd, closingAt: null, closingCountAmd: null, expectedCloseAmd: null },
@@ -158,11 +164,13 @@ async function closeShiftAction(formData: FormData) {
   const scope = await sellingPointScope(u);
   if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
   // Compute expected from cash sales between openingAt and now at this sellingPoint.
+  // Cash-to-safe sales (online/delivery cash that bypassed the drawer) are excluded.
   const cashSales = await prisma.sale.aggregate({
     _sum: { totalAmd: true },
     where: {
       sellingPointId: session!.sellingPointId,
       paymentMethod: 'CASH',
+      cashToSafe: false,
       createdAt: { gte: session!.openingAt },
     },
   });
@@ -209,6 +217,7 @@ async function editOpeningCountAction(formData: FormData) {
   // Recompute the handover mismatch against the corrected amount using the
   // shared reconciliation (safe-aware, after-close-sale-aware).
   const { reconcileSessions, isMismatch } = await import('@/lib/reconcile');
+  const { expectedCloseBySession } = await import('@/lib/shiftCash');
   const [pointSessions, depositRows] = await Promise.all([
     prisma.cashDrawerSession.findMany({
       where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
@@ -220,6 +229,10 @@ async function editOpeningCountAction(formData: FormData) {
       select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
     }),
   ]);
+  const expMap = await expectedCloseBySession(pointSessions.map((s) => ({
+    id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+    openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+  })));
   const { byId } = reconcileSessions(
     pointSessions.map((s) => ({
       id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
@@ -227,7 +240,7 @@ async function editOpeningCountAction(formData: FormData) {
       // Use the corrected amount for the session being edited.
       openingCountAmd: s.id === sessionId ? openingCountAmd : (s.openingCountAmd == null ? null : Number(s.openingCountAmd)),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
-      expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
+      expectedCloseAmd: expMap.get(s.id) ?? null,
     })),
     depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );
@@ -300,12 +313,16 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
         select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
       }),
     ]);
+    const expMap = await expectedCloseBySession(reconSessions.map((s) => ({
+      id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+      openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+    })));
     reconById = reconcileSessions(
       reconSessions.map((s) => ({
         id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
         openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
         closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
-        expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
+        expectedCloseAmd: expMap.get(s.id) ?? null,
       })),
       depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
     ).byId;
@@ -460,13 +477,22 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       <section className="card">
         <p className="font-medium mb-2">{t('k.recentSessions')}</p>
         <ul className="space-y-2 text-sm">
-          {recentSessions.map((s) => (
+          {recentSessions.map((s) => {
+            // Safe-aware close difference (accounts for cash moved to the safe and
+            // cash-to-safe sales) — falls back to the raw stored value if no recon.
+            const r = reconById.get(s.id);
+            const closeDiff = r?.closeDiff ?? (s.discrepancyAmd != null ? Number(s.discrepancyAmd) : null);
+            const reconciled = closeDiff != null && Math.abs(closeDiff) <= 0.001;
+            // A stored DISPUTED that reconciles once safe transfers are applied is
+            // effectively closed — don't alarm with a stale "DISPUTED".
+            const statusText = s.status === 'DISPUTED' && reconciled ? 'CLOSED' : s.status;
+            return (
             <li key={s.id} className="border-b border-karni-100 pb-2">
               <div className="flex justify-between">
                 <div>
                   <p className="font-medium">{s.sellingPoint.name} · {s.user.fullName}</p>
                   <p className="text-xs text-karni-700">
-                    Opened {s.openingAt.toLocaleString()} · {s.status}
+                    Opened {s.openingAt.toLocaleString()} · {statusText}
                   </p>
                   {s.breaks.length > 0 && (
                     <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
@@ -477,14 +503,15 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                 <div className="text-right text-xs">
                   <p>Opened: {formatAmd(Number(s.openingCountAmd))}</p>
                   {s.closingCountAmd != null && <p>Closed: {formatAmd(Number(s.closingCountAmd))}</p>}
-                  {s.discrepancyAmd != null && Math.abs(Number(s.discrepancyAmd)) > 0.001 && (
-                    <p className="text-red-700">Diff: {formatAmd(Number(s.discrepancyAmd))}</p>
+                  {closeDiff != null && Math.abs(closeDiff) > 0.001 && (
+                    <p className="text-red-700">Diff: {formatAmd(closeDiff)}</p>
                   )}
                   {handoverFor(s) && <div className="text-left"><MismatchDetail h={handoverFor(s)!} t={t} /></div>}
                 </div>
               </div>
             </li>
-          ))}
+            );
+          })}
           {recentSessions.length === 0 && <li className="text-karni-700">None yet.</li>}
         </ul>
       </section>

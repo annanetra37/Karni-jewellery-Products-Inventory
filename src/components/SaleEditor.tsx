@@ -12,10 +12,11 @@ const PAYMENTS = ['CASH', 'CARD', 'TRANSFER', 'OTHER'] as const;
 type Payment = (typeof PAYMENTS)[number];
 
 export function SaleEditor({
-  saleId, payment, customerId, customerName, sellingPointId, subtotal, discountAmd, lines,
+  saleId, payment, cashToSafe, customerId, customerName, sellingPointId, subtotal, discountAmd, lines,
 }: {
   saleId: string;
   payment: Payment;
+  cashToSafe: boolean;
   customerId: string | null;
   customerName: string | null;
   sellingPointId: string;
@@ -26,6 +27,7 @@ export function SaleEditor({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pay, setPay] = useState<Payment>(payment);
+  const [c2s, setC2s] = useState(cashToSafe);
   const [custId, setCustId] = useState<string | null>(customerId);
   const [custLabel, setCustLabel] = useState<string>(customerName ?? '');
   const [query, setQuery] = useState('');
@@ -64,7 +66,8 @@ export function SaleEditor({
   const discountValueNum = Number(discValue) || 0;
   const newDiscountAmd = resolveDiscount(subtotal, discountValueNum > 0 ? { kind: discKind, value: discountValueNum } : null);
   const newTotal = subtotal - newDiscountAmd;
-  const dirty = pay !== payment || custId !== customerId || newDiscountAmd !== discountAmd;
+  const effectiveC2s = pay === 'CASH' && c2s;
+  const dirty = pay !== payment || effectiveC2s !== cashToSafe || custId !== customerId || newDiscountAmd !== discountAmd;
 
   function pick(c: Customer) {
     setCustId(c.id); setCustLabel(c.fullName); setQuery(''); setResults([]); setShowList(false);
@@ -79,6 +82,7 @@ export function SaleEditor({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentMethod: pay,
+          cashToSafe: effectiveC2s,
           customerId: custId,
           discount: { kind: discKind, value: discountValueNum },
         }),
@@ -114,6 +118,17 @@ export function SaleEditor({
         <select className="input" value={pay} onChange={(e) => setPay(e.target.value as Payment)}>
           {PAYMENTS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
+        {pay === 'CASH' && (
+          <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
+            <input type="checkbox" className="mt-1" checked={c2s} onChange={(e) => setC2s(e.target.checked)} />
+            <span>
+              Cash went straight to the safe (not the drawer)
+              <span className="block text-xs" style={{ color: 'var(--ink-soft)' }}>
+                Online / delivery order — excluded from drawer reconciliation, still counts as revenue.
+              </span>
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="space-y-1" ref={boxRef}>

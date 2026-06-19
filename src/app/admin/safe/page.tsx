@@ -5,6 +5,7 @@ import { getT } from '@/lib/i18n-server';
 import { revalidatePath } from 'next/cache';
 import { LineChartHover } from '@/components/LineChartHover';
 import { reconcileSessions, isMismatch } from '@/lib/reconcile';
+import { expectedCloseBySession } from '@/lib/shiftCash';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
@@ -164,12 +165,16 @@ export default async function SafePage() {
   // drawer cash moved to the safe after that close (auto-detected; only "from
   // the drawer" deposits count). Shared with the kacca page.
   const deposits = txs.filter((tx) => tx.type === 'DEPOSIT');
+  const expMap = await expectedCloseBySession(sessions.map((s) => ({
+    id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+    openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+  })));
   const { byId: reconById, matchedDepositIds } = reconcileSessions(
     sessions.map((s) => ({
       id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
       openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
       closingAt: s.closingAt, closingCountAmd: s.closingCountAmd == null ? null : Number(s.closingCountAmd),
-      expectedCloseAmd: s.expectedClosingAmd == null ? null : Number(s.expectedClosingAmd),
+      expectedCloseAmd: expMap.get(s.id) ?? null,
     })),
     deposits.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
   );

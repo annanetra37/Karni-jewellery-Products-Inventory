@@ -8,6 +8,7 @@ import { DiscountSchema, resolveDiscount } from '@/lib/discount';
 const Body = z.object({
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   customerId: z.string().nullable().optional(),
+  cashToSafe: z.boolean().optional(),
   discount: DiscountSchema.nullable().optional(),
 });
 
@@ -21,6 +22,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const data: Prisma.SaleUncheckedUpdateInput = {};
   if (parsed.data.paymentMethod !== undefined) data.paymentMethod = parsed.data.paymentMethod;
   if (parsed.data.customerId !== undefined) data.customerId = parsed.data.customerId || null;
+  if (parsed.data.cashToSafe !== undefined) data.cashToSafe = parsed.data.cashToSafe;
+  // Cash-to-safe is meaningless once a sale is no longer cash — clear it.
+  if (parsed.data.paymentMethod !== undefined && parsed.data.paymentMethod !== 'CASH') data.cashToSafe = false;
 
   // A discount change re-resolves against the (fixed) subtotal and re-derives
   // the total.

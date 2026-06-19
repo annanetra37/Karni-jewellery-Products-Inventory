@@ -231,6 +231,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                         <SaleEditor
                           saleId={s.id}
                           payment={(s.paymentMethod || 'CASH') as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'}
+                          cashToSafe={s.cashToSafe}
                           customerId={s.customer?.id ?? null}
                           customerName={s.customer?.fullName ?? null}
                           sellingPointId={s.sellingPointId}
