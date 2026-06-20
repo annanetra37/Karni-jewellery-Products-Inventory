@@ -22,6 +22,21 @@ function bucket(map: Map<string, { count: number; revenue: number }>, key: strin
   map.set(k, cur);
 }
 
+function bumpN(map: Map<number, { count: number; revenue: number }>, key: number, revenue: number) {
+  const cur = map.get(key) || { count: 0, revenue: 0 };
+  cur.count += 1;
+  cur.revenue += revenue;
+  map.set(key, cur);
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon-first for the chart
+
+function hourLabel(h: number): string {
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
 function startOf(range: string): Date | null {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -98,12 +113,18 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   let totalCount = sales.length;
   let totalRevenue = 0;
   let totalUnits = 0;
+  let totalDiscount = 0;
+  let toSafeRevenue = 0;
+  let toSafeCount = 0;
+  let walkIns = 0;
   const customers = new Set<string>();
   const bySp = new Map<string, { count: number; revenue: number }>();
   const byPerson = new Map<string, { count: number; revenue: number }>();
   const byPay = new Map<string, { count: number; revenue: number }>();
   const byCat = new Map<string, { count: number; revenue: number }>();
   const byCollection = new Map<string, { count: number; revenue: number }>();
+  const byHour = new Map<number, { count: number; revenue: number }>();
+  const byWeekday = new Map<number, { count: number; revenue: number }>();
   const revByDay = new Map<string, number>();
   const perSku = new Map<string, { variant: typeof sales[number]['lineItems'][number]['variant']; units: number; revenue: number }>();
   const perCustomer = new Map<string, { name: string; count: number; revenue: number }>();
@@ -111,10 +132,14 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   for (const s of sales) {
     const r = Number(s.totalAmd);
     totalRevenue += r;
-    if (s.customer) customers.add(s.customer.id);
+    totalDiscount += Number(s.discountAmd);
+    if (s.cashToSafe) { toSafeRevenue += r; toSafeCount += 1; }
+    if (s.customer) customers.add(s.customer.id); else walkIns += 1;
     bucket(bySp, s.sellingPoint?.name, 1, r);
     bucket(byPerson, s.soldBy.fullName, 1, r);
     bucket(byPay, s.paymentMethod || 'OTHER', 1, r);
+    bumpN(byHour, s.createdAt.getHours(), r);
+    bumpN(byWeekday, s.createdAt.getDay(), r);
     const dKey = dayKey(s.createdAt);
     revByDay.set(dKey, (revByDay.get(dKey) || 0) + r);
     for (const li of s.lineItems) {
@@ -153,6 +178,21 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const topSkus = Array.from(perSku.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   const topCustomers = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   const timeline = fillTimeline(startDate, now, revByDay);
+
+  const avgItems = totalCount > 0 ? totalUnits / totalCount : 0;
+  const repeatCustomers = Array.from(perCustomer.values()).filter((c) => c.count >= 2).length;
+
+  // Time-of-day: peak hour + chronological distribution of hours that had sales.
+  const peakHour = Array.from(byHour.entries()).sort((a, b) => b[1].count - a[1].count)[0] ?? null;
+  const hourData = Array.from(byHour.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([h, v]) => ({ label: hourLabel(h), value: v.count, sub: formatAmd(v.revenue) }));
+
+  // Day-of-week: busiest weekday + Mon-first distribution.
+  const peakWeekday = Array.from(byWeekday.entries()).sort((a, b) => b[1].count - a[1].count)[0] ?? null;
+  const weekdayData = WEEK_ORDER
+    .filter((d) => byWeekday.has(d))
+    .map((d) => ({ label: WEEKDAYS[d], value: byWeekday.get(d)!.count, sub: formatAmd(byWeekday.get(d)!.revenue) }));
 
   const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
   const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
@@ -230,11 +270,34 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       ) : (
         <>
           <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <MetricCard label={t('sa.unitsSold')} value={totalUnits.toLocaleString()} />
+            <MetricCard label={t('sa.unitsSold')} value={totalUnits.toLocaleString()}
+              sub={`${avgItems.toFixed(1)} ${t('sa.avgItems').toLowerCase()}`} />
+            <MetricCard label={t('sa.peakHour')}
+              value={peakHour ? `${hourLabel(peakHour[0])}–${hourLabel((peakHour[0] + 1) % 24)}` : '—'}
+              sub={peakHour ? `${peakHour[1].count}× · ${formatAmd(peakHour[1].revenue)}` : undefined} />
+            <MetricCard label={t('sa.peakDay')}
+              value={peakWeekday ? WEEKDAYS[peakWeekday[0]] : '—'}
+              sub={peakWeekday ? `${peakWeekday[1].count}× · ${formatAmd(peakWeekday[1].revenue)}` : undefined} />
+            <MetricCard label={t('sa.toSafe')} value={formatAmd(toSafeRevenue)}
+              sub={`${toSafeCount}× · ${totalRevenue > 0 ? Math.round((toSafeRevenue / totalRevenue) * 100) : 0}%`} />
+            <MetricCard label={t('sa.discounts')} value={formatAmd(totalDiscount)} />
+            <MetricCard label={t('sa.repeatCustomers')} value={repeatCustomers.toLocaleString()}
+              sub={t('sa.repeatCustomersSub').replace('{walkins}', walkIns.toLocaleString())} />
             <MetricCard label={t('sa.byPayment')} value={(payData[0]?.label || '—')}
               sub={payData[0] ? formatAmd(payData[0].value) : undefined} />
             <MetricCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
               sub={spData[0] ? formatAmd(spData[0].value) : undefined} />
+          </section>
+
+          <section className="grid md:grid-cols-2 gap-3">
+            <div className="card">
+              <p className="font-semibold mb-3">{t('sa.byHour')}</p>
+              <BarChart data={hourData} />
+            </div>
+            <div className="card">
+              <p className="font-semibold mb-3">{t('sa.byWeekday')}</p>
+              <BarChart data={weekdayData} />
+            </div>
           </section>
 
           <section className="card">

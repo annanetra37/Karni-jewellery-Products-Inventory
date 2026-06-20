@@ -464,6 +464,15 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.paymentMethod': { en: 'Payment', hy: 'Վճարում', ru: 'Оплата' },
   'sa.allPayments': { en: 'All payments', hy: 'Բոլոր վճարումները', ru: 'Все оплаты' },
   'sa.allSalespeople': { en: 'All salespeople', hy: 'Բոլոր վաճառողները', ru: 'Все продавцы' },
+  'sa.toSafe': { en: 'Online / to safe', hy: 'Առցանց / սեյֆ', ru: 'Онлайн / в сейф' },
+  'sa.peakHour': { en: 'Peak hour', hy: 'Պիկ ժամ', ru: 'Пиковый час' },
+  'sa.byHour': { en: 'Sales by hour', hy: 'Վաճառքն ըստ ժամի', ru: 'Продажи по часам' },
+  'sa.peakDay': { en: 'Busiest day', hy: 'Ամենաշատ օրը', ru: 'Самый активный день' },
+  'sa.byWeekday': { en: 'Sales by weekday', hy: 'Վաճառքն ըստ շաբաթվա օրվա', ru: 'Продажи по дням недели' },
+  'sa.avgItems': { en: 'Avg items / sale', hy: 'Միջ. ապրանք / վաճառք', ru: 'Ср. товаров / продажа' },
+  'sa.discounts': { en: 'Discounts given', hy: 'Տրված զեղչեր', ru: 'Предоставленные скидки' },
+  'sa.repeatCustomers': { en: 'Repeat customers', hy: 'Կրկնվող հաճախորդներ', ru: 'Повторные клиенты' },
+  'sa.repeatCustomersSub': { en: '2+ purchases · {walkins} walk-ins', hy: '2+ գնում · {walkins} պատահական', ru: '2+ покупок · {walkins} случайных' },
 };
 
 export function t(key: string, locale: Locale): string {
