@@ -4,6 +4,16 @@ import { runHealthChecks } from '@/lib/health';
 
 export const dynamic = 'force-dynamic';
 
+async function reconcileLedger() {
+  'use server';
+  const { requireSuperAdmin } = await import('@/lib/auth');
+  const { reconcileInventoryLedger } = await import('@/lib/health');
+  const { revalidatePath } = await import('next/cache');
+  const u = await requireSuperAdmin();
+  await reconcileInventoryLedger(u.id);
+  revalidatePath('/admin/health');
+}
+
 export default async function HealthPage() {
   await requireSuperAdmin();
   const checks = await runHealthChecks();
@@ -59,6 +69,15 @@ export default async function HealthPage() {
                       <li className="text-karni-700 font-sans">…and {c.failCount - c.samples.length} more</li>
                     )}
                   </ul>
+                )}
+                {!c.ok && c.id === 'inventory-ledger' && (
+                  <form action={reconcileLedger} className="mt-3">
+                    <button className="btn-secondary text-sm">Reconcile ledger</button>
+                    <p className="text-xs text-karni-700 mt-1">
+                      Keeps every on-hand count exactly as it is and posts a balancing adjustment so the
+                      ledger matches. Use this after confirming the on-hand numbers are physically correct.
+                    </p>
+                  </form>
                 )}
               </div>
             </div>

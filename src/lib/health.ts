@@ -156,3 +156,42 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
     },
   ];
 }
+
+/**
+ * Reconcile on-hand stock with the movement ledger by posting a balancing
+ * ADJUSTMENT for every (variant, point) where they disagree. On-hand counts are
+ * treated as the truth (that's what staff physically have) and are left
+ * untouched; only the ledger is brought into line, with an audit note. Returns
+ * the number of adjustments written. Idempotent — a second run finds nothing.
+ */
+export async function reconcileInventoryLedger(userId: string): Promise<number> {
+  const gaps = await prisma.$queryRawUnsafe<{ variantId: string; sellingPointId: string; diff: number }[]>(`
+    WITH ledger AS (
+      SELECT "variantId", "sellingPointId", SUM("qtyDelta")::int AS delta
+      FROM "StockMovement" GROUP BY 1, 2
+    )
+    SELECT COALESCE(ii."variantId", l."variantId") AS "variantId",
+           COALESCE(ii."sellingPointId", l."sellingPointId") AS "sellingPointId",
+           (COALESCE(ii.quantity, 0) - COALESCE(l.delta, 0))::int AS diff
+    FROM "InventoryItem" ii
+    FULL OUTER JOIN ledger l
+      ON l."variantId" = ii."variantId" AND l."sellingPointId" = ii."sellingPointId"
+    WHERE COALESCE(ii.quantity, 0) <> COALESCE(l.delta, 0)
+  `);
+  if (gaps.length === 0) return 0;
+  await prisma.$transaction(
+    gaps.map((g) =>
+      prisma.stockMovement.create({
+        data: {
+          variantId: g.variantId,
+          sellingPointId: g.sellingPointId,
+          type: 'ADJUSTMENT',
+          qtyDelta: g.diff,
+          performedById: userId,
+          note: 'Ledger reconciliation (stock-take) — recorded the on-hand vs ledger gap',
+        },
+      }),
+    ),
+  );
+  return gaps.length;
+}
