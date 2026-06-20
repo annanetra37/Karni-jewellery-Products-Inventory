@@ -38,7 +38,7 @@ export default async function NotificationDetailPage({ params }: { params: Promi
     }
   }
 
-  const meta = metaFor(n.type);
+  const meta = metaFor(n.type, n.body);
   const link = relatedLink(n.type, n.relatedId);
 
   return (

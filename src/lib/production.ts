@@ -67,10 +67,15 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
   for (const c of candidates) {
     const isOut = c.quantity <= 0;
     const ms = byPair.get(`${c.variantId}|${c.sellingPointId}`) || []; // newest → oldest
+    // The "went" date must match the row's current state: for an OUT item we
+    // want the sale that took it to zero, not the older one that first dropped
+    // it to "low". Walk back only through the contiguous run that stayed within
+    // the relevant threshold (0 for out, reorder point for low).
+    const threshold = isOut ? 0 : c.reorderPoint;
     let running = c.quantity;
     let earliestSale: Move | null = null;
     for (const m of ms) {
-      if (running > c.reorderPoint) break;
+      if (running > threshold) break;
       if (m.type === 'SALE') earliestSale = m;
       running -= m.qtyDelta;
     }

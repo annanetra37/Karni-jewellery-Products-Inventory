@@ -12,7 +12,12 @@ export const META: Record<string, { key: string; tone: Tone; icon: IconName }> =
   BIRTHDAY: { key: 'n.birthday', tone: 'info', icon: 'gift' },
 };
 
-export function metaFor(type: string) {
+export function metaFor(type: string, body?: string | null) {
+  // A low-stock alert that has actually hit zero is an out-of-stock alert — show
+  // it as such. The body reads "<n> left at <point>", so a leading 0 means out.
+  if (type === 'LOW_STOCK' && body && /^0\s+left\b/.test(body)) {
+    return { key: 'n.outOfStock', tone: 'danger' as const, icon: 'box' as const };
+  }
   return META[type] || { key: 'n.' + type, tone: 'info' as const, icon: 'mail' as const };
 }
 

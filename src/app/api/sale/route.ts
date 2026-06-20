@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
       if (!recent) {
         await notify({
           type: 'LOW_STOCK', toAdmins: true,
-          title: `Low stock: ${r.variantSku}`,
+          title: `${r.remaining <= 0 ? 'Out of stock' : 'Low stock'}: ${r.variantSku}`,
           body: `${r.remaining} left at ${r.sellingPointName}`,
           relatedId: r.variantSku,
         });
