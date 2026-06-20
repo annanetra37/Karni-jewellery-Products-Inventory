@@ -420,6 +420,7 @@ const D: Record<string, Record<Locale, string>> = {
     ru: 'Уведомлений пока нет. Здесь появятся оповещения о низком остатке и новых заказах.',
   },
   'n.lowStock': { en: 'Low stock', hy: 'Քիչ մնացորդ', ru: 'Низкий остаток' },
+  'n.outOfStock': { en: 'Out of stock', hy: 'Պաշարը սպառվել է', ru: 'Нет в наличии' },
   'n.newOrder': { en: 'New order', hy: 'Նոր պատվեր', ru: 'Новый заказ' },
   'n.newSale': { en: 'New sale', hy: 'Նոր վաճառք', ru: 'Новая продажа' },
   'n.kacca': { en: 'Kacca discrepancy', hy: 'Դրամարկղի անհամապատասխանություն', ru: 'Расхождение в кассе' },

@@ -60,7 +60,7 @@ export default async function NotificationsPage() {
 
       <ul className="space-y-2">
         {notifs.map((n) => {
-          const meta = metaFor(n.type);
+          const meta = metaFor(n.type, n.body);
           const unreadHere = isUnread(n);
           return (
             <li key={n.id}>
