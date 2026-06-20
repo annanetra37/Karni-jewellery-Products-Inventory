@@ -152,6 +152,7 @@ export default async function HomePage() {
             <Link href="/admin/photos" className="btn-secondary">{t('h.photos')}</Link>
             {admin && <Link href="/admin/safe" className="btn-secondary">{t('h.safe')}</Link>}
             <Link href="/admin/reports" className="btn-secondary">{t('h.reports')}</Link>
+            {isSuperAdmin(user) && <Link href="/admin/health" className="btn-secondary">{t('h.health')}</Link>}
           </div>
         </section>
       )}

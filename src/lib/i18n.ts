@@ -114,6 +114,7 @@ const D: Record<string, Record<Locale, string>> = {
   'h.collectionPhotos': { en: 'Collection photos', hy: 'Հավաքածուի լուսանկարներ', ru: 'Фото коллекций' },
   'h.categoryPhotos': { en: 'Category photos', hy: 'Կատեգորիայի լուսանկարներ', ru: 'Фото категорий' },
   'h.reports': { en: 'Reports', hy: 'Հաշվետվություններ', ru: 'Отчёты' },
+  'h.health': { en: 'System health', hy: 'Համակարգի վիճակ', ru: 'Состояние системы' },
   'h.analytics': { en: 'Analytics', hy: 'Վերլուծություն', ru: 'Аналитика' },
   'h.safe': { en: 'Safe / Money', hy: 'Սեյֆ / Փող', ru: 'Сейф / Деньги' },
   'h.salesAnalytics': { en: 'Sales Analytics', hy: 'Վաճառքի վերլուծություն', ru: 'Аналитика продаж' },
