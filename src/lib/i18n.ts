@@ -421,10 +421,16 @@ const D: Record<string, Record<Locale, string>> = {
   },
   'n.lowStock': { en: 'Low stock', hy: 'Քիչ մնացորդ', ru: 'Низкий остаток' },
   'n.newOrder': { en: 'New order', hy: 'Նոր պատվեր', ru: 'Новый заказ' },
+  'n.newSale': { en: 'New sale', hy: 'Նոր վաճառք', ru: 'Новая продажа' },
   'n.kacca': { en: 'Kacca discrepancy', hy: 'Դրամարկղի անհամապատասխանություն', ru: 'Расхождение в кассе' },
   'n.invite': { en: 'Invite', hy: 'Հրավեր', ru: 'Приглашение' },
   'n.birthday': { en: 'Birthday', hy: 'Ծննդյան օր', ru: 'День рождения' },
   'n.new': { en: 'New', hy: 'Նոր', ru: 'Новое' },
+  'n.back': { en: 'Back to notifications', hy: 'Վերադառնալ ծանուցումներ', ru: 'Назад к уведомлениям' },
+  'n.viewReceipt': { en: 'View receipt', hy: 'Տեսնել անդորրագիրը', ru: 'Открыть чек' },
+  'n.viewOrder': { en: 'View orders', hy: 'Տեսնել պատվերները', ru: 'Открыть заказы' },
+  'n.viewInCatalog': { en: 'View in catalog', hy: 'Տեսնել կատալոգում', ru: 'Открыть в каталоге' },
+  'n.viewReport': { en: 'View reports', hy: 'Տեսնել հաշվետվությունները', ru: 'Открыть отчёты' },
 
   // Browse
   'b.title': { en: 'Browse the catalog', hy: 'Կատալոգի դիտում', ru: 'Просмотр каталога' },
