@@ -6,6 +6,7 @@ import { MetricCard, BarChart, DonutChart } from '@/components/Charts';
 import { LineChartHover } from '@/components/LineChartHover';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
+import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanDaysAgoStart } from '@/lib/datetime';
 
 type Params = Promise<{
   range?: string;     // today | 7d | 30d | 90d | all
@@ -38,17 +39,12 @@ function hourLabel(h: number): string {
 }
 
 function startOf(range: string): Date | null {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  if (range === 'today') return now;
-  if (range === '7d') { const d = new Date(now); d.setDate(d.getDate() - 6); return d; }
-  if (range === '30d') { const d = new Date(now); d.setDate(d.getDate() - 29); return d; }
-  if (range === '90d') { const d = new Date(now); d.setDate(d.getDate() - 89); return d; }
+  // Yerevan day boundaries, independent of the process timezone.
+  if (range === 'today') return yerevanDayStart();
+  if (range === '7d') return yerevanDaysAgoStart(6);
+  if (range === '30d') return yerevanDaysAgoStart(29);
+  if (range === '90d') return yerevanDaysAgoStart(89);
   return null; // all time
-}
-
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function fillTimeline(start: Date | null, end: Date, rev: Map<string, number>) {
@@ -58,12 +54,13 @@ function fillTimeline(start: Date | null, end: Date, rev: Map<string, number>) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([day, value]) => ({ label: day.slice(5), value }));
   }
+  // Step a Yerevan day at a time. Yerevan is a fixed UTC+4 (no DST), so adding
+  // 24h to a Yerevan-midnight instant always lands on the next Yerevan midnight.
   const points: { label: string; value: number }[] = [];
-  const d = new Date(start);
-  while (d <= end) {
-    const key = dayKey(d);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  for (let t = start.getTime(); t <= end.getTime(); t += DAY_MS) {
+    const key = yerevanDayKey(new Date(t));
     points.push({ label: key.slice(5), value: rev.get(key) || 0 });
-    d.setDate(d.getDate() + 1);
   }
   return points;
 }
@@ -138,9 +135,9 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     bucket(bySp, s.sellingPoint?.name, 1, r);
     bucket(byPerson, s.soldBy.fullName, 1, r);
     bucket(byPay, s.paymentMethod || 'OTHER', 1, r);
-    bumpN(byHour, s.createdAt.getHours(), r);
-    bumpN(byWeekday, s.createdAt.getDay(), r);
-    const dKey = dayKey(s.createdAt);
+    bumpN(byHour, yerevanHour(s.createdAt), r);
+    bumpN(byWeekday, yerevanWeekday(s.createdAt), r);
+    const dKey = yerevanDayKey(s.createdAt);
     revByDay.set(dKey, (revByDay.get(dKey) || 0) + r);
     for (const li of s.lineItems) {
       const lineRev = Number(li.lineTotalAmd);
