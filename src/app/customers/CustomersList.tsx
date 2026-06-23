@@ -12,6 +12,7 @@ type C = {
   address: string | null;
   instagram: string | null;
   gender: string | null;
+  notes: string | null;
   createdAt?: string | null;
 };
 
@@ -23,9 +24,10 @@ type Draft = {
   address: string;
   instagram: string;
   gender: string;
+  notes: string;
 };
 
-const EMPTY_DRAFT: Draft = { fullName: '', phone: '', email: '', birthday: '', address: '', instagram: '', gender: '' };
+const EMPTY_DRAFT: Draft = { fullName: '', phone: '', email: '', birthday: '', address: '', instagram: '', gender: '', notes: '' };
 const GENDERS = ['Female', 'Male', 'Other'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -88,6 +90,11 @@ function CustomerFields({ draft, set }: { draft: Draft; set: (patch: Partial<Dra
           <label className="label">Address</label>
           <input className="input" placeholder="Address" value={draft.address} onChange={(e) => set({ address: e.target.value })} />
         </div>
+        <div className="sm:col-span-2">
+          <label className="label">Notes</label>
+          <textarea className="input min-h-[72px]" placeholder="Anything to remember — preferences, sizes, past conversations…"
+            value={draft.notes} onChange={(e) => set({ notes: e.target.value })} />
+        </div>
       </div>
     </>
   );
@@ -139,6 +146,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
           fullName: addDraft.fullName, phone: addDraft.phone || null, email: addDraft.email || null,
           birthday: addDraft.birthday, address: addDraft.address || null,
           instagram: addDraft.instagram || null, gender: addDraft.gender || null,
+          notes: addDraft.notes || null,
         }),
       });
       const j = await r.json();
@@ -155,7 +163,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
     setEditDraft({
       fullName: c.fullName, phone: c.phone || '', email: c.email || '',
       birthday: dateOnly(c.birthday), address: c.address || '',
-      instagram: c.instagram || '', gender: c.gender || '',
+      instagram: c.instagram || '', gender: c.gender || '', notes: c.notes || '',
     });
   }
 
@@ -169,6 +177,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
           id: editingId, fullName: editDraft.fullName, phone: editDraft.phone || null, email: editDraft.email || null,
           birthday: editDraft.birthday, address: editDraft.address || null,
           instagram: editDraft.instagram || null, gender: editDraft.gender || null,
+          notes: editDraft.notes || null,
         }),
       });
       const j = await r.json();
@@ -242,6 +251,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
                     {c.address && <span className="truncate">{c.address}</span>}
                     {c.createdAt && <span style={{ color: 'var(--ink-faint)' }}>Added {addedLabel(c.createdAt)}</span>}
                   </div>
+                  {c.notes && <p className="text-xs text-karni-700 mt-1 whitespace-pre-wrap break-words">📝 {c.notes}</p>}
                 </div>
                 <button className="btn-link text-xs shrink-0" onClick={() => startEdit(c)}>Edit</button>
               </div>
