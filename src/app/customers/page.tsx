@@ -13,7 +13,7 @@ export default async function CustomersPage() {
       <CustomersList initial={customers.map((c) => ({
         id: c.id, fullName: c.fullName, phone: c.phone, email: c.email,
         birthday: c.birthday ? c.birthday.toISOString().slice(0, 10) : null,
-        address: c.address, instagram: c.instagram, gender: c.gender,
+        address: c.address, instagram: c.instagram, gender: c.gender, notes: c.notes,
         createdAt: c.createdAt.toISOString(),
       }))} />
     </div>
