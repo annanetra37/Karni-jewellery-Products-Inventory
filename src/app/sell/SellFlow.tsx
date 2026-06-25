@@ -34,6 +34,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [addNew, setAddNew] = useState(false);
   const [newName, setNewName] = useState(''); const [newPhone, setNewPhone] = useState(''); const [newEmail, setNewEmail] = useState('');
   const [newBirthday, setNewBirthday] = useState('');
+  const [newAddress, setNewAddress] = useState(''); const [newInstagram, setNewInstagram] = useState('');
+  const [newGender, setNewGender] = useState(''); const [newNotes, setNewNotes] = useState('');
 
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [pickerOpen, setPickerOpen] = useState(true);
@@ -87,11 +89,16 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
     setErr(''); setSubmitting(true);
     try {
       let customerId = customer?.id ?? null;
-      if (addNew && newName && (newPhone || newEmail)) {
-        if (!newBirthday) { setErr(t('s.birthdayRequired')); setSubmitting(false); return; }
+      // All customer fields are optional — save a new customer if any field was filled.
+      const hasNewCustomer = addNew && (newName || newPhone || newEmail || newBirthday || newAddress || newInstagram || newGender || newNotes);
+      if (hasNewCustomer) {
         const cr = await fetch('/api/customers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fullName: newName, phone: newPhone || null, email: newEmail || null, birthday: newBirthday }),
+          body: JSON.stringify({
+            fullName: newName || null, phone: newPhone || null, email: newEmail || null,
+            birthday: newBirthday || null, address: newAddress || null,
+            instagram: newInstagram || null, gender: newGender || null, notes: newNotes || null,
+          }),
         });
         const cj = await cr.json();
         if (!cr.ok) { setErr(cj.error || 'Could not save customer'); setSubmitting(false); return; }
@@ -247,10 +254,20 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
             ) : addNew ? (
               <div className="space-y-2">
                 <input className="input" placeholder={t('s.fullName')} value={newName} onChange={(e) => setNewName(e.target.value)} />
-                <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
-                <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-                <label className="label">{t('s.birthday')} <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+                  <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                  <select className="input" value={newGender} onChange={(e) => setNewGender(e.target.value)} aria-label={t('cu.gender')}>
+                    <option value="">{t('cu.gender')}</option>
+                    {['Female', 'Male', 'Other'].map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <input className="input" placeholder="@instagram" value={newInstagram} onChange={(e) => setNewInstagram(e.target.value)} />
+                </div>
+                <input className="input" placeholder={t('cu.address')} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
+                <label className="label">{t('s.birthday')}</label>
                 <BirthdayPicker value={newBirthday} onChange={setNewBirthday} />
+                <textarea className="input min-h-[60px]" placeholder={t('cu.notes')} value={newNotes} onChange={(e) => setNewNotes(e.target.value)} />
+                <p className="text-xs text-karni-700">{t('cu.allOptional')}</p>
                 <button className="text-karni-700 underline text-sm" onClick={() => setAddNew(false)}>{t('c.cancel')}</button>
               </div>
             ) : (

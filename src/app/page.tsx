@@ -4,6 +4,7 @@ import { ensureBirthdayReminders } from '@/lib/birthdays';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { Clock } from '@/components/Clock';
+import { RevealAmount } from '@/components/RevealAmount';
 import { getT } from '@/lib/i18n-server';
 
 export default async function HomePage() {
@@ -36,9 +37,15 @@ export default async function HomePage() {
   const openShiftsWhere = scope
     ? { status: 'OPEN' as const, sellingPointId: { in: scope } }
     : { status: 'OPEN' as const };
+  // Shift isolation: a salesperson only ever sees their own day's figures, so a
+  // second person working the same day can't see the previous shift's numbers.
+  // Admins see the whole day across every shift.
+  const todayWhere = admin
+    ? { createdAt: { gte: todayStart } }
+    : { createdAt: { gte: todayStart }, soldById: user.id };
   const [todaySalesCount, todayTotalAgg, openShift, lowStock, openShifts] = await Promise.all([
-    prisma.sale.count({ where: { createdAt: { gte: todayStart } } }),
-    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { createdAt: { gte: todayStart } } }),
+    prisma.sale.count({ where: todayWhere }),
+    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: todayWhere }),
     prisma.cashDrawerSession.findFirst({
       where: { userId: user.id, status: 'OPEN' },
       include: { sellingPoint: true, breaks: { where: { endedAt: null } } },
@@ -124,11 +131,11 @@ export default async function HomePage() {
           <p className="display text-3xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{todaySalesCount}</p>
           <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
         </Link>
-        <Link href="/sales?range=today" className="card-interactive block">
+        <div className="card block">
           <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('h.revenueToday')}</p>
-          <p className="display text-2xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
-          <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
-        </Link>
+          <RevealAmount value={formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))} viewLabel={t('h.view')} hideLabel={t('h.hide')} />
+          <Link href="/sales?range=today" className="block text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</Link>
+        </div>
       </section>
       )}
 

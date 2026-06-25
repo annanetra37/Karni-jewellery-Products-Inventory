@@ -13,6 +13,8 @@ export async function GET(req: NextRequest) {
   const day = Number(params.get('day')) || 0;     // 1-31
   const year = Number(params.get('year')) || 0;
   const hasBirthdayFilter = !!(month || day || year);
+  const page = Math.max(0, Number(params.get('page')) || 0);
+  const PAGE_SIZE = 20;
 
   const where: Prisma.CustomerWhereInput = q
     ? {
@@ -24,34 +26,40 @@ export async function GET(req: NextRequest) {
         ],
       }
     : {};
-  // Birthday parts (month/day/year) can't be expressed in a Prisma `where`, so
-  // pull a wider set for the text scope and filter the date parts in memory.
-  const rows = await prisma.customer.findMany({
-    where,
-    take: hasBirthdayFilter ? 1000 : 50,
-    orderBy: { createdAt: 'desc' },
-  });
-  const filtered = hasBirthdayFilter
-    ? rows.filter((c) =>
-        c.birthday != null
-        && (!month || c.birthday.getUTCMonth() + 1 === month)
-        && (!day || c.birthday.getUTCDate() === day)
-        && (!year || c.birthday.getUTCFullYear() === year))
-    : rows;
-  return NextResponse.json({ results: filtered.slice(0, 200) });
+
+  if (hasBirthdayFilter) {
+    // Birthday parts (month/day/year) can't be expressed in a Prisma `where`, so
+    // pull a wider set for the text scope, filter the date parts in memory, then
+    // paginate the result.
+    const rows = await prisma.customer.findMany({ where, take: 1000, orderBy: { createdAt: 'desc' } });
+    const filtered = rows.filter((c) =>
+      c.birthday != null
+      && (!month || c.birthday.getUTCMonth() + 1 === month)
+      && (!day || c.birthday.getUTCDate() === day)
+      && (!year || c.birthday.getUTCFullYear() === year));
+    const results = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+    return NextResponse.json({ results, total: filtered.length, page, pageSize: PAGE_SIZE });
+  }
+
+  const [results, total] = await Promise.all([
+    prisma.customer.findMany({ where, skip: page * PAGE_SIZE, take: PAGE_SIZE, orderBy: { createdAt: 'desc' } }),
+    prisma.customer.count({ where }),
+  ]);
+  return NextResponse.json({ results, total, page, pageSize: PAGE_SIZE });
 }
 
 const emptyToNull = z.string().nullable().optional().or(z.literal('').transform(() => null));
 
 const CreateSchema = z.object({
-  fullName: z.string().min(1),
+  // Nothing is mandatory — a customer may be saved with any subset of fields.
+  fullName: emptyToNull,
   phone: z.string().nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal('').transform(() => null)),
-  birthday: z.string().min(1),
+  birthday: emptyToNull,
   address: emptyToNull,
   instagram: emptyToNull,
   gender: emptyToNull,
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -61,28 +69,33 @@ export async function POST(req: NextRequest) {
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { fullName, phone, email, birthday, address, instagram, gender, notes } = parsed.data;
-  if (!phone && !email) return NextResponse.json({ error: 'phone or email required' }, { status: 400 });
 
-  // birthday is a required "YYYY-MM-DD" string — parse to a date at UTC midnight.
-  const bday = new Date(`${birthday}T00:00:00.000Z`);
-  if (Number.isNaN(bday.getTime())) return NextResponse.json({ error: 'invalid birthday' }, { status: 400 });
+  // Birthday is optional now; parse it only when provided.
+  let bday: Date | null = null;
+  if (birthday) {
+    bday = new Date(`${birthday}T00:00:00.000Z`);
+    if (Number.isNaN(bday.getTime())) return NextResponse.json({ error: 'invalid birthday' }, { status: 400 });
+  }
 
-  const dupe = await prisma.customer.findFirst({
-    where: { OR: [phone ? { phone } : undefined, email ? { email } : undefined].filter(Boolean) as object[] },
-  });
-  if (dupe) {
-    return NextResponse.json({ id: dupe.id, warning: 'Existing customer matched by phone/email.', existing: true });
+  // Only treat as a possible duplicate when there's a phone/email to match on.
+  if (phone || email) {
+    const dupe = await prisma.customer.findFirst({
+      where: { OR: [phone ? { phone } : undefined, email ? { email } : undefined].filter(Boolean) as object[] },
+    });
+    if (dupe) {
+      return NextResponse.json({ id: dupe.id, warning: 'Existing customer matched by phone/email.', existing: true });
+    }
   }
   const c = await prisma.customer.create({
     data: {
-      fullName,
+      fullName: fullName || '',
       phone: phone || null,
       email: email || null,
       birthday: bday,
       address: address || null,
       instagram: instagram || null,
       gender: gender || null,
-      notes,
+      notes: notes || null,
       createdById: u.id,
     },
   });
@@ -91,7 +104,7 @@ export async function POST(req: NextRequest) {
 
 const UpdateSchema = z.object({
   id: z.string().min(1),
-  fullName: z.string().min(1).optional(),
+  fullName: z.string().optional(),
   phone: z.string().nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal('').transform(() => null)),
   birthday: z.string().optional(),

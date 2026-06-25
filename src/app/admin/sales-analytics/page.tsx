@@ -107,6 +107,26 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     orderBy: { createdAt: 'desc' },
   });
 
+  // Days worked per salesperson — distinct Yerevan calendar days on which each
+  // person opened a shift, within the same range/scope as the sales above.
+  const shifts = await prisma.cashDrawerSession.findMany({
+    where: {
+      ...(startDate ? { openingAt: { gte: startDate, lte: now } } : {}),
+      ...saleSpWhere,
+      ...(soldByIds.length ? { userId: { in: soldByIds } } : {}),
+    },
+    select: { userId: true, openingAt: true, user: { select: { fullName: true } } },
+  });
+  const daysWorked = new Map<string, { name: string; days: Set<string> }>();
+  for (const sh of shifts) {
+    const e = daysWorked.get(sh.userId) || { name: sh.user.fullName, days: new Set<string>() };
+    e.days.add(yerevanDayKey(sh.openingAt));
+    daysWorked.set(sh.userId, e);
+  }
+  const daysWorkedData = Array.from(daysWorked.values())
+    .map((e) => ({ label: e.name, value: e.days.size }))
+    .sort((a, b) => b.value - a.value);
+
   let totalCount = sales.length;
   let totalRevenue = 0;
   let totalUnits = 0;
@@ -311,6 +331,24 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               <p className="font-semibold mb-3">{t('sa.bySalesperson')}</p>
               <BarChart data={personData} valueLabel={(n) => formatAmd(n)} />
             </div>
+          </section>
+
+          <section className="card">
+            <p className="font-semibold mb-3">{t('sa.daysWorked')}</p>
+            {daysWorkedData.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t('sa.noShifts')}</p>
+            ) : (
+              <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                {daysWorkedData.map((d) => (
+                  <li key={d.label} className="flex items-center justify-between py-2">
+                    <span className="text-sm">{d.label}</span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {d.value} {d.value === 1 ? t('sa.day') : t('sa.days')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">
