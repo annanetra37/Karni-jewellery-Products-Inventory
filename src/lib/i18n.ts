@@ -93,6 +93,8 @@ const D: Record<string, Record<Locale, string>> = {
   'h.salesToday': { en: 'Sales today', hy: 'Վաճառքները այսօր', ru: 'Продажи сегодня' },
   'h.revenueToday': { en: 'Revenue today', hy: 'Շրջանառությունը այսօր', ru: 'Выручка сегодня' },
   'h.viewDetails': { en: 'View details', hy: 'Տեսնել մանրամասները', ru: 'Подробнее' },
+  'h.view': { en: 'View', hy: 'Տեսնել', ru: 'Показать' },
+  'h.hide': { en: 'Hide', hy: 'Թաքցնել', ru: 'Скрыть' },
   'h.shiftOpenAt': { en: 'Shift open at', hy: 'Հերթափոխը բացված է՝', ru: 'Смена открыта в' },
   'h.openingCount': { en: 'Opening count', hy: 'Բացման մնացորդը', ru: 'Открывающий остаток' },
   'h.started': { en: 'started', hy: 'սկսված', ru: 'начата' },
@@ -423,6 +425,10 @@ const D: Record<string, Record<Locale, string>> = {
 
   // Customers
   'cu.title': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
+  'cu.gender': { en: 'Gender', hy: 'Սեռ', ru: 'Пол' },
+  'cu.address': { en: 'Address', hy: 'Հասցե', ru: 'Адрес' },
+  'cu.notes': { en: 'Notes', hy: 'Նշումներ', ru: 'Заметки' },
+  'cu.allOptional': { en: 'All fields are optional.', hy: 'Բոլոր դաշտերը ոչ պարտադիր են։', ru: 'Все поля необязательны.' },
   'cu.noCustomers': { en: 'No customers.', hy: 'Հաճախորդներ չկան։', ru: 'Клиентов нет.' },
 
   // Notifications
@@ -479,6 +485,10 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.bySellingPoint': { en: 'By selling point', hy: 'Ըստ վաճառակետի', ru: 'По точке продаж' },
   'sa.revenueOverTime': { en: 'Revenue over time', hy: 'Հասույթը ժամանակի ընթացքում', ru: 'Выручка по времени' },
   'sa.bySalesperson': { en: 'By salesperson', hy: 'Ըստ վաճառողի', ru: 'По продавцу' },
+  'sa.daysWorked': { en: 'Days worked', hy: 'Աշխատած օրեր', ru: 'Отработано дней' },
+  'sa.noShifts': { en: 'No shifts in this period.', hy: 'Այս ժամանակահատվածում հերթափոխ չկա։', ru: 'Нет смен за этот период.' },
+  'sa.day': { en: 'day', hy: 'օր', ru: 'день' },
+  'sa.days': { en: 'days', hy: 'օր', ru: 'дн.' },
   'sa.byCategory': { en: 'By category', hy: 'Ըստ կատեգորիայի', ru: 'По категории' },
   'sa.byCollection': { en: 'By collection', hy: 'Ըստ հավաքածուի', ru: 'По коллекции' },
   'sa.topCustomers': { en: 'Top customers', hy: 'Լավագույն հաճախորդներ', ru: 'Топ клиентов' },

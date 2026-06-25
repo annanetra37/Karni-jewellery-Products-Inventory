@@ -72,12 +72,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
 
   const scope = await sellingPointScope(user);
   const canEdit = isSuperAdmin(user);
-  // Everyone sees the sales for the selling points they have access to —
-  // super admins and unrestricted users see all. (Previously salespeople were
-  // limited to their own sales, so they couldn't see a teammate's sale.)
+  // Shift isolation: a salesperson only sees their OWN sales, so when several
+  // people work the same day nobody sees a previous shift's sales. Admins (and
+  // super admins) see all sales for the points they cover.
   const where = {
     ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
     ...(scope ? { sellingPointId: { in: scope } } : {}),
+    ...(admin ? {} : { soldById: user.id }),
   };
 
   const [sales, agg] = await Promise.all([
