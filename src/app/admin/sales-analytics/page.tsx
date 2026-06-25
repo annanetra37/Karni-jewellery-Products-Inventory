@@ -107,25 +107,39 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     orderBy: { createdAt: 'desc' },
   });
 
-  // Days worked per salesperson — distinct Yerevan calendar days on which each
-  // person opened a shift, within the same range/scope as the sales above.
+  // Days worked per salesperson — based on actual hours on shift, not calendar
+  // days. A full ~12h shift counts as one day and a ~6h shift as half a day, so
+  // we sum each person's worked hours (shift length minus any breaks) and snap
+  // the total to the nearest half-day (6h). Open shifts run to "now"; a single
+  // shift is capped at 24h to absorb a forgotten close.
+  const HOURS_PER_DAY = 12;
+  const nowMs = Date.now();
   const shifts = await prisma.cashDrawerSession.findMany({
     where: {
       ...(startDate ? { openingAt: { gte: startDate, lte: now } } : {}),
       ...saleSpWhere,
       ...(soldByIds.length ? { userId: { in: soldByIds } } : {}),
     },
-    select: { userId: true, openingAt: true, user: { select: { fullName: true } } },
+    select: {
+      userId: true, openingAt: true, closingAt: true,
+      user: { select: { fullName: true } },
+      breaks: { select: { startedAt: true, endedAt: true } },
+    },
   });
-  const daysWorked = new Map<string, { name: string; days: Set<string> }>();
+  const worked = new Map<string, { name: string; hours: number; shifts: number }>();
   for (const sh of shifts) {
-    const e = daysWorked.get(sh.userId) || { name: sh.user.fullName, days: new Set<string>() };
-    e.days.add(yerevanDayKey(sh.openingAt));
-    daysWorked.set(sh.userId, e);
+    let ms = Math.max(0, (sh.closingAt?.getTime() ?? nowMs) - sh.openingAt.getTime());
+    for (const b of sh.breaks) {
+      ms -= Math.max(0, (b.endedAt?.getTime() ?? nowMs) - b.startedAt.getTime());
+    }
+    const hours = Math.min(24, Math.max(0, ms / 3_600_000));
+    const e = worked.get(sh.userId) || { name: sh.user.fullName, hours: 0, shifts: 0 };
+    e.hours += hours; e.shifts += 1;
+    worked.set(sh.userId, e);
   }
-  const daysWorkedData = Array.from(daysWorked.values())
-    .map((e) => ({ label: e.name, value: e.days.size }))
-    .sort((a, b) => b.value - a.value);
+  const daysWorkedData = Array.from(worked.values())
+    .map((e) => ({ name: e.name, hours: e.hours, shifts: e.shifts, days: Math.round(e.hours / (HOURS_PER_DAY / 2)) / 2 }))
+    .sort((a, b) => b.hours - a.hours);
 
   let totalCount = sales.length;
   let totalRevenue = 0;
@@ -340,10 +354,15 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             ) : (
               <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
                 {daysWorkedData.map((d) => (
-                  <li key={d.label} className="flex items-center justify-between py-2">
-                    <span className="text-sm">{d.label}</span>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {d.value} {d.value === 1 ? t('sa.day') : t('sa.days')}
+                  <li key={d.name} className="flex items-center justify-between gap-3 py-2">
+                    <span className="text-sm">{d.name}</span>
+                    <span className="text-right">
+                      <span className="text-sm font-semibold tabular-nums">
+                        {d.days} {d.days === 1 ? t('sa.day') : t('sa.days')}
+                      </span>
+                      <span className="block text-[11px] tabular-nums" style={{ color: 'var(--ink-soft)' }}>
+                        {d.hours.toFixed(1)}h · {d.shifts} {d.shifts === 1 ? t('sa.shift') : t('sa.shifts')}
+                      </span>
                     </span>
                   </li>
                 ))}
