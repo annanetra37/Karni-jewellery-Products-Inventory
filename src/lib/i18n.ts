@@ -489,6 +489,8 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.noShifts': { en: 'No shifts in this period.', hy: 'Այս ժամանակահատվածում հերթափոխ չկա։', ru: 'Нет смен за этот период.' },
   'sa.day': { en: 'day', hy: 'օր', ru: 'день' },
   'sa.days': { en: 'days', hy: 'օր', ru: 'дн.' },
+  'sa.shift': { en: 'shift', hy: 'հերթափոխ', ru: 'смена' },
+  'sa.shifts': { en: 'shifts', hy: 'հերթափոխ', ru: 'смен' },
   'sa.byCategory': { en: 'By category', hy: 'Ըստ կատեգորիայի', ru: 'По категории' },
   'sa.byCollection': { en: 'By collection', hy: 'Ըստ հավաքածուի', ru: 'По коллекции' },
   'sa.topCustomers': { en: 'Top customers', hy: 'Լավագույն հաճախորդներ', ru: 'Топ клиентов' },
