@@ -6,7 +6,7 @@ import { MetricCard, BarChart, DonutChart } from '@/components/Charts';
 import { LineChartHover } from '@/components/LineChartHover';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
-import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanDaysAgoStart } from '@/lib/datetime';
+import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanDaysAgoStart, yerevanISODate } from '@/lib/datetime';
 
 type Params = Promise<{
   range?: string;     // today | 7d | 30d | 90d | all
@@ -109,8 +109,9 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
   // Days worked per salesperson — based on actual hours on shift, not calendar
   // days. A full ~12h shift counts as one day and a ~6h shift as half a day, so
-  // we sum each person's worked hours (shift length minus any breaks) and snap
-  // the total to the nearest half-day (6h). Open shifts run to "now"; a single
+  // we sum each person's hours on shift and snap the total to the nearest
+  // half-day (6h). Breaks count as worked time, but are tallied separately so
+  // they can be shown beneath each person. Open shifts run to "now"; a single
   // shift is capped at 24h to absorb a forgotten close.
   const HOURS_PER_DAY = 12;
   const nowMs = Date.now();
@@ -126,20 +127,26 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       breaks: { select: { startedAt: true, endedAt: true } },
     },
   });
-  const worked = new Map<string, { name: string; hours: number; shifts: number }>();
+  const worked = new Map<string, { name: string; hours: number; breakHours: number; shifts: number }>();
   for (const sh of shifts) {
-    let ms = Math.max(0, (sh.closingAt?.getTime() ?? nowMs) - sh.openingAt.getTime());
-    for (const b of sh.breaks) {
-      ms -= Math.max(0, (b.endedAt?.getTime() ?? nowMs) - b.startedAt.getTime());
-    }
-    const hours = Math.min(24, Math.max(0, ms / 3_600_000));
-    const e = worked.get(sh.userId) || { name: sh.user.fullName, hours: 0, shifts: 0 };
-    e.hours += hours; e.shifts += 1;
+    const hours = Math.min(24, Math.max(0, ((sh.closingAt?.getTime() ?? nowMs) - sh.openingAt.getTime()) / 3_600_000));
+    let breakMs = 0;
+    for (const b of sh.breaks) breakMs += Math.max(0, (b.endedAt?.getTime() ?? nowMs) - b.startedAt.getTime());
+    const e = worked.get(sh.userId) || { name: sh.user.fullName, hours: 0, breakHours: 0, shifts: 0 };
+    e.hours += hours; e.breakHours += breakMs / 3_600_000; e.shifts += 1;
     worked.set(sh.userId, e);
   }
   const daysWorkedData = Array.from(worked.values())
-    .map((e) => ({ name: e.name, hours: e.hours, shifts: e.shifts, days: Math.round(e.hours / (HOURS_PER_DAY / 2)) / 2 }))
+    .map((e) => ({ name: e.name, hours: e.hours, breakHours: e.breakHours, shifts: e.shifts, days: Math.round(e.hours / (HOURS_PER_DAY / 2)) / 2 }))
     .sort((a, b) => b.hours - a.hours);
+
+  // CSV export of check-in/out + breaks, honouring the current range and filters.
+  const shiftExportParams = new URLSearchParams();
+  if (startDate) shiftExportParams.set('from', yerevanISODate(startDate));
+  shiftExportParams.set('to', yerevanISODate());
+  if (sellingPointIds.length) shiftExportParams.set('sellingPointId', sellingPointIds.join(','));
+  if (soldByIds.length) shiftExportParams.set('userId', soldByIds.join(','));
+  const shiftsExportHref = `/api/export/shifts?${shiftExportParams.toString()}`;
 
   let totalCount = sales.length;
   let totalRevenue = 0;
@@ -348,21 +355,30 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
           </section>
 
           <section className="card">
-            <p className="font-semibold mb-3">{t('sa.daysWorked')}</p>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="font-semibold">{t('sa.daysWorked')}</p>
+              <a href={shiftsExportHref} className="btn-link text-xs inline-flex items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {t('sa.exportShifts')}
+              </a>
+            </div>
             {daysWorkedData.length === 0 ? (
               <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t('sa.noShifts')}</p>
             ) : (
               <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
                 {daysWorkedData.map((d) => (
                   <li key={d.name} className="flex items-center justify-between gap-3 py-2">
-                    <span className="text-sm">{d.name}</span>
-                    <span className="text-right">
-                      <span className="text-sm font-semibold tabular-nums">
-                        {d.days} {d.days === 1 ? t('sa.day') : t('sa.days')}
-                      </span>
+                    <div className="min-w-0">
+                      <span className="text-sm">{d.name}</span>
                       <span className="block text-[11px] tabular-nums" style={{ color: 'var(--ink-soft)' }}>
                         {d.hours.toFixed(1)}h · {d.shifts} {d.shifts === 1 ? t('sa.shift') : t('sa.shifts')}
+                        {d.breakHours > 0 && <> · {d.breakHours.toFixed(1)}h {t('sa.breaks')}</>}
                       </span>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums shrink-0">
+                      {d.days} {d.days === 1 ? t('sa.day') : t('sa.days')}
                     </span>
                   </li>
                 ))}
