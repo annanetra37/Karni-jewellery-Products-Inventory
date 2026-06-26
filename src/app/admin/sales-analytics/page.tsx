@@ -2,11 +2,12 @@ import { requireAdmin, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
-import { MetricCard, BarChart, DonutChart } from '@/components/Charts';
+import { BarChart, DonutChart } from '@/components/Charts';
 import { LineChartHover } from '@/components/LineChartHover';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
-import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanDaysAgoStart, yerevanISODate } from '@/lib/datetime';
+import { Drilldown, DrillCard } from './Drilldown';
+import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanDaysAgoStart, yerevanISODate, formatYerevanDateTime } from '@/lib/datetime';
 
 type Params = Promise<{
   range?: string;     // today | 7d | 30d | 90d | all
@@ -232,6 +233,131 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     .filter((d) => byWeekday.has(d))
     .map((d) => ({ label: WEEKDAYS[d], value: byWeekday.get(d)!.count, sub: formatAmd(byWeekday.get(d)!.revenue) }));
 
+  // ---- Interactive drill-down data: a light per-sale record + groupings, so
+  // clicking a metric can reveal the underlying sales / customers / hours.
+  type SaleLite = {
+    saleNumber: string; when: string; customer: string; soldBy: string; sellingPoint: string;
+    payment: string; total: number; discount: number; cashToSafe: boolean; weekday: number; hour: number;
+    items: { name: string; qty: number; line: number; variantId: string }[];
+  };
+  const salesLite: SaleLite[] = sales.map((s) => ({
+    saleNumber: s.saleNumber,
+    when: formatYerevanDateTime(s.createdAt),
+    customer: s.customer?.fullName || 'Walk-in',
+    soldBy: s.soldBy.fullName,
+    sellingPoint: s.sellingPoint?.name || '—',
+    payment: s.paymentMethod || 'CASH',
+    total: Number(s.totalAmd),
+    discount: Number(s.discountAmd),
+    cashToSafe: s.cashToSafe,
+    weekday: yerevanWeekday(s.createdAt),
+    hour: yerevanHour(s.createdAt),
+    items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
+  }));
+  function groupSales(keyFn: (s: SaleLite) => string | string[]): Map<string, SaleLite[]> {
+    const m = new Map<string, SaleLite[]>();
+    for (const s of salesLite) {
+      const k = keyFn(s);
+      for (const key of Array.isArray(k) ? k : [k]) { const a = m.get(key) || []; a.push(s); m.set(key, a); }
+    }
+    return m;
+  }
+  const salesByCustomer = groupSales((s) => s.customer);
+  const salesByHour = groupSales((s) => String(s.hour));
+  const salesByWeekday = groupSales((s) => String(s.weekday));
+  const salesBySku = groupSales((s) => [...new Set(s.items.map((i) => i.variantId))]);
+
+  // ---- Panel renderers (server-rendered JSX handed to the Drilldown modal).
+  const CAP = 80;
+  const renderSales = (list: SaleLite[]) => {
+    if (!list.length) return <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>—</p>;
+    return (
+      <ul className="space-y-2.5">
+        {list.slice(0, CAP).map((s) => (
+          <li key={s.saleNumber} className="text-sm border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+            <div className="flex justify-between gap-2">
+              <span className="font-medium truncate">{s.customer}</span>
+              <span className="tabular-nums whitespace-nowrap">{formatAmd(s.total)}</span>
+            </div>
+            <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.when} · {s.soldBy} · {s.sellingPoint} · {s.payment}</p>
+            {s.items.length > 0 && <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}</p>}
+          </li>
+        ))}
+        {list.length > CAP && <li className="text-[11px] text-center pt-1" style={{ color: 'var(--ink-soft)' }}>+{list.length - CAP} {t('sa.more')}</li>}
+      </ul>
+    );
+  };
+  const renderNames = (rows: { name: string; sub?: string }[]) =>
+    rows.length ? (
+      <ul className="space-y-1.5">
+        {rows.map((r, i) => (
+          <li key={r.name + i} className="flex justify-between gap-2 text-sm border-b border-karni-100 pb-1.5 last:border-0">
+            <span className="truncate">{r.name}</span>
+            {r.sub && <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>{r.sub}</span>}
+          </li>
+        ))}
+      </ul>
+    ) : <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>—</p>;
+  const renderSkuBuyers = (variantId: string) => {
+    const list = salesBySku.get(variantId) || [];
+    return (
+      <ul className="space-y-2.5">
+        {list.slice(0, CAP).map((s) => {
+          const qty = s.items.filter((i) => i.variantId === variantId).reduce((n, i) => n + i.qty, 0);
+          return (
+            <li key={s.saleNumber} className="flex justify-between gap-2 text-sm border-b border-karni-100 pb-1.5 last:border-0">
+              <span className="min-w-0"><span className="font-medium truncate">{s.customer}</span>
+                <span className="block text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.when} · {s.soldBy}</span></span>
+              <span className="tabular-nums whitespace-nowrap">{qty}×</span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
+  const renderHoursForWeekday = (wd: number) => {
+    const list = salesByWeekday.get(String(wd)) || [];
+    const byHr = new Map<number, { count: number; rev: number }>();
+    for (const s of list) { const e = byHr.get(s.hour) || { count: 0, rev: 0 }; e.count += 1; e.rev += s.total; byHr.set(s.hour, e); }
+    const rows = [...byHr.entries()].sort((a, b) => a[0] - b[0]);
+    return (
+      <>
+        <p className="text-sm mb-2" style={{ color: 'var(--ink-soft)' }}>{list.length}× · {WEEKDAYS[wd]}</p>
+        <ul className="space-y-1.5">
+          {rows.map(([h, v]) => (
+            <li key={h} className="flex justify-between gap-2 text-sm border-b border-karni-100 pb-1.5 last:border-0">
+              <span>{hourLabel(h)}–{hourLabel((h + 1) % 24)}</span>
+              <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>{v.count}× · {formatAmd(v.rev)}</span>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  };
+  const renderBreakdown = (rows: { label: string; count: number; revenue: number }[]) => {
+    const tot = rows.reduce((s, r) => s + r.revenue, 0);
+    return (
+      <ul className="space-y-1.5">
+        {rows.map((r) => (
+          <li key={r.label} className="flex justify-between gap-2 text-sm border-b border-karni-100 pb-1.5 last:border-0">
+            <span className="truncate">{r.label}</span>
+            <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>
+              {formatAmd(r.revenue)} · {r.count}×{tot > 0 ? ` · ${Math.round((r.revenue / tot) * 100)}%` : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  };
+  const toBreakdown = (m: Map<string, { count: number; revenue: number }>) =>
+    Array.from(m.entries()).map(([label, v]) => ({ label, count: v.count, revenue: v.revenue })).sort((a, b) => b.revenue - a.revenue);
+  const customerRows = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue)
+    .map((c) => ({ name: c.name, sub: `${formatAmd(c.revenue)} · ${c.count}×` }));
+  const repeatRows = Array.from(perCustomer.values()).filter((c) => c.count >= 2).sort((a, b) => b.count - a.count)
+    .map((c) => ({ name: c.name, sub: `${c.count}× · ${formatAmd(c.revenue)}` }));
+  const skuUnitRows = Array.from(perSku.values()).sort((a, b) => b.units - a.units)
+    .map((it) => ({ name: it.variant.designName, sub: `${it.units} u. · ${formatAmd(it.revenue)}` }));
+
   const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
   const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
   const salespeople = await prisma.user.findMany({
@@ -284,22 +410,22 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
           ))}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
+          <Drilldown title={t('sa.allSales')} panel={renderSales(salesLite)} className="hover:opacity-90 transition">
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.salesCount')}</p>
             <p className="display text-4xl font-semibold mt-1">{totalCount.toLocaleString()}</p>
-          </div>
-          <div>
+          </Drilldown>
+          <Drilldown title={t('sa.allSales')} panel={renderSales(salesLite)} className="hover:opacity-90 transition">
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.revenue')}</p>
             <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalRevenue)}</p>
-          </div>
+          </Drilldown>
           <div>
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.avgSale')}</p>
             <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(avgSale)}</p>
           </div>
-          <div>
+          <Drilldown title={t('sa.uniqueCustomers')} panel={renderNames(customerRows)} className="hover:opacity-90 transition">
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.uniqueCustomers')}</p>
             <p className="display text-3xl font-semibold mt-1">{customers.size.toLocaleString()}</p>
-          </div>
+          </Drilldown>
         </div>
       </section>
 
@@ -307,33 +433,54 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
         <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>{t('sa.empty')}</div>
       ) : (
         <>
+          <p className="text-xs -mb-1" style={{ color: 'var(--ink-soft)' }}>{t('sa.tapHint')}</p>
           <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <MetricCard label={t('sa.unitsSold')} value={totalUnits.toLocaleString()}
-              sub={`${avgItems.toFixed(1)} ${t('sa.avgItems').toLowerCase()}`} />
-            <MetricCard label={t('sa.peakHour')}
+            <DrillCard label={t('sa.unitsSold')} value={totalUnits.toLocaleString()}
+              sub={`${avgItems.toFixed(1)} ${t('sa.avgItems').toLowerCase()}`}
+              title={t('sa.unitsSold')} panel={renderNames(skuUnitRows)} />
+            <DrillCard label={t('sa.peakHour')}
               value={peakHour ? `${hourLabel(peakHour[0])}–${hourLabel((peakHour[0] + 1) % 24)}` : '—'}
-              sub={peakHour ? `${peakHour[1].count}× · ${formatAmd(peakHour[1].revenue)}` : undefined} />
-            <MetricCard label={t('sa.peakDay')}
+              sub={peakHour ? `${peakHour[1].count}× · ${formatAmd(peakHour[1].revenue)}` : undefined}
+              title={t('sa.peakHour')} panel={renderSales(peakHour ? (salesByHour.get(String(peakHour[0])) || []) : [])} />
+            <DrillCard label={t('sa.peakDay')}
               value={peakWeekday ? WEEKDAYS[peakWeekday[0]] : '—'}
-              sub={peakWeekday ? `${peakWeekday[1].count}× · ${formatAmd(peakWeekday[1].revenue)}` : undefined} />
-            <MetricCard label={t('sa.toSafe')} value={formatAmd(toSafeRevenue)}
-              sub={`${toSafeCount}× · ${totalRevenue > 0 ? Math.round((toSafeRevenue / totalRevenue) * 100) : 0}%`} />
-            <MetricCard label={t('sa.discounts')} value={formatAmd(totalDiscount)} />
-            <MetricCard label={t('sa.repeatCustomers')} value={repeatCustomers.toLocaleString()}
-              sub={t('sa.repeatCustomersSub').replace('{walkins}', walkIns.toLocaleString())} />
-            <MetricCard label={t('sa.byPayment')} value={(payData[0]?.label || '—')}
-              sub={payData[0] ? formatAmd(payData[0].value) : undefined} />
-            <MetricCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
-              sub={spData[0] ? formatAmd(spData[0].value) : undefined} />
+              sub={peakWeekday ? `${peakWeekday[1].count}× · ${formatAmd(peakWeekday[1].revenue)}` : undefined}
+              title={t('sa.peakDay')} panel={peakWeekday ? renderHoursForWeekday(peakWeekday[0]) : renderSales([])} />
+            <DrillCard label={t('sa.toSafe')} value={formatAmd(toSafeRevenue)}
+              sub={`${toSafeCount}× · ${totalRevenue > 0 ? Math.round((toSafeRevenue / totalRevenue) * 100) : 0}%`}
+              title={t('sa.toSafe')} panel={renderSales(salesLite.filter((s) => s.cashToSafe))} />
+            <DrillCard label={t('sa.discounts')} value={formatAmd(totalDiscount)}
+              title={t('sa.discounts')} panel={renderSales(salesLite.filter((s) => s.discount > 0))} />
+            <DrillCard label={t('sa.repeatCustomers')} value={repeatCustomers.toLocaleString()}
+              sub={t('sa.repeatCustomersSub').replace('{walkins}', walkIns.toLocaleString())}
+              title={t('sa.repeatCustomers')} panel={renderNames(repeatRows)} />
+            <DrillCard label={t('sa.byPayment')} value={(payData[0]?.label || '—')}
+              sub={payData[0] ? formatAmd(payData[0].value) : undefined}
+              title={t('sa.byPayment')} panel={renderBreakdown(toBreakdown(byPay))} />
+            <DrillCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
+              sub={spData[0] ? formatAmd(spData[0].value) : undefined}
+              title={t('sa.bySellingPoint')} panel={renderBreakdown(toBreakdown(bySp))} />
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.byHour')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.byHour')}</p>
+                <Drilldown title={t('sa.byHour')} className="!w-auto btn-link text-xs"
+                  panel={renderBreakdown(Array.from(byHour.entries()).sort((a, b) => a[0] - b[0]).map(([h, v]) => ({ label: `${hourLabel(h)}–${hourLabel((h + 1) % 24)}`, count: v.count, revenue: v.revenue })))}>
+                  {t('sa.details')}
+                </Drilldown>
+              </div>
               <BarChart data={hourData} />
             </div>
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.byWeekday')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.byWeekday')}</p>
+                <Drilldown title={t('sa.byWeekday')} className="!w-auto btn-link text-xs"
+                  panel={renderBreakdown(WEEK_ORDER.filter((d) => byWeekday.has(d)).map((d) => ({ label: WEEKDAYS[d], count: byWeekday.get(d)!.count, revenue: byWeekday.get(d)!.revenue })))}>
+                  {t('sa.details')}
+                </Drilldown>
+              </div>
               <BarChart data={weekdayData} />
             </div>
           </section>
@@ -345,11 +492,17 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.bySellingPoint')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.bySellingPoint')}</p>
+                <Drilldown title={t('sa.bySellingPoint')} className="!w-auto btn-link text-xs" panel={renderBreakdown(toBreakdown(bySp))}>{t('sa.details')}</Drilldown>
+              </div>
               <BarChart data={spData} valueLabel={(n) => formatAmd(n)} />
             </div>
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.bySalesperson')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.bySalesperson')}</p>
+                <Drilldown title={t('sa.bySalesperson')} className="!w-auto btn-link text-xs" panel={renderBreakdown(toBreakdown(byPerson))}>{t('sa.details')}</Drilldown>
+              </div>
               <BarChart data={personData} valueLabel={(n) => formatAmd(n)} />
             </div>
           </section>
@@ -388,27 +541,39 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.byPayment')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.byPayment')}</p>
+                <Drilldown title={t('sa.byPayment')} className="!w-auto btn-link text-xs" panel={renderBreakdown(toBreakdown(byPay))}>{t('sa.details')}</Drilldown>
+              </div>
               <DonutChart slices={payData} total={payData.reduce((s, d) => s + d.value, 0)} />
             </div>
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.byCategory')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.byCategory')}</p>
+                <Drilldown title={t('sa.byCategory')} className="!w-auto btn-link text-xs" panel={renderBreakdown(toBreakdown(byCat))}>{t('sa.details')}</Drilldown>
+              </div>
               <BarChart data={catData.slice(0, 10)} />
             </div>
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">
             <div className="card">
-              <p className="font-semibold mb-3">{t('sa.byCollection')}</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold">{t('sa.byCollection')}</p>
+                <Drilldown title={t('sa.byCollection')} className="!w-auto btn-link text-xs" panel={renderBreakdown(toBreakdown(byCollection))}>{t('sa.details')}</Drilldown>
+              </div>
               <BarChart data={collData} valueLabel={(n) => formatAmd(n)} />
             </div>
             <div className="card">
               <p className="font-semibold mb-3">{t('sa.topCustomers')}</p>
               <ul className="space-y-2">
                 {topCustomers.map((c) => (
-                  <li key={c.name} className="flex justify-between items-baseline text-sm border-b border-karni-100 pb-1.5 last:border-0">
-                    <span className="font-medium truncate">{c.name}</span>
-                    <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>{formatAmd(c.revenue)} · {c.count}×</span>
+                  <li key={c.name} className="border-b border-karni-100 pb-1.5 last:border-0">
+                    <Drilldown title={c.name} panel={renderSales(salesByCustomer.get(c.name) || [])}
+                      className="flex justify-between items-baseline gap-2 text-sm hover:opacity-80 transition">
+                      <span className="font-medium truncate">{c.name}</span>
+                      <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>{formatAmd(c.revenue)} · {c.count}×</span>
+                    </Drilldown>
                   </li>
                 ))}
                 {topCustomers.length === 0 && <li className="text-sm text-center" style={{ color: 'var(--ink-soft)' }}>—</li>}
@@ -420,18 +585,21 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <p className="font-semibold mb-3">{t('sa.topSkus')}</p>
             <ul className="space-y-2">
               {topSkus.map((it) => (
-                <li key={it.variant.id} className="flex items-center gap-3 border-b border-karni-100 pb-2 last:border-0 last:pb-0">
-                  <Thumb src={it.variant.imageUrl} alt={it.variant.designName} size={12} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{it.variant.designName}
-                      <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> · {[it.variant.color, it.variant.size].filter(Boolean).join(' · ')}</span>
-                    </p>
-                    <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{it.variant.sku}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-bold tabular-nums">{formatAmd(it.revenue)}</p>
-                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{it.units} u.</p>
-                  </div>
+                <li key={it.variant.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                  <Drilldown title={it.variant.designName} panel={renderSkuBuyers(it.variant.id)}
+                    className="flex items-center gap-3 hover:opacity-80 transition">
+                    <Thumb src={it.variant.imageUrl} alt={it.variant.designName} size={12} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{it.variant.designName}
+                        <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> · {[it.variant.color, it.variant.size].filter(Boolean).join(' · ')}</span>
+                      </p>
+                      <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{it.variant.sku}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold tabular-nums">{formatAmd(it.revenue)}</p>
+                      <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{it.units} u.</p>
+                    </div>
+                  </Drilldown>
                 </li>
               ))}
             </ul>
