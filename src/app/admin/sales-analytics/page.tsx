@@ -349,6 +349,18 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       </ul>
     );
   };
+  const renderBankToSafe = (rows: { when: string; amount: number; by: string; note: string | null }[]) =>
+    rows.length ? (
+      <ul className="space-y-2">
+        {rows.slice(0, CAP).map((r, i) => (
+          <li key={i} className="flex justify-between gap-2 text-sm border-b border-karni-100 pb-1.5 last:border-0">
+            <span className="min-w-0"><span className="block">{r.when}</span>
+              <span className="block text-[11px]" style={{ color: 'var(--ink-soft)' }}>{r.by}{r.note ? ` · ${r.note}` : ''}</span></span>
+            <span className="tabular-nums whitespace-nowrap">{formatAmd(r.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    ) : <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>—</p>;
   const toBreakdown = (m: Map<string, { count: number; revenue: number }>) =>
     Array.from(m.entries()).map(([label, v]) => ({ label, count: v.count, revenue: v.revenue })).sort((a, b) => b.revenue - a.revenue);
   const customerRows = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue)
@@ -357,6 +369,18 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     .map((c) => ({ name: c.name, sub: `${c.count}× · ${formatAmd(c.revenue)}` }));
   const skuUnitRows = Array.from(perSku.values()).sort((a, b) => b.units - a.units)
     .map((it) => ({ name: it.variant.designName, sub: `${it.units} u. · ${formatAmd(it.revenue)}` }));
+
+  // Card-in-bank tracking (company-wide, all time): card revenue still sitting
+  // in the bank = every card sale minus the card money moved into the safe.
+  const [cardSalesAgg, bankToSafeAgg, bankToSafeTxs] = await Promise.all([
+    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { paymentMethod: 'CARD' } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'BANK_TO_SAFE' } }),
+    prisma.safeTransaction.findMany({ where: { type: 'BANK_TO_SAFE' }, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
+  ]);
+  const cardSalesAll = Number(cardSalesAgg._sum.totalAmd ?? 0);
+  const bankToSafeAll = Number(bankToSafeAgg._sum.amountAmd ?? 0);
+  const cardInBank = cardSalesAll - bankToSafeAll;
+  const bankToSafeRows = bankToSafeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
 
   const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
   const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
@@ -460,6 +484,28 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <DrillCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
               sub={spData[0] ? formatAmd(spData[0].value) : undefined}
               title={t('sa.bySellingPoint')} panel={renderBreakdown(toBreakdown(bySp))} />
+          </section>
+
+          <section className="card">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="font-semibold">{t('sa.cardTracking')}</p>
+              <Drilldown title={t('sa.bankToSafe')} className="!w-auto btn-link text-xs" panel={renderBankToSafe(bankToSafeRows)}>{t('sa.details')}</Drilldown>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.cardSalesAll')}</p>
+                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(cardSalesAll)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.bankToSafe')}</p>
+                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>−{formatAmd(bankToSafeAll)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent-deep)' }}>{t('sa.cardInBank')}</p>
+                <p className="display text-2xl font-bold mt-1 tabular-nums" style={{ color: 'var(--accent-deep)' }}>{formatAmd(cardInBank)}</p>
+              </div>
+            </div>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--ink-soft)' }}>{t('sa.cardTrackingNote')}</p>
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">

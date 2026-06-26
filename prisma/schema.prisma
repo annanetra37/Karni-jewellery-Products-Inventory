@@ -192,8 +192,9 @@ model SellingPoint {
 }
 
 enum SafeTxType {
-  DEPOSIT     // cash moved from a drawer into the safe
-  WITHDRAWAL  // money taken out of the safe by an owner
+  DEPOSIT       // cash moved from a drawer into the safe
+  WITHDRAWAL    // money taken out of the safe by an owner
+  BANK_TO_SAFE  // card revenue moved out of the bank into the safe
 }
 
 // Ledger of money moving into / out of the owners' safe.
