@@ -175,14 +175,35 @@ async function closeShiftAction(formData: FormData) {
     },
   });
   const cashRevenue = Number(cashSales._sum.totalAmd ?? 0);
-  const expected = Number(session!.openingCountAmd) + cashRevenue;
-  const discrepancy = closingCountAmd - expected;
+  const baseExpected = Number(session!.openingCountAmd) + cashRevenue;
+  // Drawer cash moved to the safe during the shift lowers the expected close.
+  // Run the SAME reconciliation the reports use, so the close check and the
+  // reports can never disagree (previously this ignored mid-shift safe moves and
+  // raised false discrepancies).
+  const { reconcileSessions } = await import('@/lib/reconcile');
+  const { yerevanDayStart } = await import('@/lib/datetime');
+  const closeAt = new Date();
+  const depositRows = await prisma.safeTransaction.findMany({
+    where: { type: 'DEPOSIT', sellingPointId: session!.sellingPointId, occurredAt: { gte: yerevanDayStart(session!.openingAt) } },
+    select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
+  });
+  const { byId } = reconcileSessions(
+    [{
+      id: session!.id, sellingPointId: session!.sellingPointId, pointName: '', status: 'CLOSED',
+      openingAt: session!.openingAt, openingCountAmd: Number(session!.openingCountAmd),
+      closingAt: closeAt, closingCountAmd, expectedCloseAmd: baseExpected,
+    }],
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
+  );
+  const sr = byId.get(session!.id);
+  const expected = sr?.expectedClose ?? baseExpected;
+  const discrepancy = sr?.closeDiff ?? (closingCountAmd - baseExpected);
   await prisma.cashDrawerSession.update({
     where: { id: sessionId },
     data: {
       closingCountAmd,
       closingById: u.id,
-      closingAt: new Date(),
+      closingAt: closeAt,
       expectedClosingAmd: expected,
       discrepancyAmd: discrepancy,
       status: Math.abs(discrepancy) > 0.001 ? 'DISPUTED' : 'CLOSED',
