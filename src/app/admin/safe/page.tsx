@@ -26,12 +26,17 @@ async function recordDeposit(formData: FormData) {
   const u = await requireSuperAdmin();
   const amount = Number(formData.get('amount') || 0);
   if (!amount || amount <= 0) return;
+  // Source: a register drawer, "other" cash (after-hours sale), or card money
+  // pulled out of the bank. Bank money is its own type so analytics can track
+  // how much card revenue is still in the bank.
+  const source = String(formData.get('source') || 'drawer');
+  const isBank = source === 'bank';
   await prisma.safeTransaction.create({
     data: {
-      type: 'DEPOSIT',
+      type: isBank ? 'BANK_TO_SAFE' : 'DEPOSIT',
       amountAmd: amount,
-      sellingPointId: String(formData.get('sellingPointId') || '') || null,
-      fromDrawer: String(formData.get('source') || 'drawer') !== 'other',
+      sellingPointId: isBank ? null : (String(formData.get('sellingPointId') || '') || null),
+      fromDrawer: isBank ? false : source !== 'other',
       performedById: u.id,
       note: String(formData.get('note') || '').trim() || null,
       occurredAt: toDate(formData.get('occurredAt')),
@@ -119,7 +124,7 @@ export default async function SafePage() {
   const ownersFlagged = ownerUsers.length > 0;
   const n = Math.max(1, owners.length);
 
-  let totalDeposits = 0, totalWithdrawals = 0, totalPersonal = 0, totalInvestment = 0;
+  let totalDeposits = 0, totalBankToSafe = 0, totalWithdrawals = 0, totalPersonal = 0, totalInvestment = 0;
   const withdrawnByOwner = new Map<string, number>();
   const personalByOwner = new Map<string, number>();
   const investByOwner = new Map<string, number>();
@@ -127,6 +132,7 @@ export default async function SafePage() {
   for (const tx of txs) {
     const amt = Number(tx.amountAmd);
     if (tx.type === 'DEPOSIT') { totalDeposits += amt; continue; }
+    if (tx.type === 'BANK_TO_SAFE') { totalBankToSafe += amt; continue; }
     totalWithdrawals += amt;
     const inv = tx.reason === 'INVESTMENT';
     if (inv) totalInvestment += amt; else totalPersonal += amt;
@@ -138,8 +144,11 @@ export default async function SafePage() {
       add(reasonMap, tx.ownerId, amt);
     }
   }
-  const safeBalance = totalDeposits - totalWithdrawals;
-  const share = totalDeposits / n;
+  // Both drawer deposits and bank→safe transfers are money sitting in the safe,
+  // so both count toward the balance and the owners' shared pool.
+  const totalIn = totalDeposits + totalBankToSafe;
+  const safeBalance = totalIn - totalWithdrawals;
+  const share = totalIn / n;
   const ownerRows = owners.map((o) => ({
     name: o.fullName,
     withdrawn: withdrawnByOwner.get(o.id) || 0,
@@ -152,7 +161,7 @@ export default async function SafePage() {
   const byDay = new Map<string, number>();
   for (const tx of txs) {
     const k = dayKey(tx.occurredAt);
-    const delta = (tx.type === 'DEPOSIT' ? 1 : -1) * Number(tx.amountAmd);
+    const delta = (tx.type === 'WITHDRAWAL' ? -1 : 1) * Number(tx.amountAmd);
     byDay.set(k, (byDay.get(k) || 0) + delta);
   }
   let running = 0;
@@ -217,6 +226,11 @@ export default async function SafePage() {
             <p className="display text-3xl font-semibold mt-1">{flags}</p>
           </div>
         </div>
+        {totalBankToSafe > 0 && (
+          <p className="text-[11px] mt-3 pt-3 border-t" style={{ color: 'var(--accent)', borderColor: 'rgba(255,255,255,0.15)' }}>
+            {t('sf.bankInflowNote').replace('{amount}', formatAmd(totalBankToSafe))}
+          </p>
+        )}
       </section>
 
       {/* Per-owner ownership */}
@@ -274,6 +288,7 @@ export default async function SafePage() {
             <label className="label">{t('sf.cashSource')}</label>
             <select className="input" name="source" defaultValue="drawer">
               <option value="drawer">{t('sf.sourceDrawer')}</option>
+              <option value="bank">{t('sf.sourceBank')}</option>
               <option value="other">{t('sf.sourceOther')}</option>
             </select>
             <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('sf.sourceHint')}</p>
@@ -378,14 +393,18 @@ export default async function SafePage() {
         <ul className="space-y-2 text-sm">
           {txs.slice(0, 100).map((tx) => {
             const reasonLabel = tx.reason === 'INVESTMENT' ? t('sf.investment') : tx.reason === 'PERSONAL' ? t('sf.personal') : '';
-            const who = tx.type === 'DEPOSIT'
-              ? (tx.sellingPoint ? `${t('sf.from')} ${tx.sellingPoint.name}` : t('sf.deposit'))
-              : (tx.splitAll ? t('sf.both') : (tx.owner ? `${t('sf.by')} ${tx.owner.fullName}`.trim() : t('sf.withdrawal')));
+            const who = tx.type === 'WITHDRAWAL'
+              ? (tx.splitAll ? t('sf.both') : (tx.owner ? `${t('sf.by')} ${tx.owner.fullName}`.trim() : t('sf.withdrawal')))
+              : tx.type === 'BANK_TO_SAFE'
+              ? t('sf.fromBank')
+              : (tx.sellingPoint ? `${t('sf.from')} ${tx.sellingPoint.name}` : t('sf.deposit'));
+            const chipClass = tx.type === 'WITHDRAWAL' ? 'chip-warn' : tx.type === 'BANK_TO_SAFE' ? 'chip-accent' : 'chip-ok';
+            const chipLabel = tx.type === 'WITHDRAWAL' ? t('sf.fromSafe') : tx.type === 'BANK_TO_SAFE' ? t('sf.bankToSafe') : t('sf.toSafe');
             return (
               <li key={tx.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
                 <div className="min-w-0">
                   <p className="font-medium">
-                    <span className={`chip mr-1 ${tx.type === 'DEPOSIT' ? 'chip-ok' : 'chip-warn'}`}>{tx.type === 'DEPOSIT' ? t('sf.toSafe') : t('sf.fromSafe')}</span>
+                    <span className={`chip mr-1 ${chipClass}`}>{chipLabel}</span>
                     {who}
                     {reasonLabel && <span className="text-xs text-karni-700"> · {reasonLabel}</span>}
                     {tx.note ? <span className="text-xs text-karni-700"> · {tx.note}</span> : null}
@@ -420,8 +439,8 @@ export default async function SafePage() {
                     </details>
                   )}
                 </div>
-                <b className={`tabular-nums ${tx.type === 'DEPOSIT' ? '' : 'text-red-700'}`}>
-                  {tx.type === 'DEPOSIT' ? '+' : '−'}{formatAmd(Number(tx.amountAmd))}
+                <b className={`tabular-nums ${tx.type === 'WITHDRAWAL' ? 'text-red-700' : ''}`}>
+                  {tx.type === 'WITHDRAWAL' ? '−' : '+'}{formatAmd(Number(tx.amountAmd))}
                 </b>
               </li>
             );
