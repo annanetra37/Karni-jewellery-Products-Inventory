@@ -153,6 +153,19 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const sps = await prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
   const totalStock = v.inventoryItems.reduce((s, ii) => s + ii.quantity, 0);
 
+  // Build the Category / Size option lists from the catalog itself, plus the
+  // standard set, and ALWAYS include this variant's current value. Otherwise a
+  // value outside a hardcoded list would silently reset to "—" and be wiped on
+  // save (which is exactly how categories were getting lost after a photo edit).
+  const STANDARD_CATEGORIES = ['Pendant', 'Earring', 'Ring', 'Bracelet', 'Necklace', 'Brooch'];
+  const STANDARD_SIZES = ['small', 'medium', 'large'];
+  const [catRows, sizeRows] = await Promise.all([
+    prisma.variant.groupBy({ by: ['category'], where: { category: { not: null } }, orderBy: { category: 'asc' } }),
+    prisma.variant.groupBy({ by: ['size'], where: { size: { not: null } }, orderBy: { size: 'asc' } }),
+  ]);
+  const categoryOptions = Array.from(new Set([...STANDARD_CATEGORIES, ...catRows.map((r) => r.category!), ...(v.category ? [v.category] : [])].filter(Boolean)));
+  const sizeOptions = Array.from(new Set([...STANDARD_SIZES, ...sizeRows.map((r) => r.size!), ...(v.size ? [v.size] : [])].filter(Boolean)));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -188,8 +201,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               <label className="label">Category</label>
               <select className="input" name="category" defaultValue={v.category || ''}>
                 <option value="">—</option>
-                <option>Pendant</option><option>Earring</option><option>Ring</option>
-                <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -218,9 +230,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               <label className="label">Size</label>
               <select className="input" name="size" defaultValue={v.size || ''}>
                 <option value="">—</option>
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
+                {sizeOptions.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
               </select>
             </div>
             <div>
