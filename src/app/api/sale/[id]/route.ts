@@ -9,6 +9,7 @@ const Body = z.object({
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   customerId: z.string().nullable().optional(),
   cashToSafe: z.boolean().optional(),
+  transferToBankAmd: z.number().min(0).optional(),
   discount: DiscountSchema.nullable().optional(),
 });
 
@@ -27,15 +28,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (parsed.data.paymentMethod !== undefined && parsed.data.paymentMethod !== 'CASH') data.cashToSafe = false;
 
   // A discount change re-resolves against the (fixed) subtotal and re-derives
-  // the total.
-  if (parsed.data.discount !== undefined) {
-    const sale = await prisma.sale.findUnique({ where: { id }, select: { subtotalAmd: true } });
+  // the total. We also need the resulting total to clamp the transfer portion.
+  let newTotal: number | null = null;
+  if (parsed.data.discount !== undefined || parsed.data.transferToBankAmd !== undefined) {
+    const sale = await prisma.sale.findUnique({ where: { id }, select: { subtotalAmd: true, totalAmd: true } });
     if (!sale) return NextResponse.json({ error: 'sale not found' }, { status: 404 });
-    const subtotal = Number(sale.subtotalAmd);
-    const discountAmd = resolveDiscount(subtotal, parsed.data.discount);
-    data.discountAmd = discountAmd;
-    data.totalAmd = subtotal - discountAmd;
+    if (parsed.data.discount !== undefined) {
+      const subtotal = Number(sale.subtotalAmd);
+      const discountAmd = resolveDiscount(subtotal, parsed.data.discount);
+      data.discountAmd = discountAmd;
+      data.totalAmd = subtotal - discountAmd;
+      newTotal = subtotal - discountAmd;
+    } else {
+      newTotal = Number(sale.totalAmd);
+    }
   }
+
+  if (parsed.data.transferToBankAmd !== undefined) {
+    // Can't exceed the sale total. The transfer split only makes sense for cash
+    // sales — a non-cash sale never put money in the drawer to begin with.
+    const cap = newTotal ?? Infinity;
+    const wanted = Math.min(Math.max(0, parsed.data.transferToBankAmd), cap);
+    const stillCash = (parsed.data.paymentMethod ?? 'CASH') === 'CASH';
+    data.transferToBankAmd = stillCash ? wanted : 0;
+  }
+  if (parsed.data.paymentMethod !== undefined && parsed.data.paymentMethod !== 'CASH') data.transferToBankAmd = 0;
 
   try {
     const sale = await prisma.sale.update({ where: { id }, data });

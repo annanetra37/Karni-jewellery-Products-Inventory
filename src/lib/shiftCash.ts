@@ -41,7 +41,7 @@ export async function expectedCloseBySession(
       cashToSafe: false,
       createdAt: { gte: earliest },
     },
-    select: { sellingPointId: true, totalAmd: true, createdAt: true },
+    select: { sellingPointId: true, totalAmd: true, transferToBankAmd: true, createdAt: true },
   });
 
   for (const s of sessions) {
@@ -51,7 +51,9 @@ export async function expectedCloseBySession(
     for (const sale of sales) {
       if (sale.sellingPointId !== s.sellingPointId) continue;
       if (sale.createdAt < s.openingAt || sale.createdAt >= upper) continue;
-      cash += Number(sale.totalAmd);
+      // Only the part actually paid in cash entered the drawer; any portion the
+      // customer paid by bank transfer / card went to the bank instead.
+      cash += Number(sale.totalAmd) - Number(sale.transferToBankAmd);
     }
     out.set(s.id, s.openingCountAmd + cash);
   }
