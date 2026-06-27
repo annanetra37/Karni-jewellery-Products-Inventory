@@ -153,8 +153,8 @@ export function SaleEditor({
               <div>
                 <label className="label">Where did that part go?</label>
                 <select className="input" value={toSafe ? 'safe' : 'bank'} onChange={(e) => setToSafe(e.target.value === 'safe')}>
-                  <option value="bank">Bank account (transfer / card)</option>
-                  <option value="safe">Straight to the safe (not the bank)</option>
+                  <option value="bank">Bank POS (paid by card) — counts as card</option>
+                  <option value="safe">Straight to the safe (like online) — counts as cash</option>
                 </select>
               </div>
             )}
