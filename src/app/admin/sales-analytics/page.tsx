@@ -372,15 +372,22 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
   // Card-in-bank tracking (company-wide, all time): card revenue still sitting
   // in the bank = every card sale minus the card money moved into the safe.
-  const [cardSalesAgg, bankToSafeAgg, bankToSafeTxs] = await Promise.all([
+  // Also a range-scoped bank→safe figure for the metric grid.
+  const bankToSafeRangeWhere = { type: 'BANK_TO_SAFE' as const, ...(startDate ? { occurredAt: { gte: startDate, lte: now } } : {}) };
+  const [cardSalesAgg, bankToSafeAgg, bankToSafeTxs, bankToSafeRangeAgg, bankToSafeRangeTxs] = await Promise.all([
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { paymentMethod: 'CARD' } }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'BANK_TO_SAFE' } }),
     prisma.safeTransaction.findMany({ where: { type: 'BANK_TO_SAFE' }, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: bankToSafeRangeWhere }),
+    prisma.safeTransaction.findMany({ where: bankToSafeRangeWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
   ]);
   const cardSalesAll = Number(cardSalesAgg._sum.totalAmd ?? 0);
   const bankToSafeAll = Number(bankToSafeAgg._sum.amountAmd ?? 0);
   const cardInBank = cardSalesAll - bankToSafeAll;
   const bankToSafeRows = bankToSafeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
+  const bankToSafeRange = Number(bankToSafeRangeAgg._sum.amountAmd ?? 0);
+  const bankToSafeRangeCount = bankToSafeRangeAgg._count;
+  const bankToSafeRangeRows = bankToSafeRangeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
 
   const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
   const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
@@ -484,6 +491,9 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <DrillCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
               sub={spData[0] ? formatAmd(spData[0].value) : undefined}
               title={t('sa.bySellingPoint')} panel={renderBreakdown(toBreakdown(bySp))} />
+            <DrillCard label={t('sa.bankToSafe')} value={formatAmd(bankToSafeRange)}
+              sub={`${bankToSafeRangeCount}× · ${t('sa.thisRange')}`}
+              title={t('sa.bankToSafe')} panel={renderBankToSafe(bankToSafeRangeRows)} />
           </section>
 
           <section className="card">
