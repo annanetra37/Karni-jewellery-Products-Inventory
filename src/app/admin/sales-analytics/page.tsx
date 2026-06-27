@@ -307,20 +307,23 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
   // ---- Panel renderers (server-rendered JSX handed to the Drilldown modal).
   const CAP = 80;
-  const renderSales = (list: SaleLite[]) => {
+  const renderSales = (list: SaleLite[], amountOf?: (s: SaleLite) => number) => {
     if (!list.length) return <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>—</p>;
     return (
       <ul className="space-y-2.5">
-        {list.slice(0, CAP).map((s) => (
+        {list.slice(0, CAP).map((s) => {
+          const amt = amountOf ? amountOf(s) : s.total;
+          return (
           <li key={s.saleNumber} className="text-sm border-b border-karni-100 pb-2 last:border-0 last:pb-0">
             <div className="flex justify-between gap-2">
               <span className="font-medium truncate">{s.customer}</span>
-              <span className="tabular-nums whitespace-nowrap">{formatAmd(s.total)}</span>
+              <span className="tabular-nums whitespace-nowrap">{formatAmd(amt)}{amt !== s.total ? <span className="opacity-60"> of {formatAmd(s.total)}</span> : null}</span>
             </div>
             <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.when} · {s.soldBy} · {s.sellingPoint} · {s.payment}{s.note ? ` · ${s.note}` : ''}</p>
             {s.items.length > 0 && <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}</p>}
           </li>
-        ))}
+          );
+        })}
         {list.length > CAP && <li className="text-[11px] text-center pt-1" style={{ color: 'var(--ink-soft)' }}>+{list.length - CAP} {t('sa.more')}</li>}
       </ul>
     );
@@ -415,7 +418,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       <ul className="space-y-1.5">
         {rows.map((r) => (
           <li key={r.label} className="border-b border-karni-100 pb-1.5 last:border-0">
-            <Drilldown title={r.label} panel={renderSales(salesByPayBucket[r.label] || [])}
+            <Drilldown title={r.label} panel={renderSales(salesByPayBucket[r.label] || [], r.label === 'CASH' ? (s) => s.cashAmt : r.label === 'CARD' ? (s) => s.cardAmt : undefined)}
               className="flex justify-between gap-2 text-sm hover:opacity-80 transition">
               <span className="truncate">{r.label}</span>
               <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>
@@ -608,7 +611,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               title={t('sa.peakDay')} panel={peakWeekday ? renderHoursForWeekday(peakWeekday[0]) : renderSales([])} />
             <DrillCard label={t('sa.toSafe')} value={formatAmd(toSafeRevenue)}
               sub={`${toSafeCount}× · ${totalRevenue > 0 ? Math.round((toSafeRevenue / totalRevenue) * 100) : 0}%`}
-              title={t('sa.toSafe')} panel={renderSales(salesLite.filter((s) => s.toSafeAmt > 0))} />
+              title={t('sa.toSafe')} panel={renderSales(salesLite.filter((s) => s.toSafeAmt > 0), (s) => s.toSafeAmt)} />
             <DrillCard label={t('sa.discounts')} value={formatAmd(totalDiscount)}
               title={t('sa.discounts')} panel={renderSales(salesLite.filter((s) => s.discount > 0))} />
             <DrillCard label={t('sa.repeatCustomers')} value={repeatCustomers.toLocaleString()}
@@ -631,7 +634,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               <Drilldown title={t('sa.bankToSafe')} className="!w-auto btn-link text-xs" panel={renderBankToSafe(bankToSafeRows)}>{t('sa.details')}</Drilldown>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <Drilldown title={t('sa.cardSalesAll')} panel={renderSales(cardSalesAllList)} className="hover:opacity-80 transition">
+              <Drilldown title={t('sa.cardSalesAll')} panel={renderSales(cardSalesAllList, (s) => s.cardAmt)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.cardSalesAll')}</p>
                 <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(cardSalesAll)}</p>
               </Drilldown>
