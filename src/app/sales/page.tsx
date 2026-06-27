@@ -198,8 +198,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                         )}
                         {Number(s.nonDrawerAmd) > 0 && (
                           <span className="chip chip-accent text-[10px] mt-0.5 inline-block"
-                            title={`Split payment: ${formatAmd(Number(s.nonDrawerAmd))} went to the ${s.nonDrawerToSafe ? 'safe' : 'bank'} (rest in cash)`}>
-                            ⇄ Split → {s.nonDrawerToSafe ? 'safe' : 'bank'}
+                            title={`Split payment: ${formatAmd(Number(s.nonDrawerAmd))} ${s.nonDrawerToSafe ? 'went straight to the safe (counts as cash)' : 'paid by card to POS (counts as card)'} — rest in cash`}>
+                            ⇄ Split → {s.nonDrawerToSafe ? 'safe' : 'POS'}
                           </span>
                         )}
                       </div>
@@ -215,7 +215,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       <span><span className="font-semibold">Point:</span> {s.sellingPoint.name}</span>
                       {s.customer?.phone && <span><span className="font-semibold">Phone:</span> {s.customer.phone}</span>}
                       {Number(s.discountAmd) > 0 && <span><span className="font-semibold">Discount:</span> −{formatAmd(Number(s.discountAmd))} (of {formatAmd(Number(s.subtotalAmd))})</span>}
-                      {Number(s.nonDrawerAmd) > 0 && <span><span className="font-semibold">Not in drawer:</span> {formatAmd(Number(s.nonDrawerAmd))} → {s.nonDrawerToSafe ? 'safe' : 'bank'} (rest in cash)</span>}
+                      {Number(s.nonDrawerAmd) > 0 && <span><span className="font-semibold">Not in drawer:</span> {formatAmd(Number(s.nonDrawerAmd))} → {s.nonDrawerToSafe ? 'safe (cash)' : 'POS (card)'} (rest in cash)</span>}
                     </div>
 
                     <ul className="space-y-2">

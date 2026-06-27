@@ -168,15 +168,34 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const perSku = new Map<string, { variant: typeof sales[number]['lineItems'][number]['variant']; units: number; revenue: number }>();
   const perCustomer = new Map<string, { name: string; count: number; revenue: number }>();
 
+  const addPay = (key: string, amt: number) => {
+    if (amt <= 0) return;
+    const e = byPay.get(key) || { count: 0, revenue: 0 };
+    e.count += 1; e.revenue += amt; byPay.set(key, e);
+  };
   for (const s of sales) {
     const r = Number(s.totalAmd);
     totalRevenue += r;
     totalDiscount += Number(s.discountAmd);
-    if (s.cashToSafe) { toSafeRevenue += r; toSafeCount += 1; }
     if (s.customer) customers.add(s.customer.id); else walkIns += 1;
     bucket(bySp, s.sellingPoint?.name, 1, r);
     bucket(byPerson, s.soldBy.fullName, 1, r);
-    bucket(byPay, s.paymentMethod || 'OTHER', 1, r);
+    // Allocate the amount to payment buckets, honouring a part-cash split:
+    //  - the POS portion of a cash sale is really a card payment;
+    //  - the safe portion (and the rest) stays cash, like an online sale.
+    const method = s.paymentMethod || 'CASH';
+    const nonDrawer = Number(s.nonDrawerAmd);
+    const toPos = method === 'CASH' && !s.nonDrawerToSafe ? nonDrawer : 0;      // card via POS
+    const toSafeSplit = method === 'CASH' && s.nonDrawerToSafe ? nonDrawer : 0; // cash to safe
+    if (method === 'CASH') {
+      addPay('CASH', r - toPos);
+      addPay('CARD', toPos);
+    } else {
+      addPay(method, r);
+    }
+    // "To safe" overlay: full cash-to-safe (online) sales + safe split portions.
+    const toSafe = (s.cashToSafe ? r : 0) + toSafeSplit;
+    if (toSafe > 0) { toSafeRevenue += toSafe; toSafeCount += 1; }
     bumpN(byHour, yerevanHour(s.createdAt), r);
     bumpN(byWeekday, yerevanWeekday(s.createdAt), r);
     const dKey = yerevanDayKey(s.createdAt);
@@ -238,22 +257,40 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   type SaleLite = {
     saleNumber: string; when: string; customer: string; soldBy: string; sellingPoint: string;
     payment: string; total: number; discount: number; cashToSafe: boolean; weekday: number; hour: number;
+    cashAmt: number; cardAmt: number; toSafeAmt: number; note: string;
     items: { name: string; qty: number; line: number; variantId: string }[];
   };
-  const salesLite: SaleLite[] = sales.map((s) => ({
-    saleNumber: s.saleNumber,
-    when: formatYerevanDateTime(s.createdAt),
-    customer: s.customer?.fullName || 'Walk-in',
-    soldBy: s.soldBy.fullName,
-    sellingPoint: s.sellingPoint?.name || '—',
-    payment: s.paymentMethod || 'CASH',
-    total: Number(s.totalAmd),
-    discount: Number(s.discountAmd),
-    cashToSafe: s.cashToSafe,
-    weekday: yerevanWeekday(s.createdAt),
-    hour: yerevanHour(s.createdAt),
-    items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
-  }));
+  const salesLite: SaleLite[] = sales.map((s) => {
+    const total = Number(s.totalAmd);
+    const method = s.paymentMethod || 'CASH';
+    const nonDrawer = Number(s.nonDrawerAmd);
+    const toPos = method === 'CASH' && !s.nonDrawerToSafe ? nonDrawer : 0;
+    const toSafeSplit = method === 'CASH' && s.nonDrawerToSafe ? nonDrawer : 0;
+    const cashAmt = method === 'CASH' ? total - toPos : 0;
+    const cardAmt = (method === 'CARD' ? total : 0) + toPos;
+    const note = s.cashToSafe ? 'online → safe'
+      : toPos > 0 ? `split: ${formatAmd(toPos)} by card (POS)`
+      : toSafeSplit > 0 ? `split: ${formatAmd(toSafeSplit)} to safe`
+      : '';
+    return {
+      saleNumber: s.saleNumber,
+      when: formatYerevanDateTime(s.createdAt),
+      customer: s.customer?.fullName || 'Walk-in',
+      soldBy: s.soldBy.fullName,
+      sellingPoint: s.sellingPoint?.name || '—',
+      payment: method,
+      total,
+      discount: Number(s.discountAmd),
+      cashToSafe: s.cashToSafe,
+      weekday: yerevanWeekday(s.createdAt),
+      hour: yerevanHour(s.createdAt),
+      cashAmt,
+      cardAmt,
+      toSafeAmt: (s.cashToSafe ? total : 0) + toSafeSplit,
+      note,
+      items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
+    };
+  });
   function groupSales(keyFn: (s: SaleLite) => string | string[]): Map<string, SaleLite[]> {
     const m = new Map<string, SaleLite[]>();
     for (const s of salesLite) {
@@ -279,7 +316,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               <span className="font-medium truncate">{s.customer}</span>
               <span className="tabular-nums whitespace-nowrap">{formatAmd(s.total)}</span>
             </div>
-            <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.when} · {s.soldBy} · {s.sellingPoint} · {s.payment}</p>
+            <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.when} · {s.soldBy} · {s.sellingPoint} · {s.payment}{s.note ? ` · ${s.note}` : ''}</p>
             {s.items.length > 0 && <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{s.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}</p>}
           </li>
         ))}
@@ -363,6 +400,32 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     ) : <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>—</p>;
   const toBreakdown = (m: Map<string, { count: number; revenue: number }>) =>
     Array.from(m.entries()).map(([label, v]) => ({ label, count: v.count, revenue: v.revenue })).sort((a, b) => b.revenue - a.revenue);
+  // Sales behind each payment bucket (a split sale appears in both Cash and Card).
+  const salesByPayBucket: Record<string, SaleLite[]> = {
+    CASH: salesLite.filter((s) => s.cashAmt > 0),
+    CARD: salesLite.filter((s) => s.cardAmt > 0),
+    TRANSFER: salesLite.filter((s) => s.payment === 'TRANSFER'),
+    OTHER: salesLite.filter((s) => s.payment === 'OTHER'),
+  };
+  // Payment breakdown whose rows drill into the underlying sales.
+  const renderPaymentBreakdown = (rows: { label: string; count: number; revenue: number }[]) => {
+    const tot = rows.reduce((s, r) => s + r.revenue, 0);
+    return (
+      <ul className="space-y-1.5">
+        {rows.map((r) => (
+          <li key={r.label} className="border-b border-karni-100 pb-1.5 last:border-0">
+            <Drilldown title={r.label} panel={renderSales(salesByPayBucket[r.label] || [])}
+              className="flex justify-between gap-2 text-sm hover:opacity-80 transition">
+              <span className="truncate">{r.label}</span>
+              <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--ink-soft)' }}>
+                {formatAmd(r.revenue)} · {r.count}×{tot > 0 ? ` · ${Math.round((r.revenue / tot) * 100)}%` : ''}
+              </span>
+            </Drilldown>
+          </li>
+        ))}
+      </ul>
+    );
+  };
   const customerRows = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue)
     .map((c) => ({ name: c.name, sub: `${formatAmd(c.revenue)} · ${c.count}×` }));
   const repeatRows = Array.from(perCustomer.values()).filter((c) => c.count >= 2).sort((a, b) => b.count - a.count)
@@ -374,16 +437,38 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   // in the bank = every card sale minus the card money moved into the safe.
   // Also a range-scoped bank→safe figure for the metric grid.
   const bankToSafeRangeWhere = { type: 'BANK_TO_SAFE' as const, ...(startDate ? { occurredAt: { gte: startDate, lte: now } } : {}) };
-  const [cardSalesAgg, bankToSafeAgg, bankToSafeTxs, bankToSafeRangeAgg, bankToSafeRangeTxs] = await Promise.all([
+  // A "card" sale for these purposes = a CARD-method sale OR the POS portion of a
+  // part-cash sale (cash sale, split to POS, not to safe).
+  const posSplitWhere = { paymentMethod: 'CASH' as const, nonDrawerToSafe: false, nonDrawerAmd: { gt: 0 } };
+  const [cardSalesAgg, posSplitAgg, bankToSafeAgg, bankToSafeTxs, bankToSafeRangeAgg, bankToSafeRangeTxs, cardSaleRows] = await Promise.all([
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { paymentMethod: 'CARD' } }),
+    prisma.sale.aggregate({ _sum: { nonDrawerAmd: true }, where: posSplitWhere }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'BANK_TO_SAFE' } }),
     prisma.safeTransaction.findMany({ where: { type: 'BANK_TO_SAFE' }, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: bankToSafeRangeWhere }),
     prisma.safeTransaction.findMany({ where: bankToSafeRangeWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
+    prisma.sale.findMany({
+      where: { OR: [{ paymentMethod: 'CARD' }, posSplitWhere] },
+      orderBy: { createdAt: 'desc' }, take: 300,
+      include: { customer: { select: { fullName: true } }, soldBy: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, lineItems: { include: { variant: { select: { designName: true, id: true } } } } },
+    }),
   ]);
-  const cardSalesAll = Number(cardSalesAgg._sum.totalAmd ?? 0);
+  const cardSalesAll = Number(cardSalesAgg._sum.totalAmd ?? 0) + Number(posSplitAgg._sum.nonDrawerAmd ?? 0);
   const bankToSafeAll = Number(bankToSafeAgg._sum.amountAmd ?? 0);
   const cardInBank = cardSalesAll - bankToSafeAll;
+  const cardSalesAllList: SaleLite[] = cardSaleRows.map((s) => {
+    const total = Number(s.totalAmd);
+    const isSplit = (s.paymentMethod || 'CASH') === 'CASH';
+    const cardAmt = isSplit ? Number(s.nonDrawerAmd) : total;
+    return {
+      saleNumber: s.saleNumber, when: formatYerevanDateTime(s.createdAt),
+      customer: s.customer?.fullName || 'Walk-in', soldBy: s.soldBy.fullName, sellingPoint: s.sellingPoint?.name || '—',
+      payment: s.paymentMethod || 'CASH', total, discount: Number(s.discountAmd), cashToSafe: s.cashToSafe,
+      weekday: 0, hour: 0, cashAmt: total - cardAmt, cardAmt, toSafeAmt: 0,
+      note: isSplit ? `split: ${formatAmd(cardAmt)} by card (POS)` : '',
+      items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
+    };
+  });
   const bankToSafeRows = bankToSafeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
   const bankToSafeRange = Number(bankToSafeRangeAgg._sum.amountAmd ?? 0);
   const bankToSafeRangeCount = bankToSafeRangeAgg._count;
@@ -479,7 +564,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               title={t('sa.peakDay')} panel={peakWeekday ? renderHoursForWeekday(peakWeekday[0]) : renderSales([])} />
             <DrillCard label={t('sa.toSafe')} value={formatAmd(toSafeRevenue)}
               sub={`${toSafeCount}× · ${totalRevenue > 0 ? Math.round((toSafeRevenue / totalRevenue) * 100) : 0}%`}
-              title={t('sa.toSafe')} panel={renderSales(salesLite.filter((s) => s.cashToSafe))} />
+              title={t('sa.toSafe')} panel={renderSales(salesLite.filter((s) => s.toSafeAmt > 0))} />
             <DrillCard label={t('sa.discounts')} value={formatAmd(totalDiscount)}
               title={t('sa.discounts')} panel={renderSales(salesLite.filter((s) => s.discount > 0))} />
             <DrillCard label={t('sa.repeatCustomers')} value={repeatCustomers.toLocaleString()}
@@ -487,7 +572,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               title={t('sa.repeatCustomers')} panel={renderNames(repeatRows)} />
             <DrillCard label={t('sa.byPayment')} value={(payData[0]?.label || '—')}
               sub={payData[0] ? formatAmd(payData[0].value) : undefined}
-              title={t('sa.byPayment')} panel={renderBreakdown(toBreakdown(byPay))} />
+              title={t('sa.byPayment')} panel={renderPaymentBreakdown(toBreakdown(byPay))} />
             <DrillCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
               sub={spData[0] ? formatAmd(spData[0].value) : undefined}
               title={t('sa.bySellingPoint')} panel={renderBreakdown(toBreakdown(bySp))} />
@@ -502,10 +587,10 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               <Drilldown title={t('sa.bankToSafe')} className="!w-auto btn-link text-xs" panel={renderBankToSafe(bankToSafeRows)}>{t('sa.details')}</Drilldown>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div>
+              <Drilldown title={t('sa.cardSalesAll')} panel={renderSales(cardSalesAllList)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.cardSalesAll')}</p>
                 <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(cardSalesAll)}</p>
-              </div>
+              </Drilldown>
               <div>
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.bankToSafe')}</p>
                 <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>−{formatAmd(bankToSafeAll)}</p>
@@ -599,7 +684,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <p className="font-semibold">{t('sa.byPayment')}</p>
-                <Drilldown title={t('sa.byPayment')} className="!w-auto btn-link text-xs" panel={renderBreakdown(toBreakdown(byPay))}>{t('sa.details')}</Drilldown>
+                <Drilldown title={t('sa.byPayment')} className="!w-auto btn-link text-xs" panel={renderPaymentBreakdown(toBreakdown(byPay))}>{t('sa.details')}</Drilldown>
               </div>
               <DonutChart slices={payData} total={payData.reduce((s, d) => s + d.value, 0)} />
             </div>
