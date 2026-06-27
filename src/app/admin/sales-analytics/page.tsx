@@ -123,23 +123,32 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       ...saleSpWhere,
       ...(soldByIds.length ? { userId: { in: soldByIds } } : {}),
     },
+    orderBy: { openingAt: 'desc' },
     select: {
       userId: true, openingAt: true, closingAt: true,
       user: { select: { fullName: true } },
+      sellingPoint: { select: { name: true } },
       breaks: { select: { startedAt: true, endedAt: true } },
     },
   });
-  const worked = new Map<string, { name: string; hours: number; breakHours: number; shifts: number }>();
+  type ShiftRow = { in: string; out: string | null; hours: number; breakHours: number; breaks: number; point: string };
+  const worked = new Map<string, { name: string; hours: number; breakHours: number; shifts: number; rows: ShiftRow[] }>();
   for (const sh of shifts) {
     const hours = Math.min(24, Math.max(0, ((sh.closingAt?.getTime() ?? nowMs) - sh.openingAt.getTime()) / 3_600_000));
     let breakMs = 0;
     for (const b of sh.breaks) breakMs += Math.max(0, (b.endedAt?.getTime() ?? nowMs) - b.startedAt.getTime());
-    const e = worked.get(sh.userId) || { name: sh.user.fullName, hours: 0, breakHours: 0, shifts: 0 };
+    const e = worked.get(sh.userId) || { name: sh.user.fullName, hours: 0, breakHours: 0, shifts: 0, rows: [] };
     e.hours += hours; e.breakHours += breakMs / 3_600_000; e.shifts += 1;
+    e.rows.push({
+      in: formatYerevanDateTime(sh.openingAt),
+      out: sh.closingAt ? formatYerevanDateTime(sh.closingAt) : null,
+      hours, breakHours: breakMs / 3_600_000, breaks: sh.breaks.length,
+      point: sh.sellingPoint?.name || '—',
+    });
     worked.set(sh.userId, e);
   }
   const daysWorkedData = Array.from(worked.values())
-    .map((e) => ({ name: e.name, hours: e.hours, breakHours: e.breakHours, shifts: e.shifts, days: Math.round(e.hours / (HOURS_PER_DAY / 2)) / 2 }))
+    .map((e) => ({ name: e.name, hours: e.hours, breakHours: e.breakHours, shifts: e.shifts, days: Math.round(e.hours / (HOURS_PER_DAY / 2)) / 2, rows: e.rows }))
     .sort((a, b) => b.hours - a.hours);
 
   // CSV export of check-in/out + breaks, honouring the current range and filters.
@@ -739,17 +748,32 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             ) : (
               <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
                 {daysWorkedData.map((d) => (
-                  <li key={d.name} className="flex items-center justify-between gap-3 py-2">
-                    <div className="min-w-0">
-                      <span className="text-sm">{d.name}</span>
-                      <span className="block text-[11px] tabular-nums" style={{ color: 'var(--ink-soft)' }}>
-                        {d.hours.toFixed(1)}h · {d.shifts} {d.shifts === 1 ? t('sa.shift') : t('sa.shifts')}
-                        {d.breakHours > 0 && <> · {d.breakHours.toFixed(1)}h {t('sa.breaks')}</>}
-                      </span>
-                    </div>
-                    <span className="text-sm font-semibold tabular-nums shrink-0">
-                      {d.days} {d.days === 1 ? t('sa.day') : t('sa.days')}
-                    </span>
+                  <li key={d.name} className="py-1">
+                    <details className="group">
+                      <summary className="flex items-center justify-between gap-3 py-1.5 cursor-pointer select-none" style={{ listStyle: 'none' }}>
+                        <div className="min-w-0">
+                          <span className="text-sm inline-flex items-center gap-1">
+                            <svg className="transition-transform group-open:rotate-90 shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--ink-faint)' }}><polyline points="9 18 15 12 9 6" /></svg>
+                            {d.name}
+                          </span>
+                          <span className="block text-[11px] tabular-nums pl-4" style={{ color: 'var(--ink-soft)' }}>
+                            {d.hours.toFixed(1)}h · {d.shifts} {d.shifts === 1 ? t('sa.shift') : t('sa.shifts')}
+                            {d.breakHours > 0 && <> · {d.breakHours.toFixed(1)}h {t('sa.breaks')}</>}
+                          </span>
+                        </div>
+                        <span className="text-sm font-semibold tabular-nums shrink-0">
+                          {d.days} {d.days === 1 ? t('sa.day') : t('sa.days')}
+                        </span>
+                      </summary>
+                      <ul className="mt-1 mb-2 pl-4 space-y-1.5">
+                        {d.rows.map((r, i) => (
+                          <li key={i} className="text-[11px] border-l-2 pl-2" style={{ borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>
+                            <span className="block tabular-nums" style={{ color: 'var(--ink)' }}>{r.in} → {r.out || t('sa.shiftOpen')}</span>
+                            <span className="block tabular-nums">{r.point} · {r.hours.toFixed(1)}h{r.breaks > 0 ? ` · ${r.breaks} ${r.breaks === 1 ? t('sa.breakN') : t('sa.breaksN')} (${r.breakHours.toFixed(1)}h)` : ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   </li>
                 ))}
               </ul>
