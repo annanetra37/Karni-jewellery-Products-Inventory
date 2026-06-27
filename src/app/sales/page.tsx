@@ -209,7 +209,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       <span><span className="font-semibold">Point:</span> {s.sellingPoint.name}</span>
                       {s.customer?.phone && <span><span className="font-semibold">Phone:</span> {s.customer.phone}</span>}
                       {Number(s.discountAmd) > 0 && <span><span className="font-semibold">Discount:</span> −{formatAmd(Number(s.discountAmd))} (of {formatAmd(Number(s.subtotalAmd))})</span>}
-                      {Number(s.transferToBankAmd) > 0 && <span><span className="font-semibold">By transfer:</span> {formatAmd(Number(s.transferToBankAmd))} (rest in cash)</span>}
+                      {Number(s.nonDrawerAmd) > 0 && <span><span className="font-semibold">Not in drawer:</span> {formatAmd(Number(s.nonDrawerAmd))} → {s.nonDrawerToSafe ? 'safe' : 'bank'} (rest in cash)</span>}
                     </div>
 
                     <ul className="space-y-2">
@@ -237,7 +237,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                           saleId={s.id}
                           payment={(s.paymentMethod || 'CASH') as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'}
                           cashToSafe={s.cashToSafe}
-                          transferToBankAmd={Number(s.transferToBankAmd)}
+                          nonDrawerAmd={Number(s.nonDrawerAmd)}
+                          nonDrawerToSafe={s.nonDrawerToSafe}
                           customerId={s.customer?.id ?? null}
                           customerName={s.customer?.fullName ?? null}
                           sellingPointId={s.sellingPointId}

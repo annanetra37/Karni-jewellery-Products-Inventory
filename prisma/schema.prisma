@@ -309,11 +309,14 @@ model Sale {
   // A cash sale whose money went straight to the safe (online/delivery order),
   // so it never entered the drawer — excluded from drawer reconciliation.
   cashToSafe     Boolean  @default(false)
-  // Portion of a cash sale that was actually received by bank transfer / card
-  // (i.e. landed in the bank, not the drawer) — e.g. the customer later
-  // transferred part of the price. Lowers the drawer's expected cash by this
-  // amount without changing the sale total.
-  transferToBankAmd Decimal @default(0) @db.Decimal(12, 2)
+  // Portion of a cash sale that did NOT enter the drawer — the customer paid it
+  // another way (bank transfer / card) or it was handed straight to the safe.
+  // Lowers the drawer's expected cash by this amount without changing the total.
+  nonDrawerAmd   Decimal  @default(0) @db.Decimal(12, 2)
+  // Where that non-drawer portion went: the safe (true) or the company bank
+  // account (false — e.g. card / transfer). Drawer reconciliation is the same
+  // either way; this records the destination.
+  nonDrawerToSafe Boolean @default(false)
   createdAt      DateTime @default(now())
 
   sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
