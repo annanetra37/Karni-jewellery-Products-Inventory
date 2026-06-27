@@ -144,6 +144,7 @@ const D: Record<string, Record<Locale, string>> = {
   'sf.subtitle': { en: "Cash moved into the owners' safe, withdrawals, balances and reconciliation.", hy: 'Սեյֆ տեղափոխված կանխիկը, դուրսբերումները, մնացորդները և համադրումը։', ru: 'Наличные в сейфе владельцев, снятия, балансы и сверка.' },
   'sf.inSafe': { en: 'In the safe now', hy: 'Սեյֆում այժմ', ru: 'Сейчас в сейфе' },
   'sf.deposited': { en: 'Total deposited', hy: 'Ընդամենը մուտքագրված', ru: 'Всего внесено' },
+  'sf.movedIn': { en: 'Total moved in', hy: 'Ընդամենը մուտք', ru: 'Всего поступило' },
   'sf.withdrawn': { en: 'Total withdrawn', hy: 'Ընդամենը հանված', ru: 'Всего снято' },
   'sf.flags': { en: 'Reconciliation flags', hy: 'Համադրման նշումներ', ru: 'Метки сверки' },
   'sf.ownerBalances': { en: 'Owner balances', hy: 'Սեփականատերերի մնացորդ', ru: 'Балансы владельцев' },
