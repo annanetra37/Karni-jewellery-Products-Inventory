@@ -166,7 +166,7 @@ async function closeShiftAction(formData: FormData) {
   // Compute expected from cash sales between openingAt and now at this sellingPoint.
   // Cash-to-safe sales (online/delivery cash that bypassed the drawer) are excluded.
   const cashSales = await prisma.sale.aggregate({
-    _sum: { totalAmd: true, transferToBankAmd: true },
+    _sum: { totalAmd: true, nonDrawerAmd: true },
     where: {
       sellingPointId: session!.sellingPointId,
       paymentMethod: 'CASH',
@@ -174,9 +174,9 @@ async function closeShiftAction(formData: FormData) {
       createdAt: { gte: session!.openingAt },
     },
   });
-  // Only the cash actually collected entered the drawer; any part received by
-  // bank transfer / card went to the bank, so it doesn't count toward the drawer.
-  const cashRevenue = Number(cashSales._sum.totalAmd ?? 0) - Number(cashSales._sum.transferToBankAmd ?? 0);
+  // Only the cash actually collected entered the drawer; any part that went
+  // elsewhere (bank transfer / card, or straight to the safe) doesn't count.
+  const cashRevenue = Number(cashSales._sum.totalAmd ?? 0) - Number(cashSales._sum.nonDrawerAmd ?? 0);
   const baseExpected = Number(session!.openingCountAmd) + cashRevenue;
   // Drawer cash moved to the safe during the shift lowers the expected close.
   // Run the SAME reconciliation the reports use, so the close check and the

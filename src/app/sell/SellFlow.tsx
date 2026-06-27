@@ -27,6 +27,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [spId, setSpId] = useState(defaultSellingPointId || (sellingPoints[0]?.id ?? ''));
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'>('CASH');
   const [cashToSafe, setCashToSafe] = useState(false);
+  const [nonDrawer, setNonDrawer] = useState('');
+  const [nonDrawerToSafe, setNonDrawerToSafe] = useState(false);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [custQ, setCustQ] = useState('');
@@ -111,6 +113,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
           customerId,
           paymentMethod,
           cashToSafe: paymentMethod === 'CASH' ? cashToSafe : false,
+          nonDrawerAmd: paymentMethod === 'CASH' && !cashToSafe ? (Number(nonDrawer) || 0) : 0,
+          nonDrawerToSafe,
           discount,
           lines: cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
         }),
@@ -238,6 +242,25 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                   <span className="block text-xs text-karni-700">{t('s.cashToSafeHint')}</span>
                 </span>
               </label>
+            )}
+            {paymentMethod === 'CASH' && !cashToSafe && (
+              <div className="space-y-2">
+                <div>
+                  <label className="label">{t('s.nonDrawer')}</label>
+                  <input className="input" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0"
+                    value={nonDrawer} onChange={(e) => setNonDrawer(e.target.value)} />
+                  <span className="block text-xs text-karni-700 mt-1">{t('s.nonDrawerHint')}</span>
+                </div>
+                {(Number(nonDrawer) || 0) > 0 && (
+                  <div>
+                    <label className="label">{t('s.nonDrawerWhere')}</label>
+                    <select className="input" value={nonDrawerToSafe ? 'safe' : 'bank'} onChange={(e) => setNonDrawerToSafe(e.target.value === 'safe')}>
+                      <option value="bank">{t('s.nonDrawerBank')}</option>
+                      <option value="safe">{t('s.nonDrawerSafe')}</option>
+                    </select>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

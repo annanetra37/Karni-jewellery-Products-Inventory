@@ -17,6 +17,8 @@ const Body = z.object({
   customerId: z.string().nullable().optional(),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   cashToSafe: z.boolean().optional(),
+  nonDrawerAmd: z.number().min(0).optional(),
+  nonDrawerToSafe: z.boolean().optional(),
   discount: DiscountSchema.nullable().optional(),
   lines: z.array(z.object({
     variantId: z.string(),
@@ -31,7 +33,12 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { sellingPointId, customerId, paymentMethod, discount, lines } = parsed.data;
   // "Cash to safe" only makes sense for a cash sale (money that bypassed the drawer).
-  const cashToSafe = (paymentMethod || 'CASH') === 'CASH' ? (parsed.data.cashToSafe ?? false) : false;
+  const isCash = (paymentMethod || 'CASH') === 'CASH';
+  const cashToSafe = isCash ? (parsed.data.cashToSafe ?? false) : false;
+  // Portion of a cash sale that didn't enter the drawer (part-cash sale), and
+  // where it went (the safe vs the bank). Only for cash sales not already
+  // fully cash-to-safe. Clamped to the total after discount further below.
+  const nonDrawerToSafe = isCash && !cashToSafe ? (parsed.data.nonDrawerToSafe ?? false) : false;
 
   // Enforce the seller's selling-point scope server-side (UI restriction alone
   // is not enough).
@@ -91,6 +98,10 @@ export async function POST(req: NextRequest) {
 
       const subtotal = prepared.reduce((s, p) => s + p.lineTotalAmd, 0);
       const discountAmd = resolveDiscount(subtotal, discount);
+      const total = subtotal - discountAmd;
+      const nonDrawerAmd = isCash && !cashToSafe
+        ? Math.min(Math.max(0, parsed.data.nonDrawerAmd ?? 0), total)
+        : 0;
       const n = await nextNumber(tx, 'sale');
       const sNumber = saleNumber(n);
 
@@ -102,9 +113,11 @@ export async function POST(req: NextRequest) {
           soldById: u.id,
           subtotalAmd: subtotal,
           discountAmd,
-          totalAmd: subtotal - discountAmd,
+          totalAmd: total,
           paymentMethod: paymentMethod || 'CASH',
           cashToSafe,
+          nonDrawerAmd,
+          nonDrawerToSafe: nonDrawerAmd > 0 ? nonDrawerToSafe : false,
           lineItems: {
             create: prepared.map((p) => ({
               variantId: p.variantId,
