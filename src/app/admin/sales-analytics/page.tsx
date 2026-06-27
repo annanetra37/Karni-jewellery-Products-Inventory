@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { requireAdmin, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
@@ -474,6 +475,49 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const bankToSafeRangeCount = bankToSafeRangeAgg._count;
   const bankToSafeRangeRows = bankToSafeRangeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
 
+  // ---- Safe / cash box analytics (company-wide). Balance is all-time; the
+  // into/out figures are scoped to the selected period.
+  const safeRangeWhere = startDate ? { occurredAt: { gte: startDate, lte: now } } : {};
+  const [depAllAgg, wdAllAgg, depRangeAgg, wdRangeAgg, safeMovesAll, safeMovesRange] = await Promise.all([
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'DEPOSIT' } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'WITHDRAWAL' } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: { type: 'DEPOSIT', ...safeRangeWhere } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: { type: 'WITHDRAWAL', ...safeRangeWhere } }),
+    prisma.safeTransaction.findMany({ orderBy: { occurredAt: 'desc' }, take: 100, include: { owner: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, performedBy: { select: { fullName: true } } } }),
+    prisma.safeTransaction.findMany({ where: safeRangeWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { owner: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, performedBy: { select: { fullName: true } } } }),
+  ]);
+  const depositsAll = Number(depAllAgg._sum.amountAmd ?? 0);
+  const withdrawalsAll = Number(wdAllAgg._sum.amountAmd ?? 0);
+  const safeBalance = depositsAll + bankToSafeAll - withdrawalsAll;
+  const intoSafeRange = Number(depRangeAgg._sum.amountAmd ?? 0) + bankToSafeRange;
+  const outOfSafeRange = Number(wdRangeAgg._sum.amountAmd ?? 0);
+  type SafeMoveRow = { sign: number; amount: number; when: string; label: string; note: string | null };
+  const mapSafeMoves = (txs: typeof safeMovesAll): SafeMoveRow[] => txs.map((tx) => ({
+    sign: tx.type === 'WITHDRAWAL' ? -1 : 1,
+    amount: Number(tx.amountAmd),
+    when: formatYerevanDateTime(tx.occurredAt),
+    label: tx.type === 'WITHDRAWAL'
+      ? `${tx.splitAll ? 'Both owners' : tx.owner ? tx.owner.fullName : 'Withdrawal'}${tx.reason ? ` · ${tx.reason.toLowerCase()}` : ''}`
+      : tx.type === 'BANK_TO_SAFE' ? 'POS → safe'
+      : (tx.sellingPoint ? `From ${tx.sellingPoint.name}` : 'Deposit'),
+    note: tx.note,
+  }));
+  const safeMovesAllRows = mapSafeMoves(safeMovesAll);
+  const safeIntoRows = mapSafeMoves(safeMovesRange.filter((tx) => tx.type !== 'WITHDRAWAL'));
+  const safeOutRows = mapSafeMoves(safeMovesRange.filter((tx) => tx.type === 'WITHDRAWAL'));
+  const renderSafeMoves = (rows: SafeMoveRow[]) =>
+    rows.length ? (
+      <ul className="space-y-2">
+        {rows.slice(0, 80).map((r, i) => (
+          <li key={i} className="flex justify-between gap-2 text-sm border-b border-karni-100 pb-1.5 last:border-0">
+            <span className="min-w-0"><span className="block truncate">{r.label}</span>
+              <span className="block text-[11px]" style={{ color: 'var(--ink-soft)' }}>{r.when}{r.note ? ` · ${r.note}` : ''}</span></span>
+            <span className={`tabular-nums whitespace-nowrap ${r.sign < 0 ? 'text-red-700' : ''}`}>{r.sign < 0 ? '−' : '+'}{formatAmd(r.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    ) : <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>—</p>;
+
   const allSellingPoints = await prisma.sellingPoint.findMany({ orderBy: { name: 'asc' } });
   const sellingPoints = scope === null ? allSellingPoints : allSellingPoints.filter((s) => scope.includes(s.id));
   const salespeople = await prisma.user.findMany({
@@ -601,6 +645,29 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               </div>
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--ink-soft)' }}>{t('sa.cardTrackingNote')}</p>
+          </section>
+
+          {/* Safe / cash box */}
+          <section className="card">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="font-semibold">{t('sa.safeSection')}</p>
+              <Link href="/admin/safe" className="btn-link text-xs">{t('sa.openSafe')}</Link>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Drilldown title={t('sa.safeMovements')} panel={renderSafeMoves(safeMovesAllRows)} className="hover:opacity-80 transition">
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.inSafeNow')}</p>
+                <p className="display text-2xl font-bold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(safeBalance)}</p>
+              </Drilldown>
+              <Drilldown title={t('sa.intoSafe')} panel={renderSafeMoves(safeIntoRows)} className="hover:opacity-80 transition">
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.intoSafe')}</p>
+                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>+{formatAmd(intoSafeRange)}</p>
+              </Drilldown>
+              <Drilldown title={t('sa.outOfSafe')} panel={renderSafeMoves(safeOutRows)} className="hover:opacity-80 transition">
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.outOfSafe')}</p>
+                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>−{formatAmd(outOfSafeRange)}</p>
+              </Drilldown>
+            </div>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--ink-soft)' }}>{t('sa.safeNote')}</p>
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">
