@@ -617,6 +617,12 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <DrillCard label={t('sa.repeatCustomers')} value={repeatCustomers.toLocaleString()}
               sub={t('sa.repeatCustomersSub').replace('{walkins}', walkIns.toLocaleString())}
               title={t('sa.repeatCustomers')} panel={renderNames(repeatRows)} />
+            <DrillCard label={t('sa.cash')} value={formatAmd(byPay.get('CASH')?.revenue || 0)}
+              sub={`${byPay.get('CASH')?.count || 0}×`}
+              title={t('sa.cash')} panel={renderSales(salesByPayBucket.CASH, (s) => s.cashAmt)} />
+            <DrillCard label={t('sa.card')} value={formatAmd(byPay.get('CARD')?.revenue || 0)}
+              sub={`${byPay.get('CARD')?.count || 0}×`}
+              title={t('sa.card')} panel={renderSales(salesByPayBucket.CARD, (s) => s.cardAmt)} />
             <DrillCard label={t('sa.byPayment')} value={(payData[0]?.label || '—')}
               sub={payData[0] ? formatAmd(payData[0].value) : undefined}
               title={t('sa.byPayment')} panel={renderPaymentBreakdown(toBreakdown(byPay))} />
