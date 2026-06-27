@@ -12,11 +12,12 @@ const PAYMENTS = ['CASH', 'CARD', 'TRANSFER', 'OTHER'] as const;
 type Payment = (typeof PAYMENTS)[number];
 
 export function SaleEditor({
-  saleId, payment, cashToSafe, customerId, customerName, sellingPointId, subtotal, discountAmd, lines,
+  saleId, payment, cashToSafe, transferToBankAmd, customerId, customerName, sellingPointId, subtotal, discountAmd, lines,
 }: {
   saleId: string;
   payment: Payment;
   cashToSafe: boolean;
+  transferToBankAmd: number;
   customerId: string | null;
   customerName: string | null;
   sellingPointId: string;
@@ -28,6 +29,7 @@ export function SaleEditor({
   const [open, setOpen] = useState(false);
   const [pay, setPay] = useState<Payment>(payment);
   const [c2s, setC2s] = useState(cashToSafe);
+  const [transfer, setTransfer] = useState(transferToBankAmd ? String(transferToBankAmd) : '');
   const [custId, setCustId] = useState<string | null>(customerId);
   const [custLabel, setCustLabel] = useState<string>(customerName ?? '');
   const [query, setQuery] = useState('');
@@ -67,7 +69,8 @@ export function SaleEditor({
   const newDiscountAmd = resolveDiscount(subtotal, discountValueNum > 0 ? { kind: discKind, value: discountValueNum } : null);
   const newTotal = subtotal - newDiscountAmd;
   const effectiveC2s = pay === 'CASH' && c2s;
-  const dirty = pay !== payment || effectiveC2s !== cashToSafe || custId !== customerId || newDiscountAmd !== discountAmd;
+  const transferNum = pay === 'CASH' ? Math.min(Math.max(0, Number(transfer) || 0), newTotal) : 0;
+  const dirty = pay !== payment || effectiveC2s !== cashToSafe || transferNum !== transferToBankAmd || custId !== customerId || newDiscountAmd !== discountAmd;
 
   function pick(c: Customer) {
     setCustId(c.id); setCustLabel(c.fullName); setQuery(''); setResults([]); setShowList(false);
@@ -83,6 +86,7 @@ export function SaleEditor({
         body: JSON.stringify({
           paymentMethod: pay,
           cashToSafe: effectiveC2s,
+          transferToBankAmd: transferNum,
           customerId: custId,
           discount: { kind: discKind, value: discountValueNum },
         }),
@@ -128,6 +132,18 @@ export function SaleEditor({
               </span>
             </span>
           </label>
+        )}
+        {pay === 'CASH' && !c2s && (
+          <div className="mt-2">
+            <label className="label">Received by bank transfer / card (not cash)</label>
+            <input className="input" type="number" min="0" step="0.01" placeholder="0"
+              value={transfer} onChange={(e) => setTransfer(e.target.value)} />
+            <span className="block text-xs mt-1" style={{ color: 'var(--ink-soft)' }}>
+              For a part-cash, part-transfer sale — e.g. the customer paid the rest to your bank account.
+              This much is excluded from the drawer (it went to the bank); the {newTotal.toLocaleString()} ֏ total is unchanged.
+              {transferNum > 0 && <> Cash expected in drawer: <b>{(newTotal - transferNum).toLocaleString()} ֏</b>.</>}
+            </span>
+          </div>
         )}
       </div>
 
