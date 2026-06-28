@@ -8,7 +8,9 @@ export default async function AnalyticsHubPage() {
   const cards = [
     { href: '/admin/inventory', label: t('h.inventory') },          // Inventory Analytics
     { href: '/admin/sales-analytics', label: t('h.salesAnalytics') }, // Sales Analytics
+    { href: '/admin/customer-analytics', label: t('h.customerAnalytics') }, // Customer Analytics
     { href: '/admin/analytics', label: t('h.inStockAnalytics') },    // In Stock Analytics
+    { href: '/admin/safe', label: t('h.safe') },                     // Safe / Money
   ];
   return (
     <div className="space-y-4">
