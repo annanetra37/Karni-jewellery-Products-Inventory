@@ -5,7 +5,8 @@ import { ReceiveFlow } from './ReceiveFlow';
 import { Thumb } from '@/components/Thumb';
 import { getT } from '@/lib/i18n-server';
 import { formatAmd } from '@/lib/currency';
-import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
+import { yerevanDateStringStart } from '@/lib/datetime';
+import { CheckinFilters } from '@/components/CheckinFilters';
 import Link from 'next/link';
 
 const PER_PAGE = 20;
@@ -17,7 +18,7 @@ const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v
 
 export default async function ReceivePage({ searchParams }: { searchParams: Search }) {
   const user = await requireUser();
-  const { t, tl } = await getT();
+  const { t } = await getT();
   const sp = await searchParams;
   const cp = Math.max(0, Number(one(sp.cp) || 0));
   const order: 'asc' | 'desc' = one(sp.order) === 'asc' ? 'asc' : 'desc';
@@ -97,8 +98,6 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
   const lastPage = Math.max(0, Math.ceil(totalRecent / PER_PAGE) - 1);
   const start = totalRecent === 0 ? 0 : cp * PER_PAGE + 1;
   const end = Math.min(totalRecent, (cp + 1) * PER_PAGE);
-  const filtersActive = !!(who.length || point.length || from || to || q || category.length || collection.length || size.length || color.length);
-
   // Preserve filters across sort/pagination links (array filters repeat).
   const buildHref = (next: Partial<{ cp: number; order: 'asc' | 'desc' }>) => {
     const u = new URLSearchParams();
@@ -165,54 +164,15 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
           </div>
         </div>
 
-        {/* Filters — all multi-select (leave a list empty to include everything) */}
-        <form method="get" className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-1">
-          <input type="hidden" name="order" value={order} />
-          <label className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>{t('r.who')}
-            <select multiple size={4} className="input mt-1" name="who" defaultValue={who}>
-              {checkinUsers.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-            </select>
-          </label>
-          <label className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>{t('c.sellingPoint')}
-            <select multiple size={4} className="input mt-1" name="point" defaultValue={point}>
-              {sps.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-          <label className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>{t('c.collection')}
-            <select multiple size={4} className="input mt-1" name="collection" defaultValue={collection}>
-              {collections.map((c) => <option key={c} value={c}>{tl(c)}</option>)}
-            </select>
-          </label>
-          <label className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>{t('c.category')}
-            <select multiple size={4} className="input mt-1" name="category" defaultValue={category}>
-              {categories.map((c) => <option key={c} value={c}>{tl(c)}</option>)}
-            </select>
-          </label>
-          <label className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>{t('c.anySize')}
-            <select multiple size={4} className="input mt-1" name="size" defaultValue={size}>
-              {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-          <label className="text-[11px] font-semibold" style={{ color: 'var(--ink-soft)' }}>{t('c.color')}
-            <select multiple size={4} className="input mt-1" name="color" defaultValue={color}>
-              {colors.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <input className="input" name="q" defaultValue={q} placeholder={t('c.search')} />
-          <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-soft)' }}>
-            {t('r.from')}
-            <input className="input" name="from" type="date" defaultValue={from} max={yerevanISODate()} />
-          </label>
-          <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-soft)' }}>
-            {t('r.to')}
-            <input className="input" name="to" type="date" defaultValue={to} max={yerevanISODate()} />
-          </label>
-          <div className="flex items-center gap-2">
-            <button type="submit" className="btn-primary text-sm flex-1">{t('r.applyFilters')}</button>
-            {filtersActive && <Link href="/receive" scroll={false} className="btn-link text-xs">{t('r.clearFilters')}</Link>}
-          </div>
-        </form>
-        <p className="text-[11px] mb-3" style={{ color: 'var(--ink-soft)' }}>{t('r.multiHint')}</p>
+        {/* Filters — elegant multi-select dropdowns + date window */}
+        <div className="mb-3">
+          <CheckinFilters
+            who={checkinUsers.map((u) => ({ id: u.id, name: u.fullName }))}
+            points={sps.map((s) => ({ id: s.id, name: s.name }))}
+            collections={collections} categories={categories} sizes={sizes} colors={colors}
+            showSearch
+          />
+        </div>
 
         <ul className="space-y-2">
           {recent.map((m) => (

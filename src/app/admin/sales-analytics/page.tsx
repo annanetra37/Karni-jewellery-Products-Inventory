@@ -8,10 +8,13 @@ import { LineChartHover } from '@/components/LineChartHover';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
 import { Drilldown, DrillCard } from './Drilldown';
-import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanDaysAgoStart, yerevanISODate, formatYerevanDateTime } from '@/lib/datetime';
+import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanISODate, formatYerevanDateTime } from '@/lib/datetime';
+import { resolveRange } from '@/lib/dateRange';
 
 type Params = Promise<{
   range?: string;     // today | 7d | 30d | 90d | all
+  from?: string;      // YYYY-MM-DD custom range start
+  to?: string;        // YYYY-MM-DD custom range end
   sellingPointId?: string; // comma list
   soldById?: string;       // comma list
   paymentMethod?: string;  // comma list
@@ -38,15 +41,6 @@ const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon-first for the chart
 function hourLabel(h: number): string {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12} ${h < 12 ? 'AM' : 'PM'}`;
-}
-
-function startOf(range: string): Date | null {
-  // Yerevan day boundaries, independent of the process timezone.
-  if (range === 'today') return yerevanDayStart();
-  if (range === '7d') return yerevanDaysAgoStart(6);
-  if (range === '30d') return yerevanDaysAgoStart(29);
-  if (range === '90d') return yerevanDaysAgoStart(89);
-  return null; // all time
 }
 
 function fillTimeline(start: Date | null, end: Date, rev: Map<string, number>) {
@@ -90,8 +84,9 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const soldByIds = split(sp.soldById);
   const paymentMethods = split(sp.paymentMethod);
 
-  const startDate = startOf(range);
-  const now = new Date(); now.setHours(23, 59, 59, 999);
+  const rr = resolveRange({ range, from: sp.from, to: sp.to, defaultRange: '30d' });
+  const startDate = rr.startDate;
+  const now = rr.endDate;
 
   const sales = await prisma.sale.findMany({
     where: {
@@ -153,8 +148,8 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
   // CSV export of check-in/out + breaks, honouring the current range and filters.
   const shiftExportParams = new URLSearchParams();
-  if (startDate) shiftExportParams.set('from', yerevanISODate(startDate));
-  shiftExportParams.set('to', yerevanISODate());
+  if (rr.from) shiftExportParams.set('from', rr.from);
+  shiftExportParams.set('to', rr.to);
   if (sellingPointIds.length) shiftExportParams.set('sellingPointId', sellingPointIds.join(','));
   if (soldByIds.length) shiftExportParams.set('userId', soldByIds.join(','));
   const shiftsExportHref = `/api/export/shifts?${shiftExportParams.toString()}`;
@@ -567,7 +562,8 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       <section className="rounded-2xl p-5 shadow-lift border" style={{ background: 'var(--brand)', color: '#f4ecd9', borderColor: 'var(--brand-deep)' }}>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>
-            {range === 'today' ? t('sa.rangeToday') :
+            {rr.custom ? `${rr.from} → ${rr.to}` :
+             range === 'today' ? t('sa.rangeToday') :
              range === '7d' ? t('sa.range7d') :
              range === '30d' ? t('sa.range30d') :
              range === '90d' ? t('sa.range90d') :
