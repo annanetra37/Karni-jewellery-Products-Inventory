@@ -1,28 +1,19 @@
 import { requireAdmin } from '@/lib/auth';
 import { getProductionList } from '@/lib/production';
-import { formatYerevanDateTime, yerevanISODate, yerevanDateStringStart } from '@/lib/datetime';
-import Link from 'next/link';
+import { formatYerevanDateTime } from '@/lib/datetime';
+import { resolveRange } from '@/lib/dateRange';
+import { DateRangeControls } from '@/components/DateRangeControls';
 
 export const dynamic = 'force-dynamic';
 
-const RANGES = [
-  { key: '7d', label: 'Last 7 days', days: 7 },
-  { key: '30d', label: 'Last 30 days', days: 30 },
-  { key: 'all', label: 'All time', days: 0 },
-];
-
-export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ range?: string; from?: string; to?: string }> }) {
   await requireAdmin();
   const sp = await searchParams;
-  const range = RANGES.find((r) => r.key === sp.range) ?? RANGES[0];
+  const rr = resolveRange({ range: sp.range, from: sp.from, to: sp.to, defaultRange: '7d' });
 
-  const today = yerevanISODate();
-  const fromISO = range.days ? yerevanISODate(new Date(Date.now() - range.days * 24 * 60 * 60 * 1000)) : '';
-  const from = fromISO ? yerevanDateStringStart(fromISO) : null;
-  const to = range.days ? new Date(yerevanDateStringStart(today).getTime() + 24 * 60 * 60 * 1000) : null;
-  const downloadHref = range.days ? `/api/export/stockouts?from=${fromISO}&to=${today}` : '/api/export/stockouts';
+  const downloadHref = `/api/export/stockouts?from=${rr.from}&to=${rr.to}`;
 
-  const { stock, orders } = await getProductionList({ from, to });
+  const { stock, orders } = await getProductionList({ from: rr.startDate, to: rr.endDate });
 
   return (
     <div className="space-y-4">
@@ -34,17 +25,9 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         <a href={downloadHref} className="btn-primary text-sm shrink-0">Download CSV</a>
       </header>
 
-      <div className="flex flex-wrap gap-1.5">
-        {RANGES.map((r) => (
-          <Link key={r.key} href={`/admin/production?range=${r.key}`} scroll={false}
-            className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
-            style={range.key === r.key
-              ? { background: 'var(--brand)', color: '#fff' }
-              : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
-            {r.label}
-          </Link>
-        ))}
-        <span className="text-[11px] self-center" style={{ color: 'var(--ink-soft)' }}>(date range applies to stock-outs; all open orders shown)</span>
+      <div className="flex flex-col gap-1.5">
+        <DateRangeControls defaultRange="7d" />
+        <span className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>(date range applies to stock-outs; all open orders shown)</span>
       </div>
 
       {/* Low / out of stock */}

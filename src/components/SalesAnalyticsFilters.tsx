@@ -30,16 +30,28 @@ export function SalesAnalyticsFilters({
   }
   function setRange(r: string) {
     const u = new URLSearchParams(params.toString());
+    u.delete('from'); u.delete('to');
     if (r === '30d') u.delete('range'); else u.set('range', r);
+    push(u);
+  }
+  function setDate(name: 'from' | 'to', val: string) {
+    const u = new URLSearchParams(params.toString());
+    u.delete('range');
+    if (val) u.set(name, val); else u.delete(name);
     push(u);
   }
 
   const range = params.get('range') || '30d';
+  const from = params.get('from') || '';
+  const to = params.get('to') || '';
+  const custom = !!(from || to);
+  const activeRange = custom ? 'custom' : range;
+  const today = new Date().toISOString().slice(0, 10);
   const selSp = splitParam(params.get('sellingPointId'));
   const selPerson = splitParam(params.get('soldById'));
   const selPay = splitParam(params.get('paymentMethod'));
 
-  const anyActive = selSp.length > 0 || selPerson.length > 0 || selPay.length > 0 || range !== '30d';
+  const anyActive = selSp.length > 0 || selPerson.length > 0 || selPay.length > 0 || range !== '30d' || custom;
 
   const ranges: { key: string; label: string }[] = [
     { key: 'today', label: t('sa.rangeToday') },
@@ -79,17 +91,25 @@ export function SalesAnalyticsFilters({
         </button>
       </div>
 
-      {/* Date range pill bar */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Date range pill bar + custom from/to */}
+      <div className="flex flex-wrap items-center gap-1.5">
         {ranges.map((r) => (
           <button key={r.key} type="button" onClick={() => setRange(r.key)}
             className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
-            style={range === r.key
+            style={activeRange === r.key
               ? { background: 'var(--brand)', color: '#fff' }
               : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
             {r.label}
           </button>
         ))}
+        <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1"
+          style={custom ? { background: 'var(--brand)', color: '#fff' } : { background: 'var(--surface)', border: '1px solid var(--border-strong)' }}>
+          <input type="date" value={from} max={to || today} onChange={(e) => setDate('from', e.target.value)}
+            className="bg-transparent text-xs outline-none" style={{ colorScheme: 'light' }} aria-label={t('r.from')} />
+          <span className="text-xs opacity-60">–</span>
+          <input type="date" value={to} max={today} min={from || undefined} onChange={(e) => setDate('to', e.target.value)}
+            className="bg-transparent text-xs outline-none" style={{ colorScheme: 'light' }} aria-label={t('r.to')} />
+        </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

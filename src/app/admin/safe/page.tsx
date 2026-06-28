@@ -7,6 +7,8 @@ import { LineChartHover } from '@/components/LineChartHover';
 import { reconcileSessions, isMismatch } from '@/lib/reconcile';
 import { expectedCloseBySession } from '@/lib/shiftCash';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
+import { resolveRange } from '@/lib/dateRange';
+import { DateRangeControls } from '@/components/DateRangeControls';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,8 +101,10 @@ async function recordWithdrawal(formData: FormData) {
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export default async function SafePage() {
+export default async function SafePage({ searchParams }: { searchParams: Promise<{ range?: string; from?: string; to?: string }> }) {
   await requireAdmin();
+  const sp = await searchParams;
+  const rr = resolveRange({ range: sp.range, from: sp.from, to: sp.to, defaultRange: 'all' });
   const me = await getCurrentUser();
   const canEdit = isSuperAdmin(me); // only super admins record deposits/withdrawals
   const { t } = await getT();
@@ -198,6 +202,16 @@ export default async function SafePage() {
   const drawerPointIds = new Set(sessions.map((s) => s.sellingPointId));
   const pendingDeposits = deposits.filter((d) =>
     !matchedDepositIds.has(d.id) && d.fromDrawer && !!d.sellingPointId && drawerPointIds.has(d.sellingPointId));
+
+  // Movements log honours the selected date window. The summary above stays
+  // all-time (a running balance), so the period figures are shown separately.
+  const inPeriod = (d: Date) => (!rr.startDate || d >= rr.startDate) && d <= rr.endDate;
+  const periodTxs = txs.filter((tx) => inPeriod(tx.occurredAt));
+  let periodIn = 0, periodOut = 0;
+  for (const tx of periodTxs) {
+    const amt = Number(tx.amountAmd);
+    if (tx.type === 'WITHDRAWAL') periodOut += amt; else periodIn += amt;
+  }
 
   return (
     <div className="space-y-5">
@@ -389,9 +403,26 @@ export default async function SafePage() {
 
       {/* Movements log */}
       <section className="card">
-        <p className="font-semibold mb-3">{t('sf.allMovements')}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <p className="font-semibold">{t('sf.allMovements')}</p>
+          <DateRangeControls defaultRange="all" />
+        </div>
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.intoSafe')}</p>
+            <p className="display text-xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>+{formatAmd(periodIn)}</p>
+          </div>
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.outOfSafe')}</p>
+            <p className="display text-xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>−{formatAmd(periodOut)}</p>
+          </div>
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sf.netChange')}</p>
+            <p className="display text-xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{periodIn - periodOut < 0 ? '−' : '+'}{formatAmd(Math.abs(periodIn - periodOut))}</p>
+          </div>
+        </div>
         <ul className="space-y-2 text-sm">
-          {txs.slice(0, 100).map((tx) => {
+          {periodTxs.slice(0, 100).map((tx) => {
             const reasonLabel = tx.reason === 'INVESTMENT' ? t('sf.investment') : tx.reason === 'PERSONAL' ? t('sf.personal') : '';
             const who = tx.type === 'WITHDRAWAL'
               ? (tx.splitAll ? t('sf.both') : (tx.owner ? `${t('sf.by')} ${tx.owner.fullName}`.trim() : t('sf.withdrawal')))
@@ -445,7 +476,7 @@ export default async function SafePage() {
               </li>
             );
           })}
-          {txs.length === 0 && <li className="text-karni-700">{t('sf.noMovements')}</li>}
+          {periodTxs.length === 0 && <li className="text-karni-700">{t('sf.noMovements')}</li>}
         </ul>
       </section>
     </div>
