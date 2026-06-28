@@ -67,25 +67,27 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
   for (const c of candidates) {
     const isOut = c.quantity <= 0;
     const ms = byPair.get(`${c.variantId}|${c.sellingPointId}`) || []; // newest → oldest
-    // The "went" date must match the row's current state: for an OUT item we
-    // want the sale that took it to zero, not the older one that first dropped
-    // it to "low". Walk back only through the contiguous run that stayed within
-    // the relevant threshold (0 for out, reorder point for low).
+    // The "went" date must track the row's *current* level: the most recent sale
+    // that left it in its present low/out state. A low item that drops further
+    // (e.g. 2 → 1) should show the later sale, not the one that first made it
+    // low. Walk back through the contiguous run that stayed within the relevant
+    // threshold (0 for out, reorder point for low) and take the newest sale in
+    // it — which, for an OUT item, is exactly the sale that took it to zero.
     const threshold = isOut ? 0 : c.reorderPoint;
     let running = c.quantity;
-    let earliestSale: Move | null = null;
+    let triggerSale: Move | null = null;
     for (const m of ms) {
       if (running > threshold) break;
-      if (m.type === 'SALE') earliestSale = m;
+      if (m.type === 'SALE') { triggerSale = m; break; }
       running -= m.qtyDelta;
     }
-    if (!earliestSale) continue;
-    if (from && earliestSale.createdAt < from) continue;
-    if (to && earliestSale.createdAt >= to) continue;
+    if (!triggerSale) continue;
+    if (from && triggerSale.createdAt < from) continue;
+    if (to && triggerSale.createdAt >= to) continue;
     stock.push({
       product: c.designName, sku: c.sku, collection: c.collection, category: c.category,
       location: c.sellingPointName, state: isOut ? 'OUT' : 'LOW', qty: c.quantity,
-      reorderPoint: c.reorderPoint, wentAt: earliestSale.createdAt, saleNumber: earliestSale.sale?.saleNumber ?? '',
+      reorderPoint: c.reorderPoint, wentAt: triggerSale.createdAt, saleNumber: triggerSale.sale?.saleNumber ?? '',
     });
   }
   stock.sort((a, b) => b.wentAt.getTime() - a.wentAt.getTime());
