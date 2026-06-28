@@ -214,8 +214,8 @@ export default async function SafePage() {
             <p className="display text-4xl font-semibold mt-1 tabular-nums">{formatAmd(safeBalance)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.deposited')}</p>
-            <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalDeposits)}</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.movedIn')}</p>
+            <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalIn)}</p>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.withdrawn')}</p>
