@@ -161,10 +161,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  // Post-commit notifications, debounced per (sku, location).
+  // Post-commit low-stock alerts, debounced per (sku, location). Within the
+  // debounce window we *refresh* the existing alert to the current level and
+  // severity instead of skipping — otherwise an item that goes LOW then sells
+  // out moments later would keep showing a stale "1 left" while it's actually
+  // out of stock. Bumping createdAt and clearing readBy resurfaces it as new.
   if (lowStockHits.length > 0) {
     const ten = new Date(Date.now() - 10 * 60 * 1000);
     for (const r of lowStockHits) {
+      const title = `${r.remaining <= 0 ? 'Out of stock' : 'Low stock'}: ${r.variantSku}`;
+      const body = `${r.remaining} left at ${r.sellingPointName}`;
       const recent = await prisma.notification.findFirst({
         where: {
           type: 'LOW_STOCK',
@@ -172,14 +178,15 @@ export async function POST(req: NextRequest) {
           body: { contains: r.sellingPointName },
           createdAt: { gte: ten },
         },
+        orderBy: { createdAt: 'desc' },
       });
-      if (!recent) {
-        await notify({
-          type: 'LOW_STOCK', toAdmins: true,
-          title: `${r.remaining <= 0 ? 'Out of stock' : 'Low stock'}: ${r.variantSku}`,
-          body: `${r.remaining} left at ${r.sellingPointName}`,
-          relatedId: r.variantSku,
+      if (recent) {
+        await prisma.notification.update({
+          where: { id: recent.id },
+          data: { title, body, readBy: [], createdAt: new Date() },
         });
+      } else {
+        await notify({ type: 'LOW_STOCK', toAdmins: true, title, body, relatedId: r.variantSku });
       }
     }
   }
