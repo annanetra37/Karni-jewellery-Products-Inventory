@@ -1,4 +1,4 @@
-import { requireSuperAdmin, requireAdmin, isSuperAdmin, getCurrentUser } from '@/lib/auth';
+import { requireSuperAdmin, requireAdmin, isSuperAdmin, isAdmin, getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
@@ -25,7 +25,7 @@ function toDate(v: unknown): Date {
 
 async function recordDeposit(formData: FormData) {
   'use server';
-  const u = await requireSuperAdmin();
+  const u = await requireAdmin();
   const amount = Number(formData.get('amount') || 0);
   if (!amount || amount <= 0) return;
   // Source: a register drawer, "other" cash (after-hours sale), or card money
@@ -78,7 +78,7 @@ async function deleteSafeTx(formData: FormData) {
 
 async function recordWithdrawal(formData: FormData) {
   'use server';
-  const u = await requireSuperAdmin();
+  const u = await requireAdmin();
   const amount = Number(formData.get('amount') || 0);
   const ownerSel = String(formData.get('ownerId') || '');
   const reason = String(formData.get('reason') || '') === 'INVESTMENT' ? 'INVESTMENT' : 'PERSONAL';
@@ -106,7 +106,8 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   const rr = resolveRange({ range: sp.range, from: sp.from, to: sp.to, defaultRange: 'all' });
   const me = await getCurrentUser();
-  const canEdit = isSuperAdmin(me); // only super admins record deposits/withdrawals
+  const canRecord = isAdmin(me); // admins (incl. the owner) record deposits/withdrawals
+  const canEdit = isSuperAdmin(me); // only super admins edit/delete past movements
   const { t } = await getT();
 
   const [txs, sellingPoints, ownerUsers, superAdmins, sessions] = await Promise.all([
@@ -275,8 +276,8 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
         )}
       </section>
 
-      {/* Record forms — super admins only */}
-      {canEdit && (
+      {/* Record forms — any admin (incl. the owner) */}
+      {canRecord && (
       <section className="grid md:grid-cols-2 gap-3">
         <form action={recordDeposit} className="card space-y-3">
           <p className="font-semibold">{t('sf.moveToSafe')}</p>

@@ -231,7 +231,7 @@ const D: Record<string, Record<Locale, string>> = {
   'sf.movedToSafe': { en: 'to safe', hy: 'սեյֆ', ru: 'в сейф' },
   'sf.cashSource': { en: 'Where did this cash come from?', hy: 'Որտեղի՞ց է այս կանխիկը', ru: 'Откуда эти наличные?' },
   'sf.sourceDrawer': { en: 'From the drawer', hy: 'Դրամարկղից', ru: 'Из кассы' },
-  'sf.sourceOther': { en: 'Not from the drawer — e.g. after-hours sale', hy: 'Ոչ դրամարկղից — օր. ժամերից դուրս վաճառք', ru: 'Не из кассы — напр. продажа после закрытия' },
+  'sf.sourceOther': { en: 'Not from the drawer — online / after-hours sale', hy: 'Ոչ դրամարկղից — առցանց / ժամերից դուրս վաճառք', ru: 'Не из кассы — онлайн / продажа после закрытия' },
   'sf.sourceBank': { en: 'Card money from POS', hy: 'Քարտի գումար POS-ից', ru: 'Деньги с карты из POS' },
   'sf.bankToSafe': { en: 'POS → safe', hy: 'POS → սեյֆ', ru: 'POS → сейф' },
   'sf.fromBank': { en: 'Card money from POS', hy: 'Քարտի գումար POS-ից', ru: 'Деньги с карты из POS' },
