@@ -18,3 +18,8 @@ export function orderNumber(n: number) {
   const year = new Date().getFullYear();
   return `ORD-${year}-${String(n).padStart(5, '0')}`;
 }
+
+export function returnNumber(n: number) {
+  const year = new Date().getFullYear();
+  return `RET-${year}-${String(n).padStart(5, '0')}`;
+}

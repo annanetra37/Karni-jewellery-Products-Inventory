@@ -142,6 +142,7 @@ export default async function HomePage() {
       <section className="grid grid-cols-2 gap-3">
         <Link href="/sell" className="btn-primary">{t('h.startSale')}</Link>
         <Link href="/receive" className="btn-secondary">{t('h.receiveStock')}</Link>
+        <Link href="/return" className="btn-secondary">{t('rx.home')}</Link>
         <Link href="/orders/new" className="btn-secondary">{t('h.newOrder')}</Link>
         <Link href="/customers" className="btn-secondary">{t('h.customers')}</Link>
       </section>
