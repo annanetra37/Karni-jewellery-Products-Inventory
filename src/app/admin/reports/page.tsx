@@ -10,16 +10,21 @@ export default async function ReportsPage() {
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
   const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
 
-  const [todayAgg, weekAgg, byPoint, bySalesperson, topSkus, recentSessions] = await Promise.all([
-    prisma.sale.aggregate({ _sum: { totalAmd: true }, _count: true, where: { createdAt: { gte: dayStart } } }),
-    prisma.sale.aggregate({ _sum: { totalAmd: true }, _count: true, where: { createdAt: { gte: weekStart } } }),
+  // Exchange purchases are paid with returned credit, not new money — exclude
+  // them from every revenue figure. Returns then reduce revenue by their net
+  // credit (goods returned − goods taken in exchange).
+  const realSale = { returnAsExchange: { is: null } as const };
+  const [todayAgg, weekAgg, byPoint, bySalesperson, topSkus, recentSessions,
+         todayRet, weekRet] = await Promise.all([
+    prisma.sale.aggregate({ _sum: { totalAmd: true }, _count: true, where: { createdAt: { gte: dayStart }, ...realSale } }),
+    prisma.sale.aggregate({ _sum: { totalAmd: true }, _count: true, where: { createdAt: { gte: weekStart }, ...realSale } }),
     prisma.sale.groupBy({
       by: ['sellingPointId'], _sum: { totalAmd: true }, _count: true,
-      where: { createdAt: { gte: weekStart } },
+      where: { createdAt: { gte: weekStart }, ...realSale },
     }),
     prisma.sale.groupBy({
       by: ['soldById'], _sum: { totalAmd: true }, _count: true,
-      where: { createdAt: { gte: weekStart } },
+      where: { createdAt: { gte: weekStart }, ...realSale },
     }),
     prisma.saleLineItem.groupBy({
       by: ['variantId'], _sum: { quantity: true, lineTotalAmd: true },
@@ -30,7 +35,15 @@ export default async function ReportsPage() {
       orderBy: { openingAt: 'desc' }, take: 20,
       include: { sellingPoint: true, user: true, openingBy: true, closingBy: true },
     }),
+    prisma.saleReturn.aggregate({ _sum: { returnedAmd: true, exchangeAmd: true }, where: { createdAt: { gte: dayStart } } }),
+    prisma.saleReturn.aggregate({ _sum: { returnedAmd: true, exchangeAmd: true }, where: { createdAt: { gte: weekStart } } }),
   ]);
+  // Net refund = goods returned − goods taken in exchange (negative = customer
+  // paid extra, which adds to revenue).
+  const netRefund = (a: { _sum: { returnedAmd: unknown; exchangeAmd: unknown } }) =>
+    Number(a._sum.returnedAmd ?? 0) - Number(a._sum.exchangeAmd ?? 0);
+  const todayRevenue = Number(todayAgg._sum.totalAmd ?? 0) - netRefund(todayRet);
+  const weekRevenue = Number(weekAgg._sum.totalAmd ?? 0) - netRefund(weekRet);
   const sps = await prisma.sellingPoint.findMany();
   const users = await prisma.user.findMany();
   const skuVariants = topSkus.length > 0
@@ -79,12 +92,12 @@ export default async function ReportsPage() {
         <div className="card">
           <p className="text-xs text-karni-700">Today</p>
           <p className="font-bold">{todayAgg._count} sales</p>
-          <p className="text-karni-700">{formatAmd(Number(todayAgg._sum.totalAmd ?? 0))}</p>
+          <p className="text-karni-700">{formatAmd(todayRevenue)}</p>
         </div>
         <div className="card">
           <p className="text-xs text-karni-700">Last 7 days</p>
           <p className="font-bold">{weekAgg._count} sales</p>
-          <p className="text-karni-700">{formatAmd(Number(weekAgg._sum.totalAmd ?? 0))}</p>
+          <p className="text-karni-700">{formatAmd(weekRevenue)}</p>
         </div>
       </div>
 

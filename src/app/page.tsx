@@ -39,13 +39,19 @@ export default async function HomePage() {
     : { status: 'OPEN' as const };
   // Shift isolation: a salesperson only ever sees their own day's figures, so a
   // second person working the same day can't see the previous shift's numbers.
-  // Admins see the whole day across every shift.
+  // Admins see the whole day across every shift. Exchange purchases are paid
+  // with returned credit (not new money), so they're excluded from the sales
+  // count and revenue; returns then net their credit out of revenue below.
   const todayWhere = admin
+    ? { createdAt: { gte: todayStart }, returnAsExchange: { is: null } }
+    : { createdAt: { gte: todayStart }, soldById: user.id, returnAsExchange: { is: null } };
+  const todayReturnWhere = admin
     ? { createdAt: { gte: todayStart } }
-    : { createdAt: { gte: todayStart }, soldById: user.id };
-  const [todaySalesCount, todayTotalAgg, openShift, lowStock, openShifts] = await Promise.all([
+    : { createdAt: { gte: todayStart }, performedById: user.id };
+  const [todaySalesCount, todayTotalAgg, todayReturnAgg, openShift, lowStock, openShifts] = await Promise.all([
     prisma.sale.count({ where: todayWhere }),
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: todayWhere }),
+    prisma.saleReturn.aggregate({ _sum: { returnedAmd: true, exchangeAmd: true }, where: todayReturnWhere }),
     prisma.cashDrawerSession.findFirst({
       where: { userId: user.id, status: 'OPEN' },
       include: { sellingPoint: true, breaks: { where: { endedAt: null } } },
@@ -59,6 +65,8 @@ export default async function HomePage() {
         })
       : Promise.resolve([]),
   ]);
+  const todayRevenue = Number(todayTotalAgg._sum.totalAmd ?? 0)
+    - (Number(todayReturnAgg._sum.returnedAmd ?? 0) - Number(todayReturnAgg._sum.exchangeAmd ?? 0));
   // On the home page, only show OTHER people's open shifts here — the user's own
   // shift already has its dedicated card above.
   const otherOpenShifts = openShifts.filter((s) => s.userId !== user.id);
@@ -133,7 +141,7 @@ export default async function HomePage() {
         </Link>
         <div className="card block">
           <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('h.revenueToday')}</p>
-          <RevealAmount value={formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))} viewLabel={t('h.view')} hideLabel={t('h.hide')} />
+          <RevealAmount value={formatAmd(todayRevenue)} viewLabel={t('h.view')} hideLabel={t('h.hide')} />
           <Link href="/sales?range=today" className="block text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</Link>
         </div>
       </section>

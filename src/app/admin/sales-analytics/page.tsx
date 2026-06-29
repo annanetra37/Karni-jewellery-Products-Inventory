@@ -94,6 +94,10 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       ...saleSpWhere,
       ...(soldByIds.length ? { soldById: { in: soldByIds } } : {}),
       ...(paymentMethods.length ? { paymentMethod: { in: paymentMethods as never } } : {}),
+      // Exchange purchases aren't new revenue (paid with returned credit) and
+      // never entered the drawer as cash — exclude them from every metric. Their
+      // net effect is folded into `netRefund` below.
+      returnAsExchange: { is: null },
     },
     include: {
       sellingPoint: { select: { id: true, name: true } },
@@ -223,7 +227,22 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     }
   }
 
-  const avgSale = totalCount > 0 ? totalRevenue / totalCount : 0;
+  // Returns/exchanges in the same window reduce revenue by their net credit
+  // (goods returned − goods taken in exchange). A net-negative (customer paid
+  // extra) correctly adds to revenue. `totalRevenue` here is gross real sales;
+  // `netRevenue` is what's actually earned after returns.
+  const returnsAgg = await prisma.saleReturn.aggregate({
+    _sum: { returnedAmd: true, exchangeAmd: true }, _count: true,
+    where: {
+      ...(startDate ? { createdAt: { gte: startDate, lte: now } } : {}),
+      ...saleSpWhere,
+      ...(soldByIds.length ? { performedById: { in: soldByIds } } : {}),
+    },
+  });
+  const grossRevenue = totalRevenue;
+  const netRefund = Number(returnsAgg._sum.returnedAmd ?? 0) - Number(returnsAgg._sum.exchangeAmd ?? 0);
+  const netRevenue = grossRevenue - netRefund;
+  const avgSale = totalCount > 0 ? netRevenue / totalCount : 0;
   const sortByValue = (m: Map<string, { count: number; revenue: number }>) =>
     Array.from(m.entries())
       .map(([label, v]) => ({ label, value: Math.round(v.revenue), sub: `${v.count}×` }))
@@ -583,8 +602,13 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <p className="display text-4xl font-semibold mt-1">{totalCount.toLocaleString()}</p>
           </Drilldown>
           <Drilldown title={t('sa.allSales')} panel={renderSales(salesLite)} className="hover:opacity-90 transition">
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.revenue')}</p>
-            <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalRevenue)}</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.revenue')}{netRefund !== 0 && <span className="normal-case font-normal" style={{ opacity: 0.7 }}> ({t('sa.net')})</span>}</p>
+            <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(netRevenue)}</p>
+            {netRefund !== 0 && (
+              <p className="text-[11px] mt-1 tabular-nums" style={{ color: 'var(--accent)' }}>
+                {formatAmd(grossRevenue)} {netRefund > 0 ? '−' : '+'} {formatAmd(Math.abs(netRefund))} {t('sa.refundsLabel')} ({returnsAgg._count})
+              </p>
+            )}
           </Drilldown>
           <div>
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sa.avgSale')}</p>
