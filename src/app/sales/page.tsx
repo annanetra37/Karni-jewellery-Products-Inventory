@@ -4,6 +4,7 @@ import { formatAmd } from '@/lib/currency';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 import { Thumb } from '@/components/Thumb';
 import { SaleEditor } from '@/components/SaleEditor';
+import { ReturnShiftEditor } from '@/components/ReturnShiftEditor';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -139,6 +140,22 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
     ...sales.map((s) => ({ kind: 'sale' as const, at: s.createdAt, sale: s })),
     ...returns.map((r) => ({ kind: 'return' as const, at: r.createdAt, ret: r })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  // Candidate drawer sessions for re-attributing a return (super admins only).
+  const sessSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const sessionRows = canEdit && returns.length > 0
+    ? await prisma.cashDrawerSession.findMany({
+        where: { ...(scope ? { sellingPointId: { in: scope } } : {}), OR: [{ status: 'OPEN' }, { openingAt: { gte: sessSince } }] },
+        orderBy: { openingAt: 'desc' }, take: 80,
+        include: { user: { select: { fullName: true } } },
+      })
+    : [];
+  const sessionsByPoint = new Map<string, { id: string; user: string; status: string; openingAt: string }[]>();
+  for (const s of sessionRows) {
+    const arr = sessionsByPoint.get(s.sellingPointId) ?? [];
+    arr.push({ id: s.id, user: s.user.fullName, status: s.status, openingAt: s.openingAt.toISOString() });
+    sessionsByPoint.set(s.sellingPointId, arr);
+  }
 
   return (
     <div className="space-y-4">
@@ -281,6 +298,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       </ul>
                       {r.exchangeSale && (
                         <Link href={`/sale/${r.exchangeSale.id}/receipt`} className="btn-link text-xs inline-block">Exchange receipt ({r.exchangeSale.saleNumber}) →</Link>
+                      )}
+                      {canEdit && r.refundFromDrawer && (sessionsByPoint.get(r.sellingPointId)?.length ?? 0) > 0 && (
+                        <ReturnShiftEditor
+                          returnId={r.id}
+                          currentSessionId={r.cashSessionId}
+                          sessions={sessionsByPoint.get(r.sellingPointId) ?? []}
+                        />
                       )}
                     </div>
                   </details>

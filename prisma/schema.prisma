@@ -351,13 +351,16 @@ model SaleLineItem {
   variant Variant @relation(fields: [variantId], references: [id])
 }
 
-// A return / exchange event recorded in the CURRENT shift. Returned goods are
-// restocked (RETURN movements) and credited to the customer; any new pieces
-// taken in exchange are a normal linked Sale (its own SALE movements). The
-// returned credit (`returnedAmd`) is what leaves the drawer when refunded in
-// cash — drawer reconciliation subtracts it for the shift this return falls in,
-// while the exchange Sale adds its own total. Net drawer effect therefore lands
-// in the right shift, with no retroactive change to the original sale's shift.
+// A return / exchange event. Returned goods are restocked (RETURN movements)
+// and credited to the customer; any new pieces taken in exchange are a normal
+// linked Sale (its own SALE movements). The whole transaction's net cash impact
+// on a drawer is captured as a signed `drawerDeltaAmd` (negative = cash refunded
+// out) and attributed to a chosen `cashSession` — the drawer the cash actually
+// moved through — so it reconciles against the right shift even when recorded
+// later, with no change to the original sale's shift. The exchange Sale's cash
+// is represented entirely by `drawerDeltaAmd`, so it is excluded from the
+// drawer-cash sum in reconciliation (it was paid with returned credit, not new
+// money).
 model SaleReturn {
   id               String   @id @default(cuid())
   returnNumber     String   @unique
@@ -366,10 +369,16 @@ model SaleReturn {
   performedById    String
   originalSaleId   String?  // the original (gift) sale being returned, if known
   exchangeSaleId   String?  @unique // new purchase taken in exchange, if any
+  // The cash drawer session the refund/top-up actually passed through. Null =
+  // not tied to a drawer (e.g. refunded by bank transfer, or no shift was open),
+  // in which case reconciliation falls back to matching by time.
+  cashSessionId    String?
   returnedAmd      Decimal  @db.Decimal(12, 2) // credit for returned goods
   exchangeAmd      Decimal  @default(0) @db.Decimal(12, 2) // value of new items taken (denormalised)
+  // Signed net cash into(+) / out(−) of the drawer for this whole transaction.
+  drawerDeltaAmd   Decimal  @default(0) @db.Decimal(12, 2)
   // Was the credit paid out of the drawer in cash? If false (e.g. refunded by
-  // bank transfer), it does not lower the drawer's expected close.
+  // bank transfer), it does not move the drawer.
   refundFromDrawer Boolean  @default(true)
   note             String?
   createdAt        DateTime @default(now())
@@ -379,10 +388,12 @@ model SaleReturn {
   performedBy  User         @relation("ReturnPerformedBy", fields: [performedById], references: [id])
   originalSale Sale?        @relation("ReturnOriginalSale", fields: [originalSaleId], references: [id])
   exchangeSale Sale?        @relation("ReturnExchangeSale", fields: [exchangeSaleId], references: [id])
+  cashSession  CashDrawerSession? @relation(fields: [cashSessionId], references: [id])
   lineItems    SaleReturnLineItem[]
   movements    StockMovement[]
 
   @@index([sellingPointId, createdAt])
+  @@index([cashSessionId])
 }
 
 model SaleReturnLineItem {
@@ -461,6 +472,7 @@ model CashDrawerSession {
   openingBy    User         @relation("CashOpenBy", fields: [openingById], references: [id])
   closingBy    User?        @relation("CashCloseBy", fields: [closingById], references: [id])
   breaks       ShiftBreak[]
+  returns      SaleReturn[]
 
   @@index([sellingPointId, status])
   @@index([userId, openingAt])

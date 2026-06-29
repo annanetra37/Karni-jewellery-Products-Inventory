@@ -12,6 +12,10 @@ const Body = z.object({
   originalSaleId: z.string().nullable().optional(),
   // Was the credit handed back to the customer in cash from the drawer?
   refundFromDrawer: z.boolean().optional(),
+  // Which cash drawer session the refund/top-up passed through. Defaults to the
+  // selling point's current open shift. Pass null to record it untied to a
+  // drawer (reconciliation then matches by time).
+  cashSessionId: z.string().nullable().optional(),
   // How the new (exchange) items are paid for, if any are taken.
   exchangePaymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   note: z.string().max(500).optional(),
@@ -97,6 +101,31 @@ export async function POST(req: NextRequest) {
       const exchangeAmd = exchangePrepared.reduce((s, p) => s + p.lineTotalAmd, 0);
       let exchangeSaleId: string | null = null;
 
+      // Signed net cash the drawer sees: customer pays the difference in cash
+      // (positive) or is refunded the difference from the drawer (negative).
+      // Card/transfer top-ups and non-drawer refunds don't move the drawer.
+      const net = exchangeAmd - returnedAmd;
+      const drawerDeltaAmd = net >= 0
+        ? (exchangePaymentMethod === 'CASH' ? net : 0)
+        : (refundFromDrawer ? net : 0);
+
+      // Which drawer the cash moves through. Default to the point's open shift;
+      // an explicit value (including a closed shift) is honoured, null detaches
+      // it from any drawer.
+      let cashSessionId: string | null;
+      if (parsed.data.cashSessionId === undefined) {
+        const open = await tx.cashDrawerSession.findFirst({
+          where: { sellingPointId, status: 'OPEN' }, orderBy: { openingAt: 'desc' }, select: { id: true },
+        });
+        cashSessionId = open?.id ?? null;
+      } else {
+        cashSessionId = parsed.data.cashSessionId;
+        if (cashSessionId) {
+          const sess = await tx.cashDrawerSession.findUnique({ where: { id: cashSessionId }, select: { sellingPointId: true } });
+          if (!sess || sess.sellingPointId !== sellingPointId) throw new Error('That shift does not belong to this selling point.');
+        }
+      }
+
       // ---- Create the return record. ----
       const rNum = returnNumber(await nextNumber(tx, 'return'));
       const saleReturn = await tx.saleReturn.create({
@@ -106,8 +135,10 @@ export async function POST(req: NextRequest) {
           customerId: customerId || null,
           performedById: u.id,
           originalSaleId: originalSaleId || null,
+          cashSessionId,
           returnedAmd,
           exchangeAmd,
+          drawerDeltaAmd,
           refundFromDrawer,
           note: note || null,
           lineItems: {

@@ -172,24 +172,28 @@ async function closeShiftAction(formData: FormData) {
       paymentMethod: 'CASH',
       cashToSafe: false,
       createdAt: { gte: session!.openingAt },
+      // Exchange purchases are paid with returned credit, not new cash — their
+      // drawer effect is carried by the return's drawerDeltaAmd below.
+      returnAsExchange: { is: null },
     },
   });
   // Only the cash actually collected entered the drawer; any part that went
   // elsewhere (bank transfer / card, or straight to the safe) doesn't count.
   const cashRevenue = Number(cashSales._sum.totalAmd ?? 0) - Number(cashSales._sum.nonDrawerAmd ?? 0);
-  // Returns/exchanges refunded out of the drawer lower the expected close by the
-  // credited value (matches `expectedCloseBySession`, so the close check and the
-  // reports stay in lock-step).
-  const drawerRefunds = await prisma.saleReturn.aggregate({
-    _sum: { returnedAmd: true },
+  // Returns/exchanges carry a signed net drawer effect attributed to a session
+  // (or, if untied, matched by time). Adding it matches `expectedCloseBySession`,
+  // so the close check and the reports stay in lock-step.
+  const drawerReturns = await prisma.saleReturn.aggregate({
+    _sum: { drawerDeltaAmd: true },
     where: {
-      sellingPointId: session!.sellingPointId,
-      refundFromDrawer: true,
-      createdAt: { gte: session!.openingAt },
+      OR: [
+        { cashSessionId: session!.id },
+        { cashSessionId: null, sellingPointId: session!.sellingPointId, createdAt: { gte: session!.openingAt } },
+      ],
     },
   });
-  const refundOut = Number(drawerRefunds._sum.returnedAmd ?? 0);
-  const baseExpected = Number(session!.openingCountAmd) + cashRevenue - refundOut;
+  const returnDelta = Number(drawerReturns._sum.drawerDeltaAmd ?? 0);
+  const baseExpected = Number(session!.openingCountAmd) + cashRevenue + returnDelta;
   // Drawer cash moved to the safe during the shift lowers the expected close.
   // Run the SAME reconciliation the reports use, so the close check and the
   // reports can never disagree (previously this ignored mid-shift safe moves and

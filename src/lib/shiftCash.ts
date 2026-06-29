@@ -25,11 +25,13 @@ export type CashSessionWindow = {
  * opening count. The result is fed into `reconcileSessions` as `expectedCloseAmd`
  * (which still layers safe transfers on top).
  *
- * Returns/exchanges paid out of the drawer subtract their credited value
- * (`returnedAmd`) from the shift they fall in — the cash physically handed back
- * to the customer. Any new pieces taken in exchange are their own Sale and so
- * are already counted on the inflow side above; the net drawer effect therefore
- * lands in the correct shift without touching the original sale's shift.
+ * A return/exchange carries its whole net cash effect as a signed
+ * `drawerDeltaAmd` (negative = cash refunded out) attributed to a chosen
+ * `cashSessionId` — the drawer the cash actually moved through — so it lands on
+ * the right shift even when recorded later. Where no session was chosen it falls
+ * back to matching by time. The exchange half is excluded from the cash-sales
+ * sum (it was paid with returned credit, not new money — its cash, if any, is
+ * already in `drawerDeltaAmd`).
  */
 export async function expectedCloseBySession(
   sessions: CashSessionWindow[],
@@ -39,6 +41,7 @@ export async function expectedCloseBySession(
 
   const pointIds = [...new Set(sessions.map((s) => s.sellingPointId))];
   const earliest = sessions.reduce((min, s) => (s.openingAt < min ? s.openingAt : min), sessions[0].openingAt);
+  const sessionIds = new Set(sessions.map((s) => s.id));
 
   const [sales, returns] = await Promise.all([
     prisma.sale.findMany({
@@ -47,16 +50,18 @@ export async function expectedCloseBySession(
         paymentMethod: 'CASH',
         cashToSafe: false,
         createdAt: { gte: earliest },
+        returnAsExchange: { is: null },
       },
       select: { sellingPointId: true, totalAmd: true, nonDrawerAmd: true, createdAt: true },
     }),
     prisma.saleReturn.findMany({
       where: {
-        sellingPointId: { in: pointIds },
-        refundFromDrawer: true,
-        createdAt: { gte: earliest },
+        OR: [
+          { cashSessionId: { in: [...sessionIds] } },
+          { cashSessionId: null, sellingPointId: { in: pointIds }, createdAt: { gte: earliest } },
+        ],
       },
-      select: { sellingPointId: true, returnedAmd: true, createdAt: true },
+      select: { sellingPointId: true, cashSessionId: true, drawerDeltaAmd: true, createdAt: true },
     }),
   ]);
 
@@ -72,10 +77,11 @@ export async function expectedCloseBySession(
       cash += Number(sale.totalAmd) - Number(sale.nonDrawerAmd);
     }
     for (const r of returns) {
-      if (r.sellingPointId !== s.sellingPointId) continue;
-      if (r.createdAt < s.openingAt || r.createdAt >= upper) continue;
-      // Cash refunded out of the drawer for returned goods.
-      cash -= Number(r.returnedAmd);
+      // Tied to a drawer → that exact session; otherwise match by point + time.
+      const matched = r.cashSessionId != null
+        ? r.cashSessionId === s.id
+        : (r.sellingPointId === s.sellingPointId && r.createdAt >= s.openingAt && r.createdAt < upper);
+      if (matched) cash += Number(r.drawerDeltaAmd);
     }
     out.set(s.id, s.openingCountAmd + cash);
   }

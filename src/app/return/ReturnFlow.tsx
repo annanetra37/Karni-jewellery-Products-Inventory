@@ -7,6 +7,7 @@ import { ProductBrowse } from '@/components/ProductBrowse';
 import { useT } from '@/components/I18nProvider';
 
 type SP = { id: string; name: string; type: string };
+type Session = { id: string; sellingPointId: string; status: string; user: string; openingAt: string };
 type Picked = { id: string; sku: string; designName: string; color: string | null; size: string | null; priceAmd: string; quantity: number | null };
 type ReturnLine = {
   variantId: string; sku: string; designName: string; color: string | null; size: string | null;
@@ -45,7 +46,7 @@ function Picker({ label, sellingPoints, spId, onPick }: {
   );
 }
 
-export function ReturnFlow({ sellingPoints, defaultSellingPointId }: { sellingPoints: SP[]; defaultSellingPointId: string }) {
+export function ReturnFlow({ sellingPoints, defaultSellingPointId, sessions }: { sellingPoints: SP[]; defaultSellingPointId: string; sessions: Session[] }) {
   const { t } = useT();
   const [spId, setSpId] = useState(defaultSellingPointId || (sellingPoints[0]?.id ?? ''));
   const [returned, setReturned] = useState<ReturnLine[]>([]);
@@ -53,9 +54,15 @@ export function ReturnFlow({ sellingPoints, defaultSellingPointId }: { sellingPo
   const [refundFromDrawer, setRefundFromDrawer] = useState(true);
   const [exchangePay, setExchangePay] = useState<'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'>('CASH');
   const [originalSaleNo, setOriginalSaleNo] = useState('');
+  // '' = auto (the point's open shift); 'none' = not from a drawer; else a session id.
+  const [sessionChoice, setSessionChoice] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<Result | null>(null);
+
+  const pointSessions = sessions.filter((s) => s.sellingPointId === spId);
+  const openSession = pointSessions.find((s) => s.status === 'OPEN');
+  const fmtTime = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   function addReturned(r: Picked) {
     setReturned((c) => {
@@ -86,6 +93,8 @@ export function ReturnFlow({ sellingPoints, defaultSellingPointId }: { sellingPo
         body: JSON.stringify({
           sellingPointId: spId,
           refundFromDrawer,
+          // '' → server default (the point's open shift); 'none' → detached; else id.
+          cashSessionId: sessionChoice === '' ? undefined : sessionChoice === 'none' ? null : sessionChoice,
           exchangePaymentMethod: exchangePay,
           originalSaleId: null,
           note: originalSaleNo ? `Original sale: ${originalSaleNo}` : undefined,
@@ -236,6 +245,23 @@ export function ReturnFlow({ sellingPoints, defaultSellingPointId }: { sellingPo
               <span className="block text-xs text-karni-700">{t('rx.refundHint')}</span>
             </span>
           </label>
+          {refundFromDrawer && (
+            <div>
+              <label className="label">{t('rx.fromShift')}</label>
+              <select className="input" value={sessionChoice} onChange={(e) => setSessionChoice(e.target.value)}>
+                <option value="">
+                  {openSession ? `${t('rx.currentShift')} — ${openSession.user}` : t('rx.noOpenShift')}
+                </option>
+                {pointSessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.user} · {s.status === 'OPEN' ? t('rx.shiftOpen') : fmtTime(s.openingAt)}
+                  </option>
+                ))}
+                <option value="none">{t('rx.notFromDrawer')}</option>
+              </select>
+              <span className="block text-xs text-karni-700 mt-1">{t('rx.fromShiftHint')}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm pt-1 border-t border-karni-100">
             <span>{t('rx.returnedTotal')}</span><span>{AMD(returnedTotal)}</span>
           </div>
