@@ -467,11 +467,10 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   // A "card" sale for these purposes = a CARD-method sale OR the POS portion of a
   // part-cash sale (cash sale, split to POS, not to safe).
   const posSplitWhere = { paymentMethod: 'CASH' as const, nonDrawerToSafe: false, nonDrawerAmd: { gt: 0 } };
-  const [cardSalesAgg, posSplitAgg, bankToSafeAgg, bankToSafeTxs, bankToSafeRangeAgg, bankToSafeRangeTxs, cardSaleRows] = await Promise.all([
+  const [cardSalesAgg, posSplitAgg, bankToSafeAgg, bankToSafeRangeAgg, bankToSafeRangeTxs, cardSaleRows] = await Promise.all([
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { paymentMethod: 'CARD' } }),
     prisma.sale.aggregate({ _sum: { nonDrawerAmd: true }, where: posSplitWhere }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'BANK_TO_SAFE' } }),
-    prisma.safeTransaction.findMany({ where: { type: 'BANK_TO_SAFE' }, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: bankToSafeRangeWhere }),
     prisma.safeTransaction.findMany({ where: bankToSafeRangeWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
     prisma.sale.findMany({
@@ -482,7 +481,10 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   ]);
   const cardSalesAll = Number(cardSalesAgg._sum.totalAmd ?? 0) + Number(posSplitAgg._sum.nonDrawerAmd ?? 0);
   const bankToSafeAll = Number(bankToSafeAgg._sum.amountAmd ?? 0);
-  const cardInBank = cardSalesAll - bankToSafeAll;
+  const cardInBank = cardSalesAll - bankToSafeAll; // all-time running balance
+  // Card sales for the SELECTED period (filters applied) — the byPay 'CARD'
+  // bucket already folds in the POS portion of part-cash sales.
+  const cardSalesRange = Number(byPay.get('CARD')?.revenue ?? 0);
   const cardSalesAllList: SaleLite[] = cardSaleRows.map((s) => {
     const total = Number(s.totalAmd);
     const isSplit = (s.paymentMethod || 'CASH') === 'CASH';
@@ -496,7 +498,6 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
     };
   });
-  const bankToSafeRows = bankToSafeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
   const bankToSafeRange = Number(bankToSafeRangeAgg._sum.amountAmd ?? 0);
   const bankToSafeRangeCount = bankToSafeRangeAgg._count;
   const bankToSafeRangeRows = bankToSafeRangeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
@@ -666,21 +667,24 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
           <section className="card">
             <div className="flex items-center justify-between gap-3 mb-3">
               <p className="font-semibold">{t('sa.cardTracking')}</p>
-              <Drilldown title={t('sa.bankToSafe')} className="!w-auto btn-link text-xs" panel={renderBankToSafe(bankToSafeRows)}>{t('sa.details')}</Drilldown>
+              <Drilldown title={t('sa.bankToSafe')} className="!w-auto btn-link text-xs" panel={renderBankToSafe(bankToSafeRangeRows)}>{t('sa.details')}</Drilldown>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <Drilldown title={t('sa.cardSalesAll')} panel={renderSales(cardSalesAllList, (s) => s.cardAmt)} className="hover:opacity-80 transition">
-                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.cardSalesAll')}</p>
-                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(cardSalesAll)}</p>
+              <Drilldown title={t('sa.cardSales')} panel={renderSales(salesByPayBucket.CARD, (s) => s.cardAmt)} className="hover:opacity-80 transition">
+                <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.cardSales')}</p>
+                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(cardSalesRange)}</p>
+                <p className="text-[10px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.thisRange')}</p>
               </Drilldown>
-              <div>
+              <Drilldown title={t('sa.bankToSafe')} panel={renderBankToSafe(bankToSafeRangeRows)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.bankToSafe')}</p>
-                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>−{formatAmd(bankToSafeAll)}</p>
-              </div>
-              <div>
+                <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--ink-soft)' }}>−{formatAmd(bankToSafeRange)}</p>
+                <p className="text-[10px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.thisRange')}</p>
+              </Drilldown>
+              <Drilldown title={t('sa.cardInBank')} panel={renderSales(cardSalesAllList, (s) => s.cardAmt)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent-deep)' }}>{t('sa.cardInBank')}</p>
                 <p className="display text-2xl font-bold mt-1 tabular-nums" style={{ color: 'var(--accent-deep)' }}>{formatAmd(cardInBank)}</p>
-              </div>
+                <p className="text-[10px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.allTime')}</p>
+              </Drilldown>
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--ink-soft)' }}>{t('sa.cardTrackingNote')}</p>
           </section>
