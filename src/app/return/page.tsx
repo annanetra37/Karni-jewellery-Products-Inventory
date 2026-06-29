@@ -17,6 +17,27 @@ export default async function ReturnPage() {
     (openShift?.sellingPointId && allowedIds.has(openShift.sellingPointId) ? openShift.sellingPointId : '')
     || (megamall && allowedIds.has(megamall.id) ? megamall.id : '')
     || allowed[0]?.id || '';
+
+  // Recent cash sessions (open + last few days closed) at the allowed points, so
+  // a refund can be attributed to the drawer the cash actually moved through.
+  const since = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+  const sessionRows = await prisma.cashDrawerSession.findMany({
+    where: {
+      sellingPointId: { in: [...allowedIds] },
+      OR: [{ status: 'OPEN' }, { openingAt: { gte: since } }],
+    },
+    orderBy: { openingAt: 'desc' },
+    take: 40,
+    include: { user: { select: { fullName: true } } },
+  });
+  const sessions = sessionRows.map((s) => ({
+    id: s.id,
+    sellingPointId: s.sellingPointId,
+    status: s.status,
+    user: s.user.fullName,
+    openingAt: s.openingAt.toISOString(),
+  }));
+
   return (
     <div className="space-y-3">
       <h1 className="page-title">{t('rx.title')}</h1>
@@ -24,6 +45,7 @@ export default async function ReturnPage() {
       <ReturnFlow
         sellingPoints={allowed.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
         defaultSellingPointId={preferred}
+        sessions={sessions}
       />
     </div>
   );
