@@ -177,7 +177,19 @@ async function closeShiftAction(formData: FormData) {
   // Only the cash actually collected entered the drawer; any part that went
   // elsewhere (bank transfer / card, or straight to the safe) doesn't count.
   const cashRevenue = Number(cashSales._sum.totalAmd ?? 0) - Number(cashSales._sum.nonDrawerAmd ?? 0);
-  const baseExpected = Number(session!.openingCountAmd) + cashRevenue;
+  // Returns/exchanges refunded out of the drawer lower the expected close by the
+  // credited value (matches `expectedCloseBySession`, so the close check and the
+  // reports stay in lock-step).
+  const drawerRefunds = await prisma.saleReturn.aggregate({
+    _sum: { returnedAmd: true },
+    where: {
+      sellingPointId: session!.sellingPointId,
+      refundFromDrawer: true,
+      createdAt: { gte: session!.openingAt },
+    },
+  });
+  const refundOut = Number(drawerRefunds._sum.returnedAmd ?? 0);
+  const baseExpected = Number(session!.openingCountAmd) + cashRevenue - refundOut;
   // Drawer cash moved to the safe during the shift lowers the expected close.
   // Run the SAME reconciliation the reports use, so the close check and the
   // reports can never disagree (previously this ignored mid-shift safe moves and
