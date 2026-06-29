@@ -127,8 +127,11 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
   //  • Revenue = every sale's total minus the credit given for returned goods,
   //    so an exchange/refund lowers revenue instead of inflating it.
   const purchaseCount = agg._count - exchangeAgg._count;
-  const refundsTotal = Number(returnAgg._sum.returnedAmd ?? 0);
-  const grossRevenue = Number(agg._sum.totalAmd ?? 0);
+  // Gross = real sales only (exchange purchases were paid with returned credit).
+  // Net refund = goods returned − goods taken in exchange (negative = customer
+  // paid extra, which adds to revenue).
+  const grossRevenue = Number(agg._sum.totalAmd ?? 0) - Number(exchangeAgg._sum.totalAmd ?? 0);
+  const refundsTotal = Number(returnAgg._sum.returnedAmd ?? 0) - Number(returnAgg._sum.exchangeAmd ?? 0);
   const totalCount = purchaseCount;
   const totalRevenue = grossRevenue - refundsTotal;
 
@@ -221,11 +224,11 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
             <p className="display text-4xl font-semibold mt-1">{totalCount.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Revenue {refundsTotal > 0 && <span className="normal-case font-normal opacity-80">(net)</span>}</p>
+            <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>Revenue {returnAgg._count > 0 && <span className="normal-case font-normal opacity-80">(net)</span>}</p>
             <p className="display text-3xl font-semibold mt-1 tabular-nums">{formatAmd(totalRevenue)}</p>
-            {refundsTotal > 0 && (
+            {returnAgg._count > 0 && (
               <p className="text-[11px] mt-1 tabular-nums" style={{ color: 'var(--accent)' }}>
-                {formatAmd(grossRevenue)} sold − {formatAmd(refundsTotal)} returned ({returnAgg._count} {returnAgg._count === 1 ? 'return' : 'returns'})
+                {formatAmd(grossRevenue)} sold {refundsTotal >= 0 ? '−' : '+'} {formatAmd(Math.abs(refundsTotal))} {refundsTotal >= 0 ? 'returned' : 'extra paid'} ({returnAgg._count} {returnAgg._count === 1 ? 'return' : 'returns'})
               </p>
             )}
           </div>

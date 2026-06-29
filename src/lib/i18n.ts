@@ -593,6 +593,8 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.rangeAll': { en: 'All time', hy: 'Ամբողջ ժամանակ', ru: 'Всё время' },
   'sa.salesCount': { en: 'Sales', hy: 'Վաճառքներ', ru: 'Продажи' },
   'sa.revenue': { en: 'Revenue', hy: 'Հասույթ', ru: 'Выручка' },
+  'sa.net': { en: 'net', hy: 'զուտ', ru: 'нетто' },
+  'sa.refundsLabel': { en: 'returned', hy: 'վերադարձ', ru: 'возврат' },
   'sa.avgSale': { en: 'Avg. sale', hy: 'Միջին վաճառք', ru: 'Средний чек' },
   'sa.uniqueCustomers': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
   'sa.empty': { en: 'No sales in this period.', hy: 'Այս ժամանակահատվածում վաճառք չկա։', ru: 'Нет продаж за этот период.' },
