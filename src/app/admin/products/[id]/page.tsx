@@ -4,6 +4,7 @@ import { METAL_TYPES, FILLING_MATERIALS, PLATING_TYPES, sumCost } from '@/lib/ma
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
+import { BackLink } from '@/components/BackLink';
 import { ImageUploadField } from '@/components/ImageUploadField';
 
 async function saveAction(formData: FormData) {
@@ -169,7 +170,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link href="/admin/products" className="btn-link">← Back to products</Link>
+        <BackLink fallback="/admin/products" className="btn-link">← Back to products</BackLink>
         <span className="chip">{totalStock} on hand</span>
       </div>
       <header>
