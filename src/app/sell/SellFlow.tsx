@@ -20,11 +20,13 @@ type CartLine = {
   stockAtSp: number;
 };
 type Customer = { id: string; fullName: string; phone: string | null; email: string | null };
+type Seller = { id: string; name: string; onShift: boolean };
 
-export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoints: SP[]; defaultSellingPointId: string }) {
+export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [spId, setSpId] = useState(defaultSellingPointId || (sellingPoints[0]?.id ?? ''));
+  const [soldById, setSoldById] = useState(currentUserId || sellers[0]?.id || '');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'>('CASH');
   const [cashToSafe, setCashToSafe] = useState(false);
   const [nonDrawer, setNonDrawer] = useState('');
@@ -111,6 +113,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
         body: JSON.stringify({
           sellingPointId: spId,
           customerId,
+          soldById: soldById || undefined,
           paymentMethod,
           cashToSafe: paymentMethod === 'CASH' ? cashToSafe : false,
           nonDrawerAmd: paymentMethod === 'CASH' && !cashToSafe ? (Number(nonDrawer) || 0) : 0,
@@ -224,6 +227,17 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
+            {sellers.length > 1 && (
+              <div>
+                <label className="label">{t('s.soldBy')}</label>
+                <select className="input" value={soldById} onChange={(e) => setSoldById(e.target.value)}>
+                  {sellers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}{s.onShift ? ` · ${t('s.onShift')}` : ''}</option>
+                  ))}
+                </select>
+                <span className="block text-xs text-karni-700 mt-1">{t('s.soldByHint')}</span>
+              </div>
+            )}
             <div>
               <label className="label">{t('s.paymentMethod')}</label>
               <div className="grid grid-cols-4 gap-2">
