@@ -103,7 +103,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       sellingPoint: { select: { id: true, name: true } },
       soldBy: { select: { id: true, fullName: true } },
       customer: { select: { id: true, fullName: true } },
-      lineItems: { include: { variant: { select: { id: true, sku: true, designName: true, category: true, collection: true, color: true, size: true, imageUrl: true } } } },
+      lineItems: { include: { variant: { select: { id: true, sku: true, designName: true, category: true, collection: true, color: true, size: true, imageUrl: true, excludeFromTopSellers: true } } } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -267,6 +267,12 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const catData = sortByCount(byCat);
   const collData = sortByValue(byCollection);
   const topSkus = Array.from(perSku.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  // Top 5 most sold by UNITS, excluding default add-ons (e.g. the accessory
+  // chain bundled with pendants) so a real best-seller isn't hidden behind it.
+  const topSold = Array.from(perSku.values())
+    .filter((p) => !p.variant.excludeFromTopSellers)
+    .sort((a, b) => b.units - a.units)
+    .slice(0, 5);
   const topCustomers = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   const timeline = fillTimeline(startDate, now, revByDay);
 
@@ -853,6 +859,36 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
                 {topCustomers.length === 0 && <li className="text-sm text-center" style={{ color: 'var(--ink-soft)' }}>—</li>}
               </ul>
             </div>
+          </section>
+
+          <section className="card">
+            <p className="font-semibold mb-1">{t('sa.topSold')}</p>
+            <p className="text-xs mb-3" style={{ color: 'var(--ink-soft)' }}>{t('sa.topSoldHint')}</p>
+            {topSold.length === 0 ? (
+              <p className="text-sm text-center py-4" style={{ color: 'var(--ink-soft)' }}>—</p>
+            ) : (
+              <ul className="space-y-2">
+                {topSold.map((it, i) => (
+                  <li key={it.variant.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                    <Drilldown title={it.variant.designName} panel={renderSkuBuyers(it.variant.id)}
+                      className="flex items-center gap-3 hover:opacity-80 transition">
+                      <span className="display text-lg font-semibold w-5 text-center shrink-0" style={{ color: 'var(--accent-deep)' }}>{i + 1}</span>
+                      <Thumb src={it.variant.imageUrl} alt={it.variant.designName} size={12} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{it.variant.designName}
+                          <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> · {[it.variant.color, it.variant.size].filter(Boolean).join(' · ')}</span>
+                        </p>
+                        <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{it.variant.sku}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-bold tabular-nums">{it.units} u.</p>
+                        <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{formatAmd(it.revenue)}</p>
+                      </div>
+                    </Drilldown>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="card">

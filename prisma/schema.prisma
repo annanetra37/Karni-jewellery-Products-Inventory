@@ -159,6 +159,9 @@ model Variant {
   imageUrl      String?
   weightG       Decimal? @db.Decimal(10, 3)
   reorderPoint  Int      @default(2)
+  // A default add-on (e.g. the accessory chain bundled with pendants) that would
+  // otherwise dominate the "most sold" lists — excluded from top-seller reports.
+  excludeFromTopSellers Boolean @default(false)
   status        VariantStatus @default(ACTIVE)
   onWebsite     Boolean  @default(false)
   onEtsy        Boolean  @default(false)

@@ -15,6 +15,10 @@ function escapeHtml(s: string): string {
 const Body = z.object({
   sellingPointId: z.string(),
   customerId: z.string().nullable().optional(),
+  // Who actually made the sale — picked at checkout on a shared device so each
+  // rep's sales count toward their own performance regardless of who is logged
+  // in. Defaults to the logged-in user.
+  soldById: z.string().optional(),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   cashToSafe: z.boolean().optional(),
   nonDrawerAmd: z.number().min(0).optional(),
@@ -45,6 +49,15 @@ export async function POST(req: NextRequest) {
   const scope = await sellingPointScope(u);
   if (scope && !scope.includes(sellingPointId)) {
     return NextResponse.json({ error: 'You do not have access to this selling point.' }, { status: 403 });
+  }
+
+  // Resolve who the sale is credited to. On a shared device the cashier picks
+  // the rep who served the customer; we accept it only if it's an active user,
+  // otherwise fall back to the logged-in account.
+  let soldById = u.id;
+  if (parsed.data.soldById && parsed.data.soldById !== u.id) {
+    const seller = await prisma.user.findFirst({ where: { id: parsed.data.soldById, isActive: true }, select: { id: true } });
+    if (seller) soldById = seller.id;
   }
 
   // Reject duplicate variantIds — caller should consolidate first.
@@ -110,7 +123,7 @@ export async function POST(req: NextRequest) {
           saleNumber: sNumber,
           sellingPointId,
           customerId: customerId || null,
-          soldById: u.id,
+          soldById,
           subtotalAmd: subtotal,
           discountAmd,
           totalAmd: total,

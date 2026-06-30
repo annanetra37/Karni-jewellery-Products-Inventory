@@ -44,6 +44,7 @@ async function saveAction(formData: FormData) {
   const onEtsy = formData.get('onEtsy') === 'on';
   const onIg = formData.get('onIg') === 'on';
   const inStockists = formData.get('inStockists') === 'on';
+  const excludeFromTopSellers = formData.get('excludeFromTopSellers') === 'on';
 
   // Image was already uploaded to blob storage client-side; we just store the URL.
   const imageUrl = String(formData.get('imageUrl') || '').trim() || null;
@@ -69,7 +70,7 @@ async function saveAction(formData: FormData) {
         metalType, metalCostAmd, fillingMaterial, fillingCostAmd,
         platingType, platingCostAmd, laborCostAmd,
         imageUrl, status,
-        onWebsite, onEtsy, onIg, inStockists,
+        onWebsite, onEtsy, onIg, inStockists, excludeFromTopSellers,
         priceUsd: r.USD ? priceAmd * r.USD : undefined,
         priceEur: r.EUR ? priceAmd * r.EUR : undefined,
         priceRub: r.RUB ? priceAmd * r.RUB : undefined,
@@ -314,6 +315,12 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <label className="flex items-center gap-2"><input type="checkbox" name="onIg" defaultChecked={v.onIg} className="accent-karni-600" /> Instagram</label>
             <label className="flex items-center gap-2"><input type="checkbox" name="inStockists" defaultChecked={v.inStockists} className="accent-karni-600" /> Consignment</label>
           </div>
+          <label className="flex items-start gap-2 text-sm mt-1">
+            <input type="checkbox" name="excludeFromTopSellers" defaultChecked={v.excludeFromTopSellers} className="accent-karni-600 mt-0.5" />
+            <span>Exclude from “most sold” reports
+              <span className="block text-xs" style={{ color: 'var(--ink-soft)' }}>For default add-ons like the accessory chain bundled with pendants.</span>
+            </span>
+          </label>
         </fieldset>
 
         <div className="flex flex-wrap gap-2">

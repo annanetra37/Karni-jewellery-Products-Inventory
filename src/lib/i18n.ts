@@ -377,6 +377,13 @@ const D: Record<string, Record<Locale, string>> = {
   's.confirmSell': { en: 'Confirm & Sell', hy: 'Հաստատել և վաճառել', ru: 'Подтвердить и продать' },
   's.saleFailed': { en: 'Sale could not be saved', hy: 'Վաճառքը չհաջողվեց պահպանել', ru: 'Не удалось сохранить продажу' },
   's.stockHere': { en: 'Stock here', hy: 'Մնացորդն այստեղ', ru: 'Остаток здесь' },
+  's.soldBy': { en: 'Sold by', hy: 'Վաճառեց', ru: 'Продавец' },
+  's.onShift': { en: 'on shift', hy: 'հերթափոխին', ru: 'на смене' },
+  's.soldByHint': {
+    en: 'Pick the rep who served the customer — this sale counts toward their performance, whoever is logged in.',
+    hy: 'Ընտրեք հաճախորդին սպասարկած աշխատակցին — այս վաճառքը հաշվվում է նրա արդյունքին, անկախ նրանից թե ով է մուտք գործել։',
+    ru: 'Выберите продавца, обслужившего клиента — продажа засчитается ему, кто бы ни был в системе.',
+  },
 
   // Receive
   'r.title': { en: 'Receive stock', hy: 'Ապրանքի ընդունում', ru: 'Приём товара' },
@@ -698,6 +705,12 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.cardInBank': { en: 'Card at POS now', hy: 'Քարտի մնացորդ POS-ում', ru: 'На POS сейчас' },
   'sa.cardTrackingNote': { en: 'Card sales and POS → safe cover the selected period; Card at POS now is the current running balance (all card sales minus all moved to the safe). Company-wide.', hy: 'Քարտով վաճառքը և POS → սեյֆը ընտրված ժամանակահատվածի համար են, Քարտի մնացորդը POS-ում ընթացիկ մնացորդն է (բոլոր քարտային վաճառքները հանած սեյֆ տեղափոխվածը)։ Ընկերության ընդհանուր։', ru: 'Продажи картой и POS → сейф — за выбранный период; На POS сейчас — текущий баланс (все продажи картой минус перемещённое в сейф). По всей компании.' },
   'sa.topSkus': { en: 'Top products', hy: 'Լավագույն ապրանքներ', ru: 'Топ товаров' },
+  'sa.topSold': { en: 'Top 5 most sold', hy: 'Ամենավաճառվող 5-ը', ru: 'Топ-5 продаваемых' },
+  'sa.topSoldHint': {
+    en: 'By units, excluding default add-ons. Tap one to see who bought it, when and from whom.',
+    hy: 'Ըստ քանակի, առանց լռելյայն հավելումների։ Սեղմեք՝ տեսնելու ով, երբ և ումից է գնել։',
+    ru: 'По штукам, без стандартных дополнений. Нажмите, чтобы увидеть кто, когда и у кого купил.',
+  },
   'sa.salesperson': { en: 'Salesperson', hy: 'Վաճառող', ru: 'Продавец' },
   'sa.paymentMethod': { en: 'Payment', hy: 'Վճարում', ru: 'Оплата' },
   'sa.allPayments': { en: 'All payments', hy: 'Բոլոր վճարումները', ru: 'Все оплаты' },
