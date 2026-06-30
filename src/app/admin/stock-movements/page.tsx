@@ -21,6 +21,7 @@ export default async function StockMovementsIndex() {
           linkBase="/admin/stock-movements"
           hideStock
           autoFocus
+          urlSync
         />
       </div>
     </div>

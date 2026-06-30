@@ -73,6 +73,13 @@ export default async function HomePage() {
   // shift already has its dedicated card above.
   const otherOpenShifts = openShifts.filter((s) => s.userId !== user.id);
 
+  // Open team notes, surfaced on every home load so whoever is on shift sees them.
+  const openNotes = await prisma.teamNote.findMany({
+    where: { resolvedAt: null }, orderBy: { createdAt: 'desc' }, take: 5,
+    include: { author: { select: { fullName: true } } },
+  });
+  const openNotesCount = await prisma.teamNote.count({ where: { resolvedAt: null } });
+
   return (
     <div className="space-y-4">
       <section className="flex items-start justify-between gap-3">
@@ -132,6 +139,32 @@ export default async function HomePage() {
           </ul>
         </Link>
       )}
+
+      {/* Team notes — shared handover board, visible to everyone on login. */}
+      <Link href="/notes" className="card-interactive block">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>
+            {t('tn.home')}
+            {openNotesCount > 0 && <span className="chip chip-accent ml-2">{openNotesCount}</span>}
+          </p>
+          <span style={{ color: 'var(--ink-soft)' }}>›</span>
+        </div>
+        {openNotes.length === 0 ? (
+          <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('tn.none')}</p>
+        ) : (
+          <ul className="space-y-1">
+            {openNotes.map((n) => (
+              <li key={n.id} className="text-sm flex justify-between gap-2">
+                <span className="truncate">{n.body}</span>
+                <span className="text-[11px] shrink-0" style={{ color: 'var(--ink-soft)' }}>{n.author.fullName}</span>
+              </li>
+            ))}
+            {openNotesCount > openNotes.length && (
+              <li className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>+{openNotesCount - openNotes.length} {t('tn.viewAll').toLowerCase()}…</li>
+            )}
+          </ul>
+        )}
+      </Link>
 
       {/* Store sales figures — only admins, or a sales user with an open shift. */}
       {(admin || openShift) && (

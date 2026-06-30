@@ -100,6 +100,8 @@ model User {
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   returnsPerformed SaleReturn[]      @relation("ReturnPerformedBy")
   receivingBatches ReceivingBatch[]  @relation("ReceivingBatchBy")
+  teamNotes        TeamNote[]        @relation("TeamNoteAuthor")
+  teamNotesResolved TeamNote[]       @relation("TeamNoteResolvedBy")
   notifications    Notification[]
   adminSellingPoints AdminSellingPoint[]
   safeWithdrawals  SafeTransaction[] @relation("SafeOwner")
@@ -545,6 +547,23 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, isRead, createdAt])
+}
+
+// A shared note any signed-in user can post for the whole team — handover info,
+// "customer X will come back tomorrow for Y", reminders. Visible to everyone so
+// the next person on shift stays updated. Anyone can mark one done.
+model TeamNote {
+  id           String    @id @default(cuid())
+  body         String
+  authorId     String
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime  @default(now())
+
+  author     User  @relation("TeamNoteAuthor", fields: [authorId], references: [id])
+  resolvedBy User? @relation("TeamNoteResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([resolvedAt, createdAt])
 }
 
 model FxRate {

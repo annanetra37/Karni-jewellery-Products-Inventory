@@ -421,10 +421,10 @@ const D: Record<string, Record<Locale, string>> = {
   'r.bookNote': { en: 'Note (e.g. book page no.)', hy: 'Նշում (օր. գրքի էջի համարը)', ru: 'Заметка (напр. № страницы)' },
   'r.bookPageBatches': { en: 'Receiving sessions with book pages', hy: 'Ընդունման սեսիաներ գրքի էջերով', ru: 'Сессии приёма со страницами книги' },
   'r.received': { en: 'received', hy: 'ընդունված', ru: 'принято' },
-  'r.viewMovements': { en: 'Stock movements', hy: 'Պաշարի շարժեր', ru: 'Движения склада' },
+  'r.viewMovements': { en: 'Stock movements', hy: 'Պահեստի ապրանքների շարժ', ru: 'Движения склада' },
 
   // Stock movement history (per variant)
-  'sm.title': { en: 'Stock movements', hy: 'Պաշարի շարժեր', ru: 'Движения склада' },
+  'sm.title': { en: 'Stock movements', hy: 'Պահեստի ապրանքների շարժ', ru: 'Движения склада' },
   'sm.subtitle': {
     en: 'Pick a piece to see its full history — when it was received and by whom, when and to whom it was sold, and how many are in stock now.',
     hy: 'Ընտրեք իրը՝ տեսնելու դրա ողջ պատմությունը — երբ և ով է ընդունել, երբ և ում է վաճառվել, և քանի հատ կա պահեստում հիմա։',
@@ -444,6 +444,24 @@ const D: Record<string, Record<Locale, string>> = {
   'sm.tTRANSFER': { en: 'Transfer', hy: 'Փոխանցում', ru: 'Перемещение' },
   'sm.tSAMPLE_GIFT': { en: 'Sample / gift', hy: 'Նմուշ / նվեր', ru: 'Образец / подарок' },
   'sm.tDAMAGE_LOSS': { en: 'Damage / loss', hy: 'Վնաս / կորուստ', ru: 'Брак / потеря' },
+
+  // Team notes (shared board)
+  'tn.title': { en: 'Team notes', hy: 'Թիմի նշումներ', ru: 'Заметки команды' },
+  'tn.subtitle': {
+    en: 'Shared notes for everyone — handovers, reminders, "a customer is coming back tomorrow for X". Whoever is on shift next sees them.',
+    hy: 'Ընդհանուր նշումներ բոլորի համար — հանձնումներ, հիշեցումներ, «հաճախորդը վաղը կգա X-ի համար»։ Հաջորդ հերթափոխի աշխատողը կտեսնի դրանք։',
+    ru: 'Общие заметки для всех — передачи смены, напоминания, «клиент вернётся завтра за X». Следующий на смене их увидит.',
+  },
+  'tn.placeholder': { en: 'Write a note for the team…', hy: 'Գրեք նշում թիմի համար…', ru: 'Напишите заметку для команды…' },
+  'tn.post': { en: 'Post note', hy: 'Հրապարակել', ru: 'Опубликовать' },
+  'tn.open': { en: 'Open', hy: 'Բաց', ru: 'Открытые' },
+  'tn.none': { en: 'No open notes.', hy: 'Բաց նշումներ չկան։', ru: 'Открытых заметок нет.' },
+  'tn.markDone': { en: 'Mark done', hy: 'Նշել կատարված', ru: 'Отметить выполненным' },
+  'tn.resolved': { en: 'Done', hy: 'Կատարված', ru: 'Выполненные' },
+  'tn.reopen': { en: 'Reopen', hy: 'Վերաբացել', ru: 'Открыть снова' },
+  'tn.doneBy': { en: 'done by', hy: 'կատարեց', ru: 'выполнил(а)' },
+  'tn.home': { en: 'Team notes', hy: 'Թիմի նշումներ', ru: 'Заметки команды' },
+  'tn.viewAll': { en: 'All notes', hy: 'Բոլոր նշումները', ru: 'Все заметки' },
 
   // Return / exchange
   'rx.title': { en: 'Return / exchange', hy: 'Վերադարձ / փոխանակում', ru: 'Возврат / обмен' },

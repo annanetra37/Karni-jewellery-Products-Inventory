@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { Thumb } from '@/components/Thumb';
 import { getT } from '@/lib/i18n-server';
+import { BackLink } from '@/components/BackLink';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +38,7 @@ export default async function VariantMovementsPage({ params }: { params: Promise
       <div className="space-y-3">
         <h1 className="page-title">{t('sm.title')}</h1>
         <div className="card text-center py-10" style={{ color: 'var(--ink-soft)' }}>{t('sm.notFound')}</div>
-        <Link href="/admin/stock-movements" className="btn-secondary inline-flex">← {t('sm.title')}</Link>
+        <BackLink fallback="/admin/stock-movements" className="btn-secondary inline-flex">← {t('sm.title')}</BackLink>
       </div>
     );
   }
@@ -48,7 +49,7 @@ export default async function VariantMovementsPage({ params }: { params: Promise
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/stock-movements" className="btn-link text-sm">← {t('sm.title')}</Link>
+      <BackLink fallback="/admin/stock-movements" className="btn-link text-sm">← {t('sm.title')}</BackLink>
 
       <section className="card flex items-center gap-3">
         <Thumb src={variant.imageUrl} alt={variant.designName} size={16} />
