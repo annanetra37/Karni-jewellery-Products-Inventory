@@ -95,6 +95,7 @@ model User {
   cashOpens        CashDrawerSession[] @relation("CashOpenBy")
   cashCloses       CashDrawerSession[] @relation("CashCloseBy")
   shifts           CashDrawerSession[] @relation("ShiftUser")
+  shiftParticipations ShiftParticipant[] @relation("ShiftParticipantUser")
   customersCreated Customer[]        @relation("CustomerCreatedBy")
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   returnsPerformed SaleReturn[]      @relation("ReturnPerformedBy")
@@ -494,6 +495,7 @@ model CashDrawerSession {
   openingBy    User         @relation("CashOpenBy", fields: [openingById], references: [id])
   closingBy    User?        @relation("CashCloseBy", fields: [closingById], references: [id])
   breaks       ShiftBreak[]
+  participants ShiftParticipant[]
   returns      SaleReturn[]
 
   @@index([sellingPointId, status])
@@ -509,6 +511,25 @@ model ShiftBreak {
   session CashDrawerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
+}
+
+// Who is working a shift. The drawer (CashDrawerSession) is shared per selling
+// point and counted once; each sales rep present is a participant. The first to
+// arrive opens (counts the drawer) and is a participant; others join without
+// recounting. Sales are still attributed per rep via Sale.soldById; this records
+// attendance/hours and lets every participant see they're on shift.
+model ShiftParticipant {
+  id        String    @id @default(cuid())
+  sessionId String
+  userId    String
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+
+  session CashDrawerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User              @relation("ShiftParticipantUser", fields: [userId], references: [id])
+
+  @@index([sessionId])
+  @@index([userId, joinedAt])
 }
 
 model Notification {

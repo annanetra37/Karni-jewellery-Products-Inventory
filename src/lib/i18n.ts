@@ -503,6 +503,14 @@ const D: Record<string, Record<Locale, string>> = {
     ru: 'Если ваш подсчёт отличается от того, что оставил предыдущий сотрудник, оба числа сохраняются, и админ получает уведомление.',
   },
   'k.shiftOpen': { en: 'Cash drawer is open', hy: 'Դրամարկղը բաց է', ru: 'Касса открыта' },
+  'k.onShift': { en: 'On shift', hy: 'Հերթափոխին', ru: 'На смене' },
+  'k.joinShift': { en: 'Join this shift', hy: 'Միանալ այս հերթափոխին', ru: 'Присоединиться к смене' },
+  'k.leaveShift': { en: 'Leave (don\'t close drawer)', hy: 'Հեռանալ (առանց փակելու)', ru: 'Уйти (не закрывая кассу)' },
+  'k.joinHint': {
+    en: 'A shift is already open at this point. The drawer is counted — join it to start selling under your own name (your sales stay yours).',
+    hy: 'Այս կետում արդեն բաց հերթափոխ կա։ Դրամարկղը հաշված է — միացեք՝ ձեր անունով վաճառք սկսելու համար (ձեր վաճառքները մնում են ձերը)։',
+    ru: 'На этой точке уже открыта смена. Касса пересчитана — присоединитесь, чтобы продавать под своим именем (ваши продажи остаются вашими).',
+  },
   'k.closeHint': {
     en: 'Leaving? Count the cash in the drawer and enter it here to close the shift and hand over.',
     hy: 'Հեռանու՞մ եք։ Հաշվեք դրամարկղի կանխիկը և մուտքագրեք այստեղ՝ հերթափոխը փակելու և հանձնելու համար։',

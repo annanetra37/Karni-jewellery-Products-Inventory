@@ -116,35 +116,44 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   // shift is capped at 24h to absorb a forgotten close.
   const HOURS_PER_DAY = 12;
   const nowMs = Date.now();
-  const shifts = await prisma.cashDrawerSession.findMany({
+  // Hours are per PARTICIPANT, not per drawer: when two reps share one shift,
+  // each person's own time on shift (join → leave / now) is counted, so both
+  // get credit even though the drawer was opened once.
+  const participations = await prisma.shiftParticipant.findMany({
     where: {
-      ...(startDate ? { openingAt: { gte: startDate, lte: now } } : {}),
-      ...saleSpWhere,
+      ...(startDate ? { joinedAt: { gte: startDate, lte: now } } : {}),
       ...(soldByIds.length ? { userId: { in: soldByIds } } : {}),
+      session: { ...saleSpWhere },
     },
-    orderBy: { openingAt: 'desc' },
+    orderBy: { joinedAt: 'desc' },
     select: {
-      userId: true, openingAt: true, closingAt: true,
+      userId: true, joinedAt: true, leftAt: true,
       user: { select: { fullName: true } },
-      sellingPoint: { select: { name: true } },
-      breaks: { select: { startedAt: true, endedAt: true } },
+      session: { select: { sellingPoint: { select: { name: true } }, breaks: { select: { startedAt: true, endedAt: true } } } },
     },
   });
   type ShiftRow = { in: string; out: string | null; hours: number; breakHours: number; breaks: number; point: string };
   const worked = new Map<string, { name: string; hours: number; breakHours: number; shifts: number; rows: ShiftRow[] }>();
-  for (const sh of shifts) {
-    const hours = Math.min(24, Math.max(0, ((sh.closingAt?.getTime() ?? nowMs) - sh.openingAt.getTime()) / 3_600_000));
+  for (const p of participations) {
+    const startMs = p.joinedAt.getTime();
+    const endMs = p.leftAt?.getTime() ?? nowMs;
+    const hours = Math.min(24, Math.max(0, (endMs - startMs) / 3_600_000));
+    // Only count the part of each break that overlaps this person's time.
     let breakMs = 0;
-    for (const b of sh.breaks) breakMs += Math.max(0, (b.endedAt?.getTime() ?? nowMs) - b.startedAt.getTime());
-    const e = worked.get(sh.userId) || { name: sh.user.fullName, hours: 0, breakHours: 0, shifts: 0, rows: [] };
+    for (const b of p.session.breaks) {
+      const bs = Math.max(startMs, b.startedAt.getTime());
+      const be = Math.min(endMs, b.endedAt?.getTime() ?? nowMs);
+      if (be > bs) breakMs += be - bs;
+    }
+    const e = worked.get(p.userId) || { name: p.user.fullName, hours: 0, breakHours: 0, shifts: 0, rows: [] };
     e.hours += hours; e.breakHours += breakMs / 3_600_000; e.shifts += 1;
     e.rows.push({
-      in: formatYerevanDateTime(sh.openingAt),
-      out: sh.closingAt ? formatYerevanDateTime(sh.closingAt) : null,
-      hours, breakHours: breakMs / 3_600_000, breaks: sh.breaks.length,
-      point: sh.sellingPoint?.name || '—',
+      in: formatYerevanDateTime(p.joinedAt),
+      out: p.leftAt ? formatYerevanDateTime(p.leftAt) : null,
+      hours, breakHours: breakMs / 3_600_000, breaks: p.session.breaks.length,
+      point: p.session.sellingPoint?.name || '—',
     });
-    worked.set(sh.userId, e);
+    worked.set(p.userId, e);
   }
   const daysWorkedData = Array.from(worked.values())
     .map((e) => ({ name: e.name, hours: e.hours, breakHours: e.breakHours, shifts: e.shifts, days: Math.round(e.hours / (HOURS_PER_DAY / 2)) / 2, rows: e.rows }))

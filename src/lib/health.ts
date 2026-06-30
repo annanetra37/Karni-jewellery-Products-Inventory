@@ -33,6 +33,7 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
     saleTotals,
     saleUnits,
     cashMath,
+    returnRestock,
   ] = await Promise.all([
     // 1. Inventory == movement ledger, for every (variant, point) on either side.
     prisma.$queryRawUnsafe<{ sku: string; point: string; qty: number; ledger: number }[]>(`
@@ -103,6 +104,19 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
         AND "discrepancyAmd" IS DISTINCT FROM ("closingCountAmd" - "expectedClosingAmd")
       LIMIT ${LIMIT}
     `),
+    // 7. Every returned unit went back into stock: RETURN movements per return
+    //    equal the units on the return.
+    prisma.$queryRawUnsafe<{ returnNumber: string; detail: string }[]>(`
+      SELECT sr."returnNumber",
+             ('returned ' || li.units || ', restocked ' || COALESCE(mv.units, 0)) AS detail
+      FROM "SaleReturn" sr
+      JOIN (SELECT "returnId", SUM(quantity)::int AS units FROM "SaleReturnLineItem" GROUP BY 1) li
+        ON li."returnId" = sr.id
+      LEFT JOIN (SELECT "returnId", SUM("qtyDelta")::int AS units FROM "StockMovement"
+                 WHERE type = 'RETURN' GROUP BY 1) mv ON mv."returnId" = sr.id
+      WHERE COALESCE(mv.units, 0) <> li.units
+      LIMIT ${LIMIT}
+    `),
   ]);
 
   return [
@@ -153,6 +167,14 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
       ok: cashMath.length === 0,
       failCount: cashMath.length,
       samples: cashMath.map((r) => `session ${r.id}: ${r.detail}`),
+    },
+    {
+      id: 'return-restock',
+      label: 'Every returned item went back into stock',
+      proves: 'For each return/exchange, the units put back match the items on the return.',
+      ok: returnRestock.length === 0,
+      failCount: returnRestock.length,
+      samples: returnRestock.map((r) => `${r.returnNumber}: ${r.detail}`),
     },
   ];
 }

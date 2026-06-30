@@ -103,6 +103,8 @@ async function openShiftAction(formData: FormData) {
       priorClosingAmd: priorClosing ?? undefined,
       handoverMismatch: mismatch,
       status: 'OPEN',
+      // The opener is the first participant of the shift.
+      participants: { create: { userId: u.id, joinedAt: now } },
     },
   });
   if (mismatch && thisHandover) {
@@ -114,6 +116,43 @@ async function openShiftAction(formData: FormData) {
       relatedId: session.id,
     });
   }
+  redirect('/kacca');
+}
+
+async function joinShiftAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  // Joining shares the already-counted drawer — no recount. Idempotent: if the
+  // user is already an active participant, do nothing.
+  const active = await prisma.shiftParticipant.findFirst({ where: { sessionId, userId: u.id, leftAt: null } });
+  if (!active) await prisma.shiftParticipant.create({ data: { sessionId, userId: u.id } });
+  redirect('/kacca');
+}
+
+async function leaveShiftAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  // Step away without closing the drawer — just stamp this rep's leave time.
+  await prisma.shiftParticipant.updateMany({
+    where: { sessionId, userId: u.id, leftAt: null },
+    data: { leftAt: new Date() },
+  });
   redirect('/kacca');
 }
 
@@ -227,6 +266,11 @@ async function closeShiftAction(formData: FormData) {
       status: Math.abs(discrepancy) > 0.001 ? 'DISPUTED' : 'CLOSED',
     },
   });
+  // Closing the drawer ends the shift for everyone still on it.
+  await prisma.shiftParticipant.updateMany({
+    where: { sessionId, leftAt: null },
+    data: { leftAt: closeAt },
+  });
   if (Math.abs(discrepancy) > 0.001) {
     const { notify } = await import('@/lib/notify');
     await notify({
@@ -314,7 +358,10 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
     prisma.cashDrawerSession.findFirst({
       where: openWhere,
       orderBy: { openingAt: 'asc' },
-      include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'desc' } } },
+      include: {
+        sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'desc' } },
+        participants: { where: { leftAt: null }, include: { user: { select: { id: true, fullName: true } } }, orderBy: { joinedAt: 'asc' } },
+      },
     }),
     prisma.cashDrawerSession.findMany({
       where: recentWhere,
@@ -325,7 +372,10 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       ? prisma.cashDrawerSession.findMany({
           where: openShiftsWhere,
           orderBy: { openingAt: 'asc' },
-          include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'asc' } } },
+          include: {
+            sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'asc' } },
+            participants: { where: { leftAt: null }, include: { user: { select: { id: true, fullName: true } } }, orderBy: { joinedAt: 'asc' } },
+          },
         })
       : Promise.resolve([]),
   ]);
@@ -389,6 +439,8 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       {openShift ? (() => {
         const activeBreak = openShift.breaks.find((b) => b.endedAt == null) ?? null;
         const onHold = !!activeBreak;
+        const iAmParticipant = openShift.participants.some((p) => p.user.id === user.id);
+        const participantNames = openShift.participants.map((p) => p.user.fullName).join(', ');
         return (
         <div className={`card space-y-3 ${onHold ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
           <p className="font-medium">
@@ -397,41 +449,60 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           </p>
           <p className="text-sm">{openShift.sellingPoint.name} · {t('k.opened')} {openShift.openingAt.toLocaleString()}</p>
           <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b> · {t('o.by').toLowerCase()} {openShift.openingBy.fullName}</p>
+          <p className="text-sm">{t('k.onShift')}: <b>{participantNames || '—'}</b></p>
 
-          {/* Break controls */}
-          {onHold ? (
-            <div className="rounded-xl p-3 bg-amber-100/60 border border-amber-200 space-y-2">
-              <p className="text-sm font-medium text-amber-900">{t('k.onBreakSince')} {activeBreak!.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-              <form action={endBreakAction}>
+          {iAmParticipant ? (
+            <>
+              {/* Step away without closing the shared drawer. */}
+              <form action={leaveShiftAction}>
                 <input type="hidden" name="sessionId" value={openShift.id} />
-                <button className="btn-primary w-full" type="submit">{t('k.endBreak')}</button>
+                <button className="btn-secondary w-full" type="submit">{t('k.leaveShift')}</button>
               </form>
-            </div>
+
+              {/* Break controls */}
+              {onHold ? (
+                <div className="rounded-xl p-3 bg-amber-100/60 border border-amber-200 space-y-2">
+                  <p className="text-sm font-medium text-amber-900">{t('k.onBreakSince')} {activeBreak!.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <form action={endBreakAction}>
+                    <input type="hidden" name="sessionId" value={openShift.id} />
+                    <button className="btn-primary w-full" type="submit">{t('k.endBreak')}</button>
+                  </form>
+                </div>
+              ) : (
+                <form action={startBreakAction}>
+                  <input type="hidden" name="sessionId" value={openShift.id} />
+                  <button className="btn-secondary w-full" type="submit">{t('k.startBreak')}</button>
+                </form>
+              )}
+
+              {openShift.breaks.length > 0 && (
+                <ul className="text-xs space-y-0.5" style={{ color: 'var(--ink-soft)' }}>
+                  {openShift.breaks.map((b) => (
+                    <li key={b.id}>
+                      {t('k.break')}: {b.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {b.endedAt ? b.endedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '…'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
+                <input type="hidden" name="sessionId" value={openShift.id} />
+                <label className="label">{t('k.closingCount')}</label>
+                <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
+                <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
+                <button className="btn-primary w-full" type="submit" disabled={onHold}>{t('k.endShift')}</button>
+                {onHold && <p className="text-xs text-amber-800">{t('k.endBreakFirst')}</p>}
+              </form>
+            </>
           ) : (
-            <form action={startBreakAction}>
+            // A shift is already open at this point — a second rep joins the
+            // shared drawer instead of opening a new one (no recount).
+            <form action={joinShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
               <input type="hidden" name="sessionId" value={openShift.id} />
-              <button className="btn-secondary w-full" type="submit">{t('k.startBreak')}</button>
+              <p className="text-sm text-karni-700">{t('k.joinHint')}</p>
+              <button className="btn-primary w-full" type="submit">{t('k.joinShift')}</button>
             </form>
           )}
-
-          {openShift.breaks.length > 0 && (
-            <ul className="text-xs space-y-0.5" style={{ color: 'var(--ink-soft)' }}>
-              {openShift.breaks.map((b) => (
-                <li key={b.id}>
-                  {t('k.break')}: {b.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {b.endedAt ? b.endedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '…'}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
-            <input type="hidden" name="sessionId" value={openShift.id} />
-            <label className="label">{t('k.closingCount')}</label>
-            <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
-            <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
-            <button className="btn-primary w-full" type="submit" disabled={onHold}>{t('k.endShift')}</button>
-            {onHold && <p className="text-xs text-amber-800">{t('k.endBreakFirst')}</p>}
-          </form>
         </div>
         );
       })() : (
@@ -466,7 +537,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                       <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${onHold ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
                       <span className="min-w-0">
                         <span className="font-medium">{s.sellingPoint.name}</span>
-                        <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                        <span className="text-karni-700"> · {t('k.onShift')}: {s.participants.length > 0 ? s.participants.map((p) => p.user.fullName).join(', ') : s.openingBy.fullName}</span>
                         {onHold && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
                       </span>
                     </span>

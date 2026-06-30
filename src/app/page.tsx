@@ -53,7 +53,9 @@ export default async function HomePage() {
     prisma.sale.aggregate({ _sum: { totalAmd: true }, where: todayWhere }),
     prisma.saleReturn.aggregate({ _sum: { returnedAmd: true, exchangeAmd: true }, where: todayReturnWhere }),
     prisma.cashDrawerSession.findFirst({
-      where: { userId: user.id, status: 'OPEN' },
+      // "My shift" = any open drawer I'm an active participant of (I opened it
+      // or joined a co-worker's), not just one I personally opened.
+      where: { status: 'OPEN', participants: { some: { userId: user.id, leftAt: null } } },
       include: { sellingPoint: true, breaks: { where: { endedAt: null } } },
     }),
     prisma.inventoryItem.count({ where: { quantity: { lte: 2 } } }),

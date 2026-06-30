@@ -39,7 +39,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
   // A sales user may only see sales movements while they have an open shift.
   if (!admin) {
     const myShift = await prisma.cashDrawerSession.findFirst({
-      where: { userId: user.id, status: 'OPEN' }, select: { id: true },
+      // On shift = an active participant of any open drawer (opened it or joined).
+      where: { status: 'OPEN', participants: { some: { userId: user.id, leftAt: null } } }, select: { id: true },
     });
     if (!myShift) {
       return (
