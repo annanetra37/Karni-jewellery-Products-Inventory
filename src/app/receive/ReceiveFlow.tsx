@@ -29,6 +29,9 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   }, [spId, defaultSellingPointId, picking, pickerMode]);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [batchNote, setBatchNote] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -82,15 +85,38 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
 
   const totalSelected = lines.reduce((s, l) => s + l.quantity, 0);
 
+  async function addPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setErr(''); setPhotoBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const fd = new FormData(); fd.append('file', file);
+        const r = await fetch('/api/receiving-photo', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (r.ok && j.url) setPhotos((p) => [...p, j.url]);
+        else setErr(j.error || 'Photo upload failed');
+      }
+    } catch (e) {
+      setErr(String((e as Error).message || e));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   async function submit() {
     setErr(''); setSubmitting(true);
     const r = await fetch('/api/stock-checkin', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sellingPointId: spId, lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, note: l.note })) }),
+      body: JSON.stringify({
+        sellingPointId: spId,
+        photoUrls: photos,
+        batchNote: batchNote || undefined,
+        lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, note: l.note })),
+      }),
     });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || 'Check-in failed'); setSubmitting(false); return; }
-    router.refresh(); setLines([]); setStockMap({}); setSubmitting(false);
+    router.refresh(); setLines([]); setStockMap({}); setPhotos([]); setBatchNote(''); setSubmitting(false);
   }
 
   return (
@@ -187,8 +213,36 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
               </div>
             );
           })}
+          {/* Book pages: photos of the owner's hand-written list, kept with this
+              receiving session so the counts can be checked against it. */}
+          <div className="pt-2 border-t border-karni-100 space-y-2">
+            <p className="font-medium text-sm">{t('r.bookPages')}</p>
+            <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('r.bookPagesHint')}</p>
+            {photos.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {photos.map((url, i) => (
+                  <div key={i} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-karni-200" />
+                    <button type="button" aria-label={t('c.remove')}
+                      onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-karni-300 text-xs leading-none shadow">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="btn-secondary inline-flex cursor-pointer text-sm">
+                {photoBusy ? t('c.processing') : t('r.addPhoto')}
+                <input type="file" accept="image/*" capture="environment" multiple className="hidden"
+                  onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+              </label>
+            </div>
+            <input className="input" placeholder={t('r.bookNote')} value={batchNote} onChange={(e) => setBatchNote(e.target.value)} />
+          </div>
+
           {err && <p className="text-sm text-red-700">{err}</p>}
-          <button className="btn-primary w-full" disabled={submitting} onClick={submit}>
+          <button className="btn-primary w-full" disabled={submitting || photoBusy} onClick={submit}>
             {submitting ? t('c.saving') : `${t('r.checkInN')} ${lines.reduce((s, l) => s + l.quantity, 0)} ${t('c.items')}`}
           </button>
         </div>
