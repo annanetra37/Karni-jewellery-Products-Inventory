@@ -11,6 +11,7 @@ export default async function AnalyticsHubPage() {
     { href: '/admin/customer-analytics', label: t('h.customerAnalytics') }, // Customer Analytics
     { href: '/admin/receive-analytics', label: t('h.receiveAnalytics') },  // Receive Stock Analytics
     { href: '/admin/analytics', label: t('h.inStockAnalytics') },    // In Stock Analytics
+    { href: '/admin/stock-movements', label: t('sm.title') },        // Per-item stock movement history
     { href: '/admin/safe', label: t('h.safe') },                     // Safe / Money
   ];
   return (

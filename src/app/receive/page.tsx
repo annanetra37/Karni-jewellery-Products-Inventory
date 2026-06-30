@@ -88,6 +88,19 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
   }
   const distinctVariants = variantSet.size;
 
+  // Recent receiving sessions that have book-page photos attached, so the
+  // received counts can be checked against the owner's hand-written list.
+  const photoBatches = await prisma.receivingBatch.findMany({
+    where: { photoUrls: { isEmpty: false }, ...(point.length ? { sellingPointId: { in: point } } : {}) },
+    orderBy: { createdAt: 'desc' },
+    take: 12,
+    include: {
+      performedBy: { select: { fullName: true } },
+      sellingPoint: { select: { name: true } },
+      movements: { include: { variant: { select: { designName: true, sku: true } } } },
+    },
+  });
+
   const allowed = await allowedSellingPoints(user, sps);
   const allowedIds = new Set(allowed.map((s) => s.id));
   const receiveDefault =
@@ -128,6 +141,49 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
         sellingPoints={allowed.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
         defaultSellingPointId={receiveDefault}
       />
+
+      <div className="flex justify-end">
+        <Link href="/admin/stock-movements" className="btn-link text-sm">{t('r.viewMovements')} →</Link>
+      </div>
+
+      {photoBatches.length > 0 && (
+        <section className="card">
+          <p className="font-semibold mb-3">{t('r.bookPageBatches')}</p>
+          <ul className="space-y-3">
+            {photoBatches.map((b) => {
+              const units = b.movements.reduce((n, m) => n + m.qtyDelta, 0);
+              return (
+                <li key={b.id} className="border-b border-karni-100 pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-sm font-medium">{b.sellingPoint.name} · {t('o.by').toLowerCase()} {b.performedBy.fullName}</p>
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{b.createdAt.toLocaleString()}</p>
+                  </div>
+                  <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                    {b.movements.length} {t('r.variants').toLowerCase()} · {units} {t('r.received')}{b.note ? ` · ${b.note}` : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {b.photoUrls.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="w-24 h-24 object-cover rounded-lg border border-karni-200" />
+                      </a>
+                    ))}
+                  </div>
+                  <ul className="mt-2 text-xs" style={{ color: 'var(--ink-soft)' }}>
+                    {b.movements.map((m) => (
+                      <li key={m.id} className="flex justify-between gap-2">
+                        <span className="truncate">{m.variant.designName} <span className="font-mono opacity-70">{m.variant.sku}</span></span>
+                        <span className="tabular-nums whitespace-nowrap">+{m.qtyDelta}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="card">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <p className="font-semibold">

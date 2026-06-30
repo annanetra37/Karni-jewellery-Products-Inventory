@@ -98,6 +98,7 @@ model User {
   customersCreated Customer[]        @relation("CustomerCreatedBy")
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
   returnsPerformed SaleReturn[]      @relation("ReturnPerformedBy")
+  receivingBatches ReceivingBatch[]  @relation("ReceivingBatchBy")
   notifications    Notification[]
   adminSellingPoints AdminSellingPoint[]
   safeWithdrawals  SafeTransaction[] @relation("SafeOwner")
@@ -192,6 +193,7 @@ model SellingPoint {
   admins         AdminSellingPoint[]
   safeTransactions SafeTransaction[]
   returns        SaleReturn[]
+  receivingBatches ReceivingBatch[]
 }
 
 enum SafeTxType {
@@ -263,6 +265,7 @@ model StockMovement {
   performedById  String
   saleId         String?
   returnId       String?
+  batchId        String?
   note           String?
   createdAt      DateTime @default(now())
 
@@ -271,6 +274,7 @@ model StockMovement {
   performedBy  User         @relation("MovementBy", fields: [performedById], references: [id])
   sale         Sale?        @relation(fields: [saleId], references: [id])
   saleReturn   SaleReturn?  @relation(fields: [returnId], references: [id])
+  batch        ReceivingBatch? @relation(fields: [batchId], references: [id])
 
   @@index([variantId])
   @@index([sellingPointId, createdAt])
@@ -394,6 +398,24 @@ model SaleReturn {
 
   @@index([sellingPointId, createdAt])
   @@index([cashSessionId])
+}
+
+// A receiving session: a batch of stock check-ins recorded together, optionally
+// with photos of the owner's hand-written "ready for Megamall" book pages so the
+// received quantities can be checked against what was written down.
+model ReceivingBatch {
+  id             String   @id @default(cuid())
+  sellingPointId String
+  performedById  String
+  note           String?
+  photoUrls      String[] @default([]) // captured book-page photos
+  createdAt      DateTime @default(now())
+
+  sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
+  performedBy  User         @relation("ReceivingBatchBy", fields: [performedById], references: [id])
+  movements    StockMovement[]
+
+  @@index([sellingPointId, createdAt])
 }
 
 model SaleReturnLineItem {
