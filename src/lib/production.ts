@@ -31,7 +31,12 @@ export type OrderRow = {
  * export so both always agree. `from`/`to` bound the stock rows' "went low/out"
  * date; open orders are always included in full.
  */
-export async function getProductionList(opts: { from?: Date | null; to?: Date | null } = {}): Promise<{ stock: StockRow[]; orders: OrderRow[] }> {
+export type ProductionFacets = { categories: string[]; collections: string[]; points: string[] };
+export type ProductionFilters = { states?: string[]; categories?: string[]; collections?: string[]; points?: string[] };
+
+export async function getProductionList(
+  opts: { from?: Date | null; to?: Date | null } & ProductionFilters = {},
+): Promise<{ stock: StockRow[]; orders: OrderRow[]; facets: ProductionFacets }> {
   const from = opts.from ?? null;
   const to = opts.to ?? null;
 
@@ -138,5 +143,25 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
     }
   }
 
-  return { stock, orders: orderRows };
+  // Facets from the full (unfiltered) worklist, so the filter UI always offers
+  // every value that exists — even when a filter is already narrowing the list.
+  const facets: ProductionFacets = {
+    categories: [...new Set([...stock, ...orderRows].map((r) => r.category).filter((x): x is string => !!x))].sort(),
+    collections: [...new Set([...stock, ...orderRows].map((r) => r.collection).filter((x): x is string => !!x))].sort(),
+    points: [...new Set([...stock, ...orderRows].map((r) => r.location).filter(Boolean))].sort(),
+  };
+
+  const states = opts.states ?? [];
+  const categories = opts.categories ?? [];
+  const collections = opts.collections ?? [];
+  const points = opts.points ?? [];
+  const matchCommon = (r: { category: string | null; collection: string | null; location: string }) =>
+    (categories.length === 0 || (r.category != null && categories.includes(r.category))) &&
+    (collections.length === 0 || (r.collection != null && collections.includes(r.collection))) &&
+    (points.length === 0 || points.includes(r.location));
+
+  const stockOut = stock.filter((r) => (states.length === 0 || states.includes(r.state)) && matchCommon(r));
+  const ordersOut = orderRows.filter(matchCommon);
+
+  return { stock: stockOut, orders: ordersOut, facets };
 }
