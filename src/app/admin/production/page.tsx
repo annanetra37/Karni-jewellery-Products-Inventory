@@ -3,17 +3,36 @@ import { getProductionList } from '@/lib/production';
 import { formatYerevanDateTime } from '@/lib/datetime';
 import { resolveRange } from '@/lib/dateRange';
 import { DateRangeControls } from '@/components/DateRangeControls';
+import { ProductionFilters } from '@/components/ProductionFilters';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ range?: string; from?: string; to?: string }> }) {
+type PSearch = Promise<Record<string, string | string[] | undefined>>;
+const arr = (v: string | string[] | undefined): string[] => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
+const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v[0] || '') : v || '');
+
+export default async function ProductionPage({ searchParams }: { searchParams: PSearch }) {
   await requireAdmin();
   const sp = await searchParams;
-  const rr = resolveRange({ range: sp.range, from: sp.from, to: sp.to, defaultRange: '7d' });
+  const rr = resolveRange({ range: one(sp.range), from: one(sp.from), to: one(sp.to), defaultRange: '7d' });
 
-  const downloadHref = `/api/export/stockouts?from=${rr.from}&to=${rr.to}`;
+  const states = arr(sp.state).filter((x) => ['OUT', 'LOW'].includes(x));
+  const categories = arr(sp.cat);
+  const collections = arr(sp.col);
+  const points = arr(sp.pt);
 
-  const { stock, orders } = await getProductionList({ from: rr.startDate, to: rr.endDate });
+  // The filters travel with the CSV download so it exports exactly what's shown.
+  const dl = new URLSearchParams();
+  dl.set('from', rr.from); dl.set('to', rr.to);
+  states.forEach((v) => dl.append('state', v));
+  categories.forEach((v) => dl.append('cat', v));
+  collections.forEach((v) => dl.append('col', v));
+  points.forEach((v) => dl.append('pt', v));
+  const downloadHref = `/api/export/stockouts?${dl.toString()}`;
+
+  const { stock, orders, facets } = await getProductionList({
+    from: rr.startDate, to: rr.endDate, states, categories, collections, points,
+  });
 
   return (
     <div className="space-y-4">
@@ -29,6 +48,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         <DateRangeControls defaultRange="7d" />
         <span className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>(date range applies to stock-outs; all open orders shown)</span>
       </div>
+
+      <ProductionFilters categories={facets.categories} collections={facets.collections} points={facets.points} />
 
       {/* Low / out of stock */}
       <section className="card">
