@@ -429,6 +429,13 @@ const D: Record<string, Record<Locale, string>> = {
   'r.bookPageBatches': { en: 'Receiving sessions with book pages', hy: 'Ընդունման սեսիաներ գրքի էջերով', ru: 'Сессии приёма со страницами книги' },
   'r.received': { en: 'received', hy: 'ընդունված', ru: 'принято' },
   'r.viewMovements': { en: 'Stock movements', hy: 'Պահեստի ապրանքների շարժ', ru: 'Движения склада' },
+  'r.saveBookPages': { en: 'Save book pages', hy: 'Պահպանել գրքի էջերը', ru: 'Сохранить страницы книги' },
+  'r.photosWithCheckin': {
+    en: 'These photos will be saved together with your check-in below.',
+    hy: 'Այս լուսանկարները կպահվեն ներքևի ընդունման հետ միասին։',
+    ru: 'Эти фото сохранятся вместе с приёмом ниже.',
+  },
+  'r.photosOnly': { en: 'book pages only (no items)', hy: 'միայն գրքի էջեր (առանց ապրանքների)', ru: 'только страницы книги (без товаров)' },
 
   // Stock movement history (per variant)
   'sm.title': { en: 'Stock movements', hy: 'Պահեստի ապրանքների շարժ', ru: 'Движения склада' },

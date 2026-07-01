@@ -159,7 +159,9 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
                     <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{b.createdAt.toLocaleString()}</p>
                   </div>
                   <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                    {b.movements.length} {t('r.variants').toLowerCase()} · {units} {t('r.received')}{b.note ? ` · ${b.note}` : ''}
+                    {b.movements.length > 0
+                      ? `${b.movements.length} ${t('r.variants').toLowerCase()} · ${units} ${t('r.received')}`
+                      : t('r.photosOnly')}{b.note ? ` · ${b.note}` : ''}
                   </p>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {b.photoUrls.map((url, i) => (
