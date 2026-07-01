@@ -205,7 +205,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
         <div className="flex flex-wrap items-center gap-2">
           <label className="btn-secondary inline-flex cursor-pointer text-sm">
             {photoBusy ? t('c.processing') : t('r.addPhoto')}
-            <input type="file" accept="image/*" capture="environment" multiple className="hidden"
+            <input type="file" accept="image/*" multiple className="hidden"
               onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
           </label>
         </div>
