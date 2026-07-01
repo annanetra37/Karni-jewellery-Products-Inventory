@@ -16,7 +16,7 @@ const PRESETS = [
 
 type Sel = {
   type: string[]; who: string[]; soldby: string[]; point: string[]; collection: string[]; category: string[];
-  size: string[]; color: string[]; q: string; from: string; to: string; range: string;
+  size: string[]; color: string[]; stock: string; q: string; from: string; to: string; range: string;
 };
 
 /**
@@ -26,7 +26,7 @@ type Sel = {
  * on both /receive and the receive-stock analytics page.
  */
 export function CheckinFilters({
-  who, points, collections, categories, sizes, colors, types, soldBy,
+  who, points, collections, categories, sizes, colors, types, soldBy, stockFilter = false,
   showSearch = false, datePresets = false, defaultRange = 'all',
 }: {
   who: IdName[]; points: IdName[];
@@ -36,6 +36,8 @@ export function CheckinFilters({
   types?: string[];
   /** Salespeople — when set, shows a "sold by" multi-select driving `soldby`. */
   soldBy?: IdName[];
+  /** When true, shows an In stock / Out of stock toggle driving `stock`. */
+  stockFilter?: boolean;
   showSearch?: boolean; datePresets?: boolean; defaultRange?: string;
 }) {
   const router = useRouter();
@@ -49,6 +51,7 @@ export function CheckinFilters({
     who: params.getAll('who'), point: params.getAll('point'),
     collection: params.getAll('collection'), category: params.getAll('category'),
     size: params.getAll('size'), color: params.getAll('color'),
+    stock: params.get('stock') || '',
     q: params.get('q') || '', from: params.get('from') || '', to: params.get('to') || '',
     range: params.get('range') || '',
   };
@@ -64,7 +67,7 @@ export function CheckinFilters({
   const ptIdToName = new Map(points.map((p) => [p.id, p.name]));
 
   const anyActive = current.type.length > 0 || current.soldby.length > 0 || current.who.length > 0 || current.point.length > 0 || current.collection.length > 0
-    || current.category.length > 0 || current.size.length > 0 || current.color.length > 0
+    || current.category.length > 0 || current.size.length > 0 || current.color.length > 0 || !!current.stock
     || !!current.q || custom || (!!current.range && current.range !== defaultRange);
 
   function apply(next: Partial<Sel>) {
@@ -78,6 +81,7 @@ export function CheckinFilters({
     s.category.forEach((v) => u.append('category', v));
     s.size.forEach((v) => u.append('size', v));
     s.color.forEach((v) => u.append('color', v));
+    if (s.stock) u.set('stock', s.stock);
     if (s.q) u.set('q', s.q);
     if (s.from) u.set('from', s.from);
     if (s.to) u.set('to', s.to);
@@ -178,6 +182,20 @@ export function CheckinFilters({
             placeholder={t('r.allColors')} allLabel={t('r.allColors')} />
         </div>
       </div>
+
+      {stockFilter && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {([['', 'sm.stockAll'], ['in', 'sm.inStock'], ['out', 'sm.outOfStock']] as const).map(([val, key]) => (
+            <button key={val} type="button" onClick={() => apply({ stock: val })}
+              className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
+              style={current.stock === val
+                ? { background: 'var(--brand)', color: '#fff' }
+                : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
+              {t(key)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {showSearch && (
         <input className="input" defaultValue={current.q} placeholder={t('c.search')}

@@ -34,6 +34,7 @@ export default async function StockMovementsIndex({ searchParams }: { searchPara
   const collection = arr(sp.collection);
   const size = arr(sp.size);
   const color = arr(sp.color);
+  const stock = ['in', 'out'].includes(one(sp.stock)) ? one(sp.stock) : '';
   const from = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.from)) ? one(sp.from) : '';
   const to = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.to)) ? one(sp.to) : '';
   let createdAt: { gte?: Date; lt?: Date } | undefined;
@@ -65,11 +66,27 @@ export default async function StockMovementsIndex({ searchParams }: { searchPara
     prisma.stockMovement.aggregate({ where, _count: true, _sum: { qtyDelta: true } }),
     prisma.user.findMany({ where: { isActive: true }, orderBy: { fullName: 'asc' }, select: { id: true, fullName: true } }),
   ]);
-  // Most-moved items first.
+  // Current stock for each matched item (scoped to the point filter if any), so
+  // we can flag / filter items that are now out of stock.
+  const allVariantIds = groups.map((g) => g.variantId);
+  const invRows = allVariantIds.length
+    ? await prisma.inventoryItem.groupBy({
+        by: ['variantId'],
+        where: { variantId: { in: allVariantIds }, ...(point.length ? { sellingPointId: { in: point } } : {}) },
+        _sum: { quantity: true },
+      })
+    : [];
+  const stockMap = new Map(invRows.map((r) => [r.variantId, Number(r._sum.quantity ?? 0)]));
+  const stockOf = (id: string) => stockMap.get(id) ?? 0;
+
+  // Most-moved items first, then apply the in/out-of-stock filter.
   groups.sort((a, b) => b._count._all - a._count._all || Math.abs(Number(b._sum.qtyDelta ?? 0)) - Math.abs(Number(a._sum.qtyDelta ?? 0)));
-  const totalGroups = groups.length;
+  const filteredGroups = stock === 'in' ? groups.filter((g) => stockOf(g.variantId) > 0)
+    : stock === 'out' ? groups.filter((g) => stockOf(g.variantId) <= 0)
+    : groups;
+  const totalGroups = filteredGroups.length;
   const lastPage = Math.max(0, Math.ceil(totalGroups / PER_PAGE) - 1);
-  const pageGroups = groups.slice(cp * PER_PAGE, cp * PER_PAGE + PER_PAGE);
+  const pageGroups = filteredGroups.slice(cp * PER_PAGE, cp * PER_PAGE + PER_PAGE);
   const pageVariantIds = pageGroups.map((g) => g.variantId);
 
   const [variants, detail, catRows, collRows, sizeRows, colorRows] = await Promise.all([
@@ -119,6 +136,7 @@ export default async function StockMovementsIndex({ searchParams }: { searchPara
     collection.forEach((v) => u.append('collection', v));
     size.forEach((v) => u.append('size', v));
     color.forEach((v) => u.append('color', v));
+    if (stock) u.set('stock', stock);
     const qs = u.toString();
     return qs ? `/admin/stock-movements?${qs}` : '/admin/stock-movements';
   };
@@ -167,6 +185,7 @@ export default async function StockMovementsIndex({ searchParams }: { searchPara
         <div className="mb-3">
           <CheckinFilters
             types={[...MOVEMENT_TYPES]}
+            stockFilter
             soldBy={users.map((u) => ({ id: u.id, name: u.fullName }))}
             who={users.map((u) => ({ id: u.id, name: u.fullName }))}
             points={sps.map((s) => ({ id: s.id, name: s.name }))}
@@ -188,6 +207,7 @@ export default async function StockMovementsIndex({ searchParams }: { searchPara
               const net = Number(g._sum.qtyDelta ?? 0);
               const positive = net > 0;
               const moves = byVariant.get(g.variantId) || [];
+              const onHand = stockOf(g.variantId);
               return (
                 <li key={g.variantId}>
                   <details className="border-b border-karni-100 pb-2 last:border-0 group">
@@ -198,7 +218,12 @@ export default async function StockMovementsIndex({ searchParams }: { searchPara
                           <span className="text-xs" style={{ color: 'var(--ink-soft)' }}> {[v.color, v.size].filter(Boolean).join(' · ')}</span>
                         </p>
                         <p className="text-[10px] font-mono truncate" style={{ color: 'var(--ink-soft)' }}>{v.sku}</p>
-                        <Link href={`/admin/stock-movements/${v.id}`} className="btn-link text-[11px]">{t('sm.fullHistory')} →</Link>
+                        <p className="text-[11px]">
+                          {onHand <= 0
+                            ? <span className="chip chip-danger text-[10px]">{t('sm.outOfStock')}</span>
+                            : <span style={{ color: 'var(--ink-soft)' }}>{t('sm.inStockNow')}: <b style={{ color: 'var(--ink)' }}>{onHand}</b></span>}
+                          <Link href={`/admin/stock-movements/${v.id}`} className="btn-link ml-2">{t('sm.fullHistory')} →</Link>
+                        </p>
                       </div>
                       <div className="text-right shrink-0 flex items-center gap-2">
                         <div>
