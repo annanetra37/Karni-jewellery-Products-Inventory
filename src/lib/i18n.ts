@@ -436,6 +436,8 @@ const D: Record<string, Record<Locale, string>> = {
     ru: 'Эти фото сохранятся вместе с приёмом ниже.',
   },
   'r.photosOnly': { en: 'book pages only (no items)', hy: 'միայն գրքի էջեր (առանց ապրանքների)', ru: 'только страницы книги (без товаров)' },
+  'r.bookSaved': { en: 'Saved ✓', hy: 'Պահպանվեց ✓', ru: 'Сохранено ✓' },
+  'r.bookPagesArchive': { en: 'Recent book pages', hy: 'Վերջին գրքի էջերը', ru: 'Недавние страницы книги' },
 
   // Stock movement history (per variant)
   'sm.title': { en: 'Stock movements', hy: 'Պահեստի ապրանքների շարժ', ru: 'Движения склада' },
