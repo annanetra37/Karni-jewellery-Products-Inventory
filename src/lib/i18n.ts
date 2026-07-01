@@ -459,6 +459,11 @@ const D: Record<string, Record<Locale, string>> = {
   'sm.movements': { en: 'Movements', hy: 'Շարժեր', ru: 'Движения' },
   'sm.none': { en: 'No movements match these filters.', hy: 'Այս զտիչներին համապատասխան շարժեր չկան։', ru: 'Нет движений по этим фильтрам.' },
   'sm.fullHistory': { en: 'Full item history', hy: 'Ապրանքի ամբողջ պատմությունը', ru: 'Полная история товара' },
+  'sm.stockAll': { en: 'All stock', hy: 'Ամբողջ պաշարը', ru: 'Весь остаток' },
+  'sm.inStock': { en: 'In stock', hy: 'Առկա է', ru: 'В наличии' },
+  'sm.outOfStock': { en: 'Out of stock', hy: 'Առկա չէ', ru: 'Нет в наличии' },
+  'sm.nowOut': { en: 'out of stock', hy: 'առկա չէ', ru: 'нет в наличии' },
+  'sm.nowIn': { en: 'in stock', hy: 'պահեստում', ru: 'в наличии' },
 
   // Team notes (shared board)
   'tn.title': { en: 'Team notes', hy: 'Թիմի նշումներ', ru: 'Заметки команды' },
