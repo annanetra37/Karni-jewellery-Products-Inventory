@@ -1,9 +1,12 @@
 import { requireAdmin } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { getProductionList } from '@/lib/production';
 import { formatYerevanDateTime } from '@/lib/datetime';
 import { resolveRange } from '@/lib/dateRange';
 import { DateRangeControls } from '@/components/DateRangeControls';
 import { ProductionFilters } from '@/components/ProductionFilters';
+import { BookPagesUploader } from '@/components/BookPagesUploader';
+import { getT } from '@/lib/i18n-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +37,18 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
     from: rr.startDate, to: rr.endDate, states, categories, collections, points,
   });
 
+  const { t } = await getT();
+  // Book pages: photograph the owner's hand-written production/restock notes and
+  // keep them dated, viewable here and in the receive gallery.
+  const [pointRows, megamall, bookBatches] = await Promise.all([
+    prisma.sellingPoint.findMany({ where: { isActive: true, type: { in: ['PHYSICAL', 'CONSIGNMENT'] } }, orderBy: { name: 'asc' } }),
+    prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } }),
+    prisma.receivingBatch.findMany({
+      where: { photoUrls: { isEmpty: false } }, orderBy: { createdAt: 'desc' }, take: 8,
+      include: { performedBy: { select: { fullName: true } }, sellingPoint: { select: { name: true } } },
+    }),
+  ]);
+
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -43,6 +58,36 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         </div>
         <a href={downloadHref} className="btn-primary text-sm shrink-0">Download CSV</a>
       </header>
+
+      <details className="card">
+        <summary className="cursor-pointer font-medium select-none">{t('r.bookPages')}</summary>
+        <div className="mt-3 space-y-3">
+          <BookPagesUploader
+            sellingPoints={pointRows.map((s) => ({ id: s.id, name: s.name }))}
+            defaultSellingPointId={megamall?.id || pointRows[0]?.id || ''}
+          />
+          {bookBatches.length > 0 && (
+            <div>
+              <p className="font-semibold text-sm mb-2">{t('r.bookPagesArchive')}</p>
+              <ul className="space-y-2">
+                {bookBatches.map((b) => (
+                  <li key={b.id} className="border-b border-karni-100 pb-2 last:border-0">
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{b.sellingPoint.name} · {b.performedBy.fullName} · {b.createdAt.toLocaleString()}{b.note ? ` · ${b.note}` : ''}</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {b.photoUrls.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-karni-200" />
+                        </a>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
 
       <div className="flex flex-col gap-1.5">
         <DateRangeControls defaultRange="7d" />
