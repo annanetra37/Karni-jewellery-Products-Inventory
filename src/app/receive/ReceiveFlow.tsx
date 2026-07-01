@@ -32,6 +32,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   const [photos, setPhotos] = useState<string[]>([]);
   const [batchNote, setBatchNote] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [savingPages, setSavingPages] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -100,6 +101,25 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
       setErr(String((e as Error).message || e));
     } finally {
       setPhotoBusy(false);
+    }
+  }
+
+  // Save the book photos on their own (no items needed), so a page can be
+  // captured and dated by itself. It appears in the gallery below.
+  async function saveBookPages() {
+    if (photos.length === 0) return;
+    setErr(''); setSavingPages(true);
+    try {
+      const r = await fetch('/api/receiving-batch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellingPointId: spId, photoUrls: photos, note: batchNote || undefined }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setErr(j.error || 'Could not save book pages'); setSavingPages(false); return; }
+      setPhotos([]); setBatchNote(''); setSavingPages(false);
+      router.refresh();
+    } catch (e) {
+      setErr(String((e as Error).message || e)); setSavingPages(false);
     }
   }
 
@@ -190,6 +210,16 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
           </label>
         </div>
         <input className="input" placeholder={t('r.bookNote')} value={batchNote} onChange={(e) => setBatchNote(e.target.value)} />
+        {photos.length > 0 && (
+          lines.length === 0 ? (
+            <button type="button" className="btn-primary w-full" disabled={savingPages || photoBusy} onClick={saveBookPages}>
+              {savingPages ? t('c.saving') : t('r.saveBookPages')}
+            </button>
+          ) : (
+            <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('r.photosWithCheckin')}</p>
+          )
+        )}
+        {err && !submitting && <p className="text-sm text-red-700">{err}</p>}
       </div>
 
       {lines.length > 0 && (
