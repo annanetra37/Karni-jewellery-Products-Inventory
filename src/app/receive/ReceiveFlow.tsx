@@ -163,6 +163,35 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
         <button className="btn-secondary w-full" onClick={() => setPicking(true)}>{t('r.addVariant')}</button>
       )}
 
+      {/* Book pages: photos of the owner's hand-written list for this whole
+          receiving session (uploaded once, not per item). Kept with the check-in
+          so the counts can be checked against it later. */}
+      <div className="card space-y-2">
+        <p className="font-medium text-sm">{t('r.bookPages')}</p>
+        <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('r.bookPagesHint')}</p>
+        {photos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {photos.map((url, i) => (
+              <div key={i} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-karni-200" />
+                <button type="button" aria-label={t('c.remove')}
+                  onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-karni-300 text-xs leading-none shadow">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="btn-secondary inline-flex cursor-pointer text-sm">
+            {photoBusy ? t('c.processing') : t('r.addPhoto')}
+            <input type="file" accept="image/*" capture="environment" multiple className="hidden"
+              onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+          </label>
+        </div>
+        <input className="input" placeholder={t('r.bookNote')} value={batchNote} onChange={(e) => setBatchNote(e.target.value)} />
+      </div>
+
       {lines.length > 0 && (
         <div className="card space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -213,34 +242,6 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
               </div>
             );
           })}
-          {/* Book pages: photos of the owner's hand-written list, kept with this
-              receiving session so the counts can be checked against it. */}
-          <div className="pt-2 border-t border-karni-100 space-y-2">
-            <p className="font-medium text-sm">{t('r.bookPages')}</p>
-            <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('r.bookPagesHint')}</p>
-            {photos.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {photos.map((url, i) => (
-                  <div key={i} className="relative">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-karni-200" />
-                    <button type="button" aria-label={t('c.remove')}
-                      onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
-                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-karni-300 text-xs leading-none shadow">×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="btn-secondary inline-flex cursor-pointer text-sm">
-                {photoBusy ? t('c.processing') : t('r.addPhoto')}
-                <input type="file" accept="image/*" capture="environment" multiple className="hidden"
-                  onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
-              </label>
-            </div>
-            <input className="input" placeholder={t('r.bookNote')} value={batchNote} onChange={(e) => setBatchNote(e.target.value)} />
-          </div>
-
           {err && <p className="text-sm text-red-700">{err}</p>}
           <button className="btn-primary w-full" disabled={submitting || photoBusy} onClick={submit}>
             {submitting ? t('c.saving') : `${t('r.checkInN')} ${lines.reduce((s, l) => s + l.quantity, 0)} ${t('c.items')}`}
