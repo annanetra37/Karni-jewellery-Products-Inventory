@@ -15,7 +15,7 @@ const PRESETS = [
 ];
 
 type Sel = {
-  who: string[]; point: string[]; collection: string[]; category: string[];
+  type: string[]; who: string[]; point: string[]; collection: string[]; category: string[];
   size: string[]; color: string[]; q: string; from: string; to: string; range: string;
 };
 
@@ -26,11 +26,14 @@ type Sel = {
  * on both /receive and the receive-stock analytics page.
  */
 export function CheckinFilters({
-  who, points, collections, categories, sizes, colors,
+  who, points, collections, categories, sizes, colors, types,
   showSearch = false, datePresets = false, defaultRange = 'all',
 }: {
   who: IdName[]; points: IdName[];
   collections: string[]; categories: string[]; sizes: string[]; colors: string[];
+  /** Movement types (enum values) — when set, shows a "type" multi-select that
+   *  drives the `type` param (labels come from the `sm.t<TYPE>` keys). */
+  types?: string[];
   showSearch?: boolean; datePresets?: boolean; defaultRange?: string;
 }) {
   const router = useRouter();
@@ -40,6 +43,7 @@ export function CheckinFilters({
   const [pending, start] = useTransition();
 
   const current: Sel = {
+    type: params.getAll('type'),
     who: params.getAll('who'), point: params.getAll('point'),
     collection: params.getAll('collection'), category: params.getAll('category'),
     size: params.getAll('size'), color: params.getAll('color'),
@@ -55,13 +59,14 @@ export function CheckinFilters({
   const ptNameToId = new Map(points.map((p) => [p.name, p.id]));
   const ptIdToName = new Map(points.map((p) => [p.id, p.name]));
 
-  const anyActive = current.who.length > 0 || current.point.length > 0 || current.collection.length > 0
+  const anyActive = current.type.length > 0 || current.who.length > 0 || current.point.length > 0 || current.collection.length > 0
     || current.category.length > 0 || current.size.length > 0 || current.color.length > 0
     || !!current.q || custom || (!!current.range && current.range !== defaultRange);
 
   function apply(next: Partial<Sel>) {
     const s = { ...current, ...next };
     const u = new URLSearchParams();
+    s.type.forEach((v) => u.append('type', v));
     s.who.forEach((v) => u.append('who', v));
     s.point.forEach((v) => u.append('point', v));
     s.collection.forEach((v) => u.append('collection', v));
@@ -120,6 +125,13 @@ export function CheckinFilters({
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {types && types.length > 0 && (
+          <div>
+            <label className="label">{t('sm.type')}</label>
+            <MultiSelectDropdown options={types} value={current.type} onChange={(v) => setMulti('type', v)}
+              placeholder={t('sm.allTypes')} allLabel={t('sm.allTypes')} renderLabel={(v) => t('sm.t' + v)} />
+          </div>
+        )}
         <div>
           <label className="label">{t('r.who')}</label>
           <MultiSelectDropdown options={who.map((w) => w.name)} value={current.who.map((id) => whoIdToName.get(id) || id)}
