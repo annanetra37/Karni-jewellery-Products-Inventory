@@ -451,6 +451,13 @@ const D: Record<string, Record<Locale, string>> = {
   'sm.tTRANSFER': { en: 'Transfer', hy: 'Փոխանցում', ru: 'Перемещение' },
   'sm.tSAMPLE_GIFT': { en: 'Sample / gift', hy: 'Նմուշ / նվեր', ru: 'Образец / подарок' },
   'sm.tDAMAGE_LOSS': { en: 'Damage / loss', hy: 'Վնաս / կորուստ', ru: 'Брак / потеря' },
+  'sm.type': { en: 'Type', hy: 'Տեսակ', ru: 'Тип' },
+  'sm.allTypes': { en: 'All types', hy: 'Բոլոր տեսակները', ru: 'Все типы' },
+  'sm.browse': { en: 'Browse movements', hy: 'Դիտել շարժերը', ru: 'Просмотр движений' },
+  'sm.pickItem': { en: 'Or pick one item for its full history', hy: 'Կամ ընտրեք մեկ ապրանք՝ ամբողջ պատմության համար', ru: 'Или выберите один товар для полной истории' },
+  'sm.units': { en: 'Units', hy: 'Միավորներ', ru: 'Единицы' },
+  'sm.movements': { en: 'Movements', hy: 'Շարժեր', ru: 'Движения' },
+  'sm.none': { en: 'No movements match these filters.', hy: 'Այս զտիչներին համապատասխան շարժեր չկան։', ru: 'Нет движений по этим фильтрам.' },
 
   // Team notes (shared board)
   'tn.title': { en: 'Team notes', hy: 'Թիմի նշումներ', ru: 'Заметки команды' },
