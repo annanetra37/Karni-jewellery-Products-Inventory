@@ -458,6 +458,7 @@ const D: Record<string, Record<Locale, string>> = {
   'sm.units': { en: 'Units', hy: 'Միավորներ', ru: 'Единицы' },
   'sm.movements': { en: 'Movements', hy: 'Շարժեր', ru: 'Движения' },
   'sm.none': { en: 'No movements match these filters.', hy: 'Այս զտիչներին համապատասխան շարժեր չկան։', ru: 'Нет движений по этим фильтрам.' },
+  'sm.fullHistory': { en: 'Full item history', hy: 'Ապրանքի ամբողջ պատմությունը', ru: 'Полная история товара' },
 
   // Team notes (shared board)
   'tn.title': { en: 'Team notes', hy: 'Թիմի նշումներ', ru: 'Заметки команды' },
