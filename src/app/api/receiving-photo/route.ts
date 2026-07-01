@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'no file provided' }, { status: 400 });
   }
   try {
-    const url = await saveImage(file);
+    const url = await saveImage(file, 'book-pages');
     return NextResponse.json({ url });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
