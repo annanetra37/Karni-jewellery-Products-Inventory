@@ -554,6 +554,7 @@ const D: Record<string, Record<Locale, string>> = {
   },
   'k.shiftOpen': { en: 'Cash drawer is open', hy: 'Դրամարկղը բաց է', ru: 'Касса открыта' },
   'k.onShift': { en: 'On shift', hy: 'Հերթափոխին', ru: 'На смене' },
+  'k.editClose': { en: 'Edit close count', hy: 'Խմբագրել փակման գումարը', ru: 'Изменить сумму закрытия' },
   'k.joinShift': { en: 'Join this shift', hy: 'Միանալ այս հերթափոխին', ru: 'Присоединиться к смене' },
   'k.leaveShift': { en: 'Leave (don\'t close drawer)', hy: 'Հեռանալ (առանց փակելու)', ru: 'Уйти (не закрывая кассу)' },
   'k.joinHint': {
