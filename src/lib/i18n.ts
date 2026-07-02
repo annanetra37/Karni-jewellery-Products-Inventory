@@ -688,6 +688,7 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.net': { en: 'net', hy: 'զուտ', ru: 'нетто' },
   'sa.refundsLabel': { en: 'returned', hy: 'վերադարձ', ru: 'возврат' },
   'sa.avgSale': { en: 'Avg. sale', hy: 'Միջին վաճառք', ru: 'Средний чек' },
+  'sa.avgDaily': { en: 'Avg. daily sales', hy: 'Օրական միջին վաճառք', ru: 'Средние продажи в день' },
   'sa.uniqueCustomers': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
   'sa.empty': { en: 'No sales in this period.', hy: 'Այս ժամանակահատվածում վաճառք չկա։', ru: 'Нет продаж за этот период.' },
   'sa.unitsSold': { en: 'Units sold', hy: 'Վաճառված միավորներ', ru: 'Продано единиц' },
