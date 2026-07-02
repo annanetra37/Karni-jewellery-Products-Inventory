@@ -634,6 +634,7 @@ const D: Record<string, Record<Locale, string>> = {
   'cu.title': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
   'cu.gender': { en: 'Gender', hy: 'Սեռ', ru: 'Пол' },
   'cu.address': { en: 'Address', hy: 'Հասցե', ru: 'Адрес' },
+  'cu.profession': { en: 'Profession', hy: 'Մասնագիտություն', ru: 'Профессия' },
   'cu.notes': { en: 'Notes', hy: 'Նշումներ', ru: 'Заметки' },
   'cu.allOptional': { en: 'All fields are optional.', hy: 'Բոլոր դաշտերը ոչ պարտադիր են։', ru: 'Все поля необязательны.' },
   'cu.noCustomers': { en: 'No customers.', hy: 'Հաճախորդներ չկան։', ru: 'Клиентов нет.' },
