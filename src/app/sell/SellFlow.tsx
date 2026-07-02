@@ -40,6 +40,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
   const [newBirthday, setNewBirthday] = useState('');
   const [newAddress, setNewAddress] = useState(''); const [newInstagram, setNewInstagram] = useState('');
   const [newGender, setNewGender] = useState(''); const [newNotes, setNewNotes] = useState('');
+  const [newProfession, setNewProfession] = useState('');
 
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [pickerOpen, setPickerOpen] = useState(true);
@@ -94,14 +95,15 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
     try {
       let customerId = customer?.id ?? null;
       // All customer fields are optional — save a new customer if any field was filled.
-      const hasNewCustomer = addNew && (newName || newPhone || newEmail || newBirthday || newAddress || newInstagram || newGender || newNotes);
+      const hasNewCustomer = addNew && (newName || newPhone || newEmail || newBirthday || newAddress || newInstagram || newGender || newProfession || newNotes);
       if (hasNewCustomer) {
         const cr = await fetch('/api/customers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fullName: newName || null, phone: newPhone || null, email: newEmail || null,
             birthday: newBirthday || null, address: newAddress || null,
-            instagram: newInstagram || null, gender: newGender || null, notes: newNotes || null,
+            instagram: newInstagram || null, gender: newGender || null,
+            profession: newProfession || null, notes: newNotes || null,
           }),
         });
         const cj = await cr.json();
@@ -299,6 +301,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
                     {['Female', 'Male', 'Other'].map((g) => <option key={g} value={g}>{g}</option>)}
                   </select>
                   <input className="input" placeholder="@instagram" value={newInstagram} onChange={(e) => setNewInstagram(e.target.value)} />
+                  <input className="input" placeholder={t('cu.profession')} value={newProfession} onChange={(e) => setNewProfession(e.target.value)} />
                 </div>
                 <input className="input" placeholder={t('cu.address')} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
                 <label className="label">{t('s.birthday')}</label>

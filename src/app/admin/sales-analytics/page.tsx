@@ -276,6 +276,17 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const topCustomers = Array.from(perCustomer.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   const timeline = fillTimeline(startDate, now, revByDay);
 
+  // Average sales per calendar day across the selected period (cash + card, i.e.
+  // total real sales / number of days). For a bounded range that's the calendar
+  // days in it; for "all time" it spans from the first sale to now.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const spanDays = startDate
+    ? Math.max(1, timeline.length)
+    : (revByDay.size > 0
+        ? Math.max(1, Math.round((now.getTime() - new Date(`${[...revByDay.keys()].sort()[0]}T00:00:00+04:00`).getTime()) / DAY_MS) + 1)
+        : 1);
+  const avgDaily = grossRevenue / spanDays;
+
   const avgItems = totalCount > 0 ? totalUnits / totalCount : 0;
   const repeatCustomers = Array.from(perCustomer.values()).filter((c) => c.count >= 2).length;
 
@@ -643,6 +654,17 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
         <>
           <p className="text-xs -mb-1" style={{ color: 'var(--ink-soft)' }}>{t('sa.tapHint')}</p>
           <section className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <DrillCard label={t('sa.avgDaily')} value={formatAmd(avgDaily)}
+              sub={`${grossRevenue.toLocaleString()} ÷ ${spanDays} ${t('sa.days')}`}
+              title={t('sa.avgDaily')} panel={
+                <ul className="space-y-2">
+                  {[...timeline].filter((d) => d.value > 0).reverse().map((d, i) => (
+                    <li key={i} className="flex justify-between text-sm border-b border-karni-100 pb-1.5 last:border-0">
+                      <span>{d.label}</span><span className="tabular-nums">{formatAmd(d.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              } />
             <DrillCard label={t('sa.unitsSold')} value={totalUnits.toLocaleString()}
               sub={`${avgItems.toFixed(1)} ${t('sa.avgItems').toLowerCase()}`}
               title={t('sa.unitsSold')} panel={renderNames(skuUnitRows)} />

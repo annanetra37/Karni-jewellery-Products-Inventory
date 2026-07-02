@@ -554,6 +554,7 @@ const D: Record<string, Record<Locale, string>> = {
   },
   'k.shiftOpen': { en: 'Cash drawer is open', hy: 'Դրամարկղը բաց է', ru: 'Касса открыта' },
   'k.onShift': { en: 'On shift', hy: 'Հերթափոխին', ru: 'На смене' },
+  'k.editClose': { en: 'Edit close count', hy: 'Խմբագրել փակման գումարը', ru: 'Изменить сумму закрытия' },
   'k.joinShift': { en: 'Join this shift', hy: 'Միանալ այս հերթափոխին', ru: 'Присоединиться к смене' },
   'k.leaveShift': { en: 'Leave (don\'t close drawer)', hy: 'Հեռանալ (առանց փակելու)', ru: 'Уйти (не закрывая кассу)' },
   'k.joinHint': {
@@ -634,6 +635,7 @@ const D: Record<string, Record<Locale, string>> = {
   'cu.title': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
   'cu.gender': { en: 'Gender', hy: 'Սեռ', ru: 'Пол' },
   'cu.address': { en: 'Address', hy: 'Հասցե', ru: 'Адрес' },
+  'cu.profession': { en: 'Profession', hy: 'Մասնագիտություն', ru: 'Профессия' },
   'cu.notes': { en: 'Notes', hy: 'Նշումներ', ru: 'Заметки' },
   'cu.allOptional': { en: 'All fields are optional.', hy: 'Բոլոր դաշտերը ոչ պարտադիր են։', ru: 'Все поля необязательны.' },
   'cu.noCustomers': { en: 'No customers.', hy: 'Հաճախորդներ չկան։', ru: 'Клиентов нет.' },
@@ -687,6 +689,7 @@ const D: Record<string, Record<Locale, string>> = {
   'sa.net': { en: 'net', hy: 'զուտ', ru: 'нетто' },
   'sa.refundsLabel': { en: 'returned', hy: 'վերադարձ', ru: 'возврат' },
   'sa.avgSale': { en: 'Avg. sale', hy: 'Միջին վաճառք', ru: 'Средний чек' },
+  'sa.avgDaily': { en: 'Avg. daily sales', hy: 'Օրական միջին վաճառք', ru: 'Средние продажи в день' },
   'sa.uniqueCustomers': { en: 'Customers', hy: 'Հաճախորդներ', ru: 'Клиенты' },
   'sa.empty': { en: 'No sales in this period.', hy: 'Այս ժամանակահատվածում վաճառք չկա։', ru: 'Нет продаж за этот период.' },
   'sa.unitsSold': { en: 'Units sold', hy: 'Վաճառված միավորներ', ru: 'Продано единиц' },

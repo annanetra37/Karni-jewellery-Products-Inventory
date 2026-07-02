@@ -12,6 +12,7 @@ type C = {
   address: string | null;
   instagram: string | null;
   gender: string | null;
+  profession: string | null;
   notes: string | null;
   createdAt?: string | null;
 };
@@ -24,10 +25,11 @@ type Draft = {
   address: string;
   instagram: string;
   gender: string;
+  profession: string;
   notes: string;
 };
 
-const EMPTY_DRAFT: Draft = { fullName: '', phone: '', email: '', birthday: '', address: '', instagram: '', gender: '', notes: '' };
+const EMPTY_DRAFT: Draft = { fullName: '', phone: '', email: '', birthday: '', address: '', instagram: '', gender: '', profession: '', notes: '' };
 const GENDERS = ['Female', 'Male', 'Other'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -52,7 +54,7 @@ function birthdayLabel(v: string | null): string {
 
 // Nothing is mandatory — we just avoid saving a completely empty record.
 function draftValid(d: Draft): boolean {
-  return !!(d.fullName || d.phone || d.email || d.birthday || d.address || d.instagram || d.gender || d.notes);
+  return !!(d.fullName || d.phone || d.email || d.birthday || d.address || d.instagram || d.gender || d.profession || d.notes);
 }
 
 function displayName(c: C): string {
@@ -90,6 +92,10 @@ function CustomerFields({ draft, set }: { draft: Draft; set: (patch: Partial<Dra
         <div>
           <label className="label">Instagram</label>
           <input className="input" placeholder="@handle" value={draft.instagram} onChange={(e) => set({ instagram: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">Profession</label>
+          <input className="input" placeholder="Profession (optional)" value={draft.profession} onChange={(e) => set({ profession: e.target.value })} />
         </div>
         <div className="sm:col-span-2">
           <label className="label">Address</label>
@@ -164,7 +170,7 @@ export function CustomersList({ initial, total: initialTotal }: { initial: C[]; 
           fullName: addDraft.fullName, phone: addDraft.phone || null, email: addDraft.email || null,
           birthday: addDraft.birthday, address: addDraft.address || null,
           instagram: addDraft.instagram || null, gender: addDraft.gender || null,
-          notes: addDraft.notes || null,
+          profession: addDraft.profession || null, notes: addDraft.notes || null,
         }),
       });
       const j = await r.json();
@@ -182,7 +188,7 @@ export function CustomersList({ initial, total: initialTotal }: { initial: C[]; 
     setEditDraft({
       fullName: c.fullName, phone: c.phone || '', email: c.email || '',
       birthday: dateOnly(c.birthday), address: c.address || '',
-      instagram: c.instagram || '', gender: c.gender || '', notes: c.notes || '',
+      instagram: c.instagram || '', gender: c.gender || '', profession: c.profession || '', notes: c.notes || '',
     });
   }
 
@@ -196,7 +202,7 @@ export function CustomersList({ initial, total: initialTotal }: { initial: C[]; 
           id: editingId, fullName: editDraft.fullName, phone: editDraft.phone || null, email: editDraft.email || null,
           birthday: editDraft.birthday, address: editDraft.address || null,
           instagram: editDraft.instagram || null, gender: editDraft.gender || null,
-          notes: editDraft.notes || null,
+          profession: editDraft.profession || null, notes: editDraft.notes || null,
         }),
       });
       const j = await r.json();
@@ -272,6 +278,7 @@ export function CustomersList({ initial, total: initialTotal }: { initial: C[]; 
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-karni-700">
                     {c.birthday && <span>🎂 {birthdayLabel(c.birthday)}</span>}
                     {c.gender && <span>{c.gender}</span>}
+                    {c.profession && <span>💼 {c.profession}</span>}
                     {c.instagram && <span>IG {c.instagram.startsWith('@') ? c.instagram : `@${c.instagram}`}</span>}
                     {c.address && <span className="truncate">{c.address}</span>}
                     {c.createdAt && <span style={{ color: 'var(--ink-faint)' }}>Added {addedLabel(c.createdAt)}</span>}

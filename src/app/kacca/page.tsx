@@ -1,4 +1,4 @@
-import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
+import { requireUser, isAdmin, isSuperAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { reconcileSessions, isMismatch, type SessionRecon } from '@/lib/reconcile';
@@ -336,6 +336,68 @@ async function editOpeningCountAction(formData: FormData) {
   redirect('/kacca');
 }
 
+// Super-admin correction of a CLOSED shift's counted-at-close amount. Recomputes
+// the expected close and discrepancy with the same reconciliation the reports
+// use, so a miscounted close can be fixed and the status re-derived.
+async function editClosingCountAction(formData: FormData) {
+  'use server';
+  const { requireUser, isSuperAdmin, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  if (!isSuperAdmin(u)) redirect('/kacca?err=forbidden');
+  const sessionId = String(formData.get('sessionId') || '');
+  const closingCountAmd = Number(formData.get('closingCountAmd') || 0);
+  const found = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!found || (found.status !== 'CLOSED' && found.status !== 'DISPUTED')) redirect('/kacca');
+  const session = found!;
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session.sellingPointId)) redirect('/kacca?err=forbidden');
+
+  const { reconcileSessions } = await import('@/lib/reconcile');
+  const { expectedCloseBySession } = await import('@/lib/shiftCash');
+  const [pointSessions, depositRows] = await Promise.all([
+    prisma.cashDrawerSession.findMany({
+      where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: { select: { name: true } } },
+    }),
+    prisma.safeTransaction.findMany({
+      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
+    }),
+  ]);
+  const expMap = await expectedCloseBySession(pointSessions.map((s) => ({
+    id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+    openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+  })));
+  const { byId } = reconcileSessions(
+    pointSessions.map((s) => ({
+      id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+      // Use the corrected counted-at-close amount for the session being edited.
+      closingAt: s.closingAt,
+      closingCountAmd: s.id === sessionId ? closingCountAmd : (s.closingCountAmd == null ? null : Number(s.closingCountAmd)),
+      expectedCloseAmd: expMap.get(s.id) ?? null,
+    })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
+  );
+  const sr = byId.get(sessionId);
+  const expected = sr?.expectedClose ?? (session.expectedClosingAmd == null ? null : Number(session.expectedClosingAmd));
+  const discrepancy = sr?.closeDiff ?? (expected == null ? null : closingCountAmd - expected);
+  await prisma.cashDrawerSession.update({
+    where: { id: sessionId },
+    data: {
+      closingCountAmd,
+      closingById: u.id,
+      expectedClosingAmd: expected,
+      discrepancyAmd: discrepancy,
+      status: discrepancy != null && Math.abs(discrepancy) > 0.001 ? 'DISPUTED' : 'CLOSED',
+    },
+  });
+  redirect('/kacca');
+}
+
 export default async function KaccaPage({ searchParams }: { searchParams: Promise<{ err?: string; by?: string }> }) {
   const user = await requireUser();
   const { t } = await getT();
@@ -615,6 +677,17 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                   {s.closingCountAmd != null && <p>Closed: {formatAmd(Number(s.closingCountAmd))}</p>}
                   {closeDiff != null && Math.abs(closeDiff) > 0.001 && (
                     <p className="text-red-700">Diff: {formatAmd(closeDiff)}</p>
+                  )}
+                  {isSuperAdmin(user) && s.closingCountAmd != null && (s.status === 'CLOSED' || s.status === 'DISPUTED') && (
+                    <details className="text-left mt-1">
+                      <summary className="btn-link cursor-pointer select-none">{t('k.editClose')}</summary>
+                      <form action={editClosingCountAction} className="flex items-center gap-2 mt-2">
+                        <input type="hidden" name="sessionId" value={s.id} />
+                        <input className="input py-1.5 w-32" name="closingCountAmd" type="number" step="0.01" min="0"
+                          defaultValue={Number(s.closingCountAmd)} required />
+                        <button className="btn-primary px-3 py-1.5" type="submit">{t('c.save')}</button>
+                      </form>
+                    </details>
                   )}
                   {handoverFor(s) && <div className="text-left"><MismatchDetail h={handoverFor(s)!} t={t} /></div>}
                 </div>

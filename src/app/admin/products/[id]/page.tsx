@@ -9,7 +9,7 @@ import { ImageUploadField } from '@/components/ImageUploadField';
 
 async function saveAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  const actor = await requireAdmin();
   const id = String(formData.get('id') || '');
   const designId = String(formData.get('designId') || '');
 
@@ -57,11 +57,29 @@ async function saveAction(formData: FormData) {
     designName, category, collection, subcollection, size, color, barcode,
   ].filter(Boolean).map((s) => String(s).toLowerCase()).join(' ');
 
+  // Snapshot the current price/cost so we can log a change to the timeline.
+  const before = await prisma.variant.findUnique({ where: { id }, select: { priceAmd: true, costAmd: true } });
+  const oldPrice = before ? Number(before.priceAmd) : null;
+  const oldCost = before?.costAmd != null ? Number(before.costAmd) : null;
+  const newCost = costAmd == null ? null : Number(costAmd);
+  const priceChanged = oldPrice == null || Math.abs(oldPrice - priceAmd) > 0.001;
+  const costChanged = (oldCost ?? null) !== (newCost ?? null);
+
   await prisma.$transaction(async (tx) => {
     await tx.design.update({
       where: { id: designId },
       data: { nameEn: designName, nameHy: designNameHy || null, category, collection, subcollection, motif, culturalMeaningEn },
     });
+    if (before && (priceChanged || costChanged)) {
+      await tx.variantPriceChange.create({
+        data: {
+          variantId: id,
+          oldPriceAmd: oldPrice, newPriceAmd: priceAmd,
+          oldCostAmd: oldCost, newCostAmd: newCost,
+          changedById: actor.id,
+        },
+      });
+    }
     await tx.variant.update({
       where: { id },
       data: {
@@ -154,6 +172,10 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   if (!v) notFound();
   const sps = await prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
   const totalStock = v.inventoryItems.reduce((s, ii) => s + ii.quantity, 0);
+  const priceHistory = await prisma.variantPriceChange.findMany({
+    where: { variantId: id }, orderBy: { createdAt: 'desc' }, take: 50,
+    include: { changedBy: { select: { fullName: true } } },
+  });
 
   // Build the Category / Size option lists from the catalog itself, plus the
   // standard set, and ALWAYS include this variant's current value. Otherwise a
@@ -328,6 +350,38 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           <Link href="/admin/products" className="btn-secondary">Cancel</Link>
         </div>
       </form>
+
+      <section className="card space-y-3">
+        <p className="font-semibold">Price history</p>
+        {priceHistory.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>No price changes recorded yet. Future edits to the price or cost will be logged here.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {priceHistory.map((h) => {
+              const oldP = h.oldPriceAmd == null ? null : Number(h.oldPriceAmd);
+              const newP = Number(h.newPriceAmd);
+              const priceMoved = oldP != null && Math.abs(oldP - newP) > 0.001;
+              const oldC = h.oldCostAmd == null ? null : Number(h.oldCostAmd);
+              const newC = h.newCostAmd == null ? null : Number(h.newCostAmd);
+              const costMoved = (oldC ?? null) !== (newC ?? null);
+              const amd = (n: number | null) => n == null ? '—' : `${n.toLocaleString()} ֏`;
+              return (
+                <li key={h.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                  {priceMoved ? (
+                    <p>Price: <span style={{ color: 'var(--ink-soft)' }}>{amd(oldP)}</span> → <b style={{ color: newP > (oldP ?? 0) ? 'var(--success)' : 'var(--danger)' }}>{amd(newP)}</b></p>
+                  ) : (
+                    <p>Price set to <b>{amd(newP)}</b></p>
+                  )}
+                  {costMoved && (
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>Cost: {amd(oldC)} → {amd(newC)}</p>
+                  )}
+                  <p className="text-xs" style={{ color: 'var(--ink-faint)' }}>{h.createdAt.toLocaleString()}{h.changedBy ? ` · ${h.changedBy.fullName}` : ''}</p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <section className="card space-y-3">
         <p className="font-semibold">Stock by selling point</p>

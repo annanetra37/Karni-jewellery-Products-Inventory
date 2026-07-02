@@ -59,6 +59,7 @@ const CreateSchema = z.object({
   address: emptyToNull,
   instagram: emptyToNull,
   gender: emptyToNull,
+  profession: emptyToNull,
   notes: z.string().nullable().optional(),
 });
 
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
-  const { fullName, phone, email, birthday, address, instagram, gender, notes } = parsed.data;
+  const { fullName, phone, email, birthday, address, instagram, gender, profession, notes } = parsed.data;
 
   // Birthday is optional now; parse it only when provided.
   let bday: Date | null = null;
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
       address: address || null,
       instagram: instagram || null,
       gender: gender || null,
+      profession: profession || null,
       notes: notes || null,
       createdById: u.id,
     },
@@ -111,6 +113,7 @@ const UpdateSchema = z.object({
   address: emptyToNull,
   instagram: emptyToNull,
   gender: emptyToNull,
+  profession: emptyToNull,
   notes: z.string().nullable().optional(),
 });
 
@@ -120,7 +123,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
-  const { id, fullName, phone, email, birthday, address, instagram, gender, notes } = parsed.data;
+  const { id, fullName, phone, email, birthday, address, instagram, gender, profession, notes } = parsed.data;
 
   // Only touch fields that were actually sent — `undefined` means "leave as is".
   const data: Prisma.CustomerUpdateInput = {};
@@ -130,6 +133,7 @@ export async function PATCH(req: NextRequest) {
   if (address !== undefined) data.address = address || null;
   if (instagram !== undefined) data.instagram = instagram || null;
   if (gender !== undefined) data.gender = gender || null;
+  if (profession !== undefined) data.profession = profession || null;
   if (notes !== undefined) data.notes = notes || null;
   if (birthday) {
     const bday = new Date(`${birthday}T00:00:00.000Z`);
