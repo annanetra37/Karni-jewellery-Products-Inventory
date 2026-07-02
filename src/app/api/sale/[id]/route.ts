@@ -47,16 +47,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (parsed.data.nonDrawerToSafe !== undefined) data.nonDrawerToSafe = parsed.data.nonDrawerToSafe;
   if (parsed.data.nonDrawerAmd !== undefined) {
-    // Can't exceed the sale total. The split only makes sense for cash sales — a
-    // non-cash sale never put money in the drawer to begin with.
+    // The portion that didn't enter the drawer, capped at the sale total. Kept
+    // for any payment method so an admin can record/see it; only cash sales feed
+    // the drawer, so it never affects reconciliation for non-cash sales.
     const cap = newTotal ?? Infinity;
-    const wanted = Math.min(Math.max(0, parsed.data.nonDrawerAmd), cap);
-    const stillCash = (parsed.data.paymentMethod ?? 'CASH') === 'CASH';
-    data.nonDrawerAmd = stillCash ? wanted : 0;
-  }
-  if (parsed.data.paymentMethod !== undefined && parsed.data.paymentMethod !== 'CASH') {
-    data.nonDrawerAmd = 0;
-    data.nonDrawerToSafe = false;
+    data.nonDrawerAmd = Math.min(Math.max(0, parsed.data.nonDrawerAmd), cap);
   }
 
   try {
