@@ -71,7 +71,7 @@ export function SaleEditor({
   const newDiscountAmd = resolveDiscount(subtotal, discountValueNum > 0 ? { kind: discKind, value: discountValueNum } : null);
   const newTotal = subtotal - newDiscountAmd;
   const effectiveC2s = pay === 'CASH' && c2s;
-  const transferNum = pay === 'CASH' && !effectiveC2s ? Math.min(Math.max(0, Number(transfer) || 0), newTotal) : 0;
+  const transferNum = !effectiveC2s ? Math.min(Math.max(0, Number(transfer) || 0), newTotal) : 0;
   const effectiveToSafe = transferNum > 0 && toSafe;
   const dirty = pay !== payment || effectiveC2s !== cashToSafe || transferNum !== nonDrawerAmd || effectiveToSafe !== nonDrawerToSafe || custId !== customerId || newDiscountAmd !== discountAmd;
 
@@ -137,15 +137,15 @@ export function SaleEditor({
             </span>
           </label>
         )}
-        {pay === 'CASH' && !c2s && (
+        {!effectiveC2s && (
           <div className="mt-2 space-y-2">
             <div>
               <label className="label">Part not received as drawer cash</label>
               <input className="input" type="number" min="0" step="0.01" placeholder="0"
                 value={transfer} onChange={(e) => setTransfer(e.target.value)} />
               <span className="block text-xs mt-1" style={{ color: 'var(--ink-soft)' }}>
-                For a part-cash sale — e.g. the customer paid the rest by transfer. Excluded from the
-                drawer; the {newTotal.toLocaleString()} ֏ total is unchanged.
+                The portion that did not go into the drawer — e.g. the customer paid part (or all) by
+                card / transfer. Excluded from drawer reconciliation; the {newTotal.toLocaleString()} ֏ total is unchanged.
                 {transferNum > 0 && <> Cash expected in drawer: <b>{(newTotal - transferNum).toLocaleString()} ֏</b>.</>}
               </span>
             </div>
