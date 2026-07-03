@@ -102,13 +102,16 @@ export function SalesAnalyticsFilters({
             {r.label}
           </button>
         ))}
-        <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-1"
+        <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
           style={custom ? { background: 'var(--brand)', color: '#fff' } : { background: 'var(--surface)', border: '1px solid var(--border-strong)' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 opacity-70">
+            <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
           <input type="date" value={from} max={to || today} onChange={(e) => setDate('from', e.target.value)}
-            className="bg-transparent text-xs outline-none" style={{ colorScheme: 'light' }} aria-label={t('r.from')} />
+            className="bg-transparent text-xs outline-none shrink-0" style={{ colorScheme: 'light', minWidth: '6.75rem', minHeight: '1.4rem' }} aria-label={t('r.from')} />
           <span className="text-xs opacity-60">–</span>
           <input type="date" value={to} max={today} min={from || undefined} onChange={(e) => setDate('to', e.target.value)}
-            className="bg-transparent text-xs outline-none" style={{ colorScheme: 'light' }} aria-label={t('r.to')} />
+            className="bg-transparent text-xs outline-none shrink-0" style={{ colorScheme: 'light', minWidth: '6.75rem', minHeight: '1.4rem' }} aria-label={t('r.to')} />
         </span>
       </div>
 
