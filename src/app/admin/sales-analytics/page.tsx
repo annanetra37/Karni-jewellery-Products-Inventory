@@ -87,6 +87,11 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const rr = resolveRange({ range, from: sp.from, to: sp.to, defaultRange: '30d' });
   const startDate = rr.startDate;
   const now = rr.endDate;
+  // Running-balance figures (Card at POS, In safe now) are counted as of `now`,
+  // the end of the window. With no explicit "to" date the window ends today, so
+  // the balance is live; a chosen "to" makes it a past-date snapshot.
+  const asOfDate = yerevanISODate(now);
+  const isLiveBalance = !sp.to;
 
   const sales = await prisma.sale.findMany({
     where: {
@@ -486,28 +491,31 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const skuUnitRows = Array.from(perSku.values()).sort((a, b) => b.units - a.units)
     .map((it) => ({ name: it.variant.designName, sub: `${it.units} u. · ${formatAmd(it.revenue)}` }));
 
-  // Card-in-bank tracking (company-wide, all time): card revenue still sitting
-  // in the bank = every card sale minus the card money moved into the safe.
-  // Also a range-scoped bank→safe figure for the metric grid.
+  // Card-in-bank tracking (company-wide): card revenue still sitting in the bank
+  // = every card sale minus the card money moved into the safe. This is a
+  // running balance, so it's counted "as of" the end of the selected window
+  // (`now` = rr.endDate) rather than blindly all-time — pick a past end date and
+  // it shows the balance at that point. For range=all, `now` is end of today, so
+  // it stays the true live balance. A range-scoped bank→safe figure feeds the grid.
   const bankToSafeRangeWhere = { type: 'BANK_TO_SAFE' as const, ...(startDate ? { occurredAt: { gte: startDate, lte: now } } : {}) };
   // A "card" sale for these purposes = a CARD-method sale OR the POS portion of a
   // part-cash sale (cash sale, split to POS, not to safe).
   const posSplitWhere = { paymentMethod: 'CASH' as const, nonDrawerToSafe: false, nonDrawerAmd: { gt: 0 } };
   const [cardSalesAgg, posSplitAgg, bankToSafeAgg, bankToSafeRangeAgg, bankToSafeRangeTxs, cardSaleRows] = await Promise.all([
-    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { paymentMethod: 'CARD' } }),
-    prisma.sale.aggregate({ _sum: { nonDrawerAmd: true }, where: posSplitWhere }),
-    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'BANK_TO_SAFE' } }),
+    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { paymentMethod: 'CARD', createdAt: { lte: now } } }),
+    prisma.sale.aggregate({ _sum: { nonDrawerAmd: true }, where: { ...posSplitWhere, createdAt: { lte: now } } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'BANK_TO_SAFE', occurredAt: { lte: now } } }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: bankToSafeRangeWhere }),
     prisma.safeTransaction.findMany({ where: bankToSafeRangeWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { performedBy: { select: { fullName: true } } } }),
     prisma.sale.findMany({
-      where: { OR: [{ paymentMethod: 'CARD' }, posSplitWhere] },
+      where: { createdAt: { lte: now }, OR: [{ paymentMethod: 'CARD' }, posSplitWhere] },
       orderBy: { createdAt: 'desc' }, take: 300,
       include: { customer: { select: { fullName: true } }, soldBy: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, lineItems: { include: { variant: { select: { designName: true, id: true } } } } },
     }),
   ]);
   const cardSalesAll = Number(cardSalesAgg._sum.totalAmd ?? 0) + Number(posSplitAgg._sum.nonDrawerAmd ?? 0);
   const bankToSafeAll = Number(bankToSafeAgg._sum.amountAmd ?? 0);
-  const cardInBank = cardSalesAll - bankToSafeAll; // all-time running balance
+  const cardInBank = cardSalesAll - bankToSafeAll; // running balance as of `now`
   // Card sales for the SELECTED period (filters applied) — the byPay 'CARD'
   // bucket already folds in the POS portion of part-cash sales.
   const cardSalesRange = Number(byPay.get('CARD')?.revenue ?? 0);
@@ -528,15 +536,17 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const bankToSafeRangeCount = bankToSafeRangeAgg._count;
   const bankToSafeRangeRows = bankToSafeRangeTxs.map((tx) => ({ when: formatYerevanDateTime(tx.occurredAt), amount: Number(tx.amountAmd), by: tx.performedBy.fullName, note: tx.note }));
 
-  // ---- Safe / cash box analytics (company-wide). Balance is all-time; the
-  // into/out figures are scoped to the selected period.
+  // ---- Safe / cash box analytics (company-wide). Balance is a running total
+  // counted "as of" the end of the selected window (`now`); the into/out figures
+  // are scoped to the period (start…end).
   const safeRangeWhere = startDate ? { occurredAt: { gte: startDate, lte: now } } : {};
+  const safeAsOfWhere = { occurredAt: { lte: now } };
   const [depAllAgg, wdAllAgg, depRangeAgg, wdRangeAgg, safeMovesAll, safeMovesRange] = await Promise.all([
-    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'DEPOSIT' } }),
-    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'WITHDRAWAL' } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'DEPOSIT', ...safeAsOfWhere } }),
+    prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, where: { type: 'WITHDRAWAL', ...safeAsOfWhere } }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: { type: 'DEPOSIT', ...safeRangeWhere } }),
     prisma.safeTransaction.aggregate({ _sum: { amountAmd: true }, _count: true, where: { type: 'WITHDRAWAL', ...safeRangeWhere } }),
-    prisma.safeTransaction.findMany({ orderBy: { occurredAt: 'desc' }, take: 100, include: { owner: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, performedBy: { select: { fullName: true } } } }),
+    prisma.safeTransaction.findMany({ where: safeAsOfWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { owner: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, performedBy: { select: { fullName: true } } } }),
     prisma.safeTransaction.findMany({ where: safeRangeWhere, orderBy: { occurredAt: 'desc' }, take: 100, include: { owner: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, performedBy: { select: { fullName: true } } } }),
   ]);
   const depositsAll = Number(depAllAgg._sum.amountAmd ?? 0);
@@ -720,7 +730,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               <Drilldown title={t('sa.cardInBank')} panel={renderSales(cardSalesAllList, (s) => s.cardAmt)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent-deep)' }}>{t('sa.cardInBank')}</p>
                 <p className="display text-2xl font-bold mt-1 tabular-nums" style={{ color: 'var(--accent-deep)' }}>{formatAmd(cardInBank)}</p>
-                <p className="text-[10px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.allTime')}</p>
+                <p className="text-[10px]" style={{ color: 'var(--ink-soft)' }}>{isLiveBalance ? t('sa.allTime') : t('sa.asOf').replace('{date}', asOfDate)}</p>
               </Drilldown>
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--ink-soft)' }}>{t('sa.cardTrackingNote')}</p>
@@ -736,6 +746,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               <Drilldown title={t('sa.safeMovements')} panel={renderSafeMoves(safeMovesAllRows)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.inSafeNow')}</p>
                 <p className="display text-2xl font-bold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(safeBalance)}</p>
+                {!isLiveBalance && <p className="text-[10px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.asOf').replace('{date}', asOfDate)}</p>}
               </Drilldown>
               <Drilldown title={t('sa.intoSafe')} panel={renderSafeMoves(safeIntoRows)} className="hover:opacity-80 transition">
                 <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('sa.intoSafe')}</p>
