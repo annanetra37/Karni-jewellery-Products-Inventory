@@ -128,12 +128,19 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
   const ownersFlagged = ownerUsers.length > 0;
   const n = Math.max(1, owners.length);
 
+  // "As of" upper bound: the balance and owner shares reflect the safe's state
+  // at the end of the selected window (e.g. end of a month), so we count every
+  // movement up to and including rr.endDate. The start of the window is ignored
+  // for the balance — a balance is a running total, not a per-period sum. For
+  // range=all, rr.endDate is end of today, so this stays the true live balance.
+  const asOfEnd = rr.endDate;
   let totalDeposits = 0, totalBankToSafe = 0, totalWithdrawals = 0, totalPersonal = 0, totalInvestment = 0;
   const withdrawnByOwner = new Map<string, number>();
   const personalByOwner = new Map<string, number>();
   const investByOwner = new Map<string, number>();
   const add = (m: Map<string, number>, id: string, v: number) => m.set(id, (m.get(id) || 0) + v);
   for (const tx of txs) {
+    if (tx.occurredAt > asOfEnd) continue;
     const amt = Number(tx.amountAmd);
     if (tx.type === 'DEPOSIT') { totalDeposits += amt; continue; }
     if (tx.type === 'BANK_TO_SAFE') { totalBankToSafe += amt; continue; }
@@ -164,6 +171,7 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
   // Daily safe balance time series (chronological, cumulative).
   const byDay = new Map<string, number>();
   for (const tx of txs) {
+    if (tx.occurredAt > asOfEnd) continue;
     const k = dayKey(tx.occurredAt);
     const delta = (tx.type === 'WITHDRAWAL' ? -1 : 1) * Number(tx.amountAmd);
     byDay.set(k, (byDay.get(k) || 0) + delta);
@@ -203,8 +211,13 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
   const pendingDeposits = deposits.filter((d) =>
     !matchedDepositIds.has(d.id) && d.fromDrawer && !!d.sellingPointId && drawerPointIds.has(d.sellingPointId));
 
-  // Movements log honours the selected date window. The summary above stays
-  // all-time (a running balance), so the period figures are shown separately.
+  // The summary + owner balances above are an "as of end of window" snapshot.
+  // The movements log below honours the full window (start…end) and shows the
+  // in/out flow within it, so the period figures are computed separately.
+  const asOfDate = yerevanISODate(asOfEnd);
+  // Whenever no explicit end date is chosen the window ends today, so the
+  // snapshot IS the live balance; a chosen "to" makes it a past-date snapshot.
+  const isLive = !sp.to;
   const inPeriod = (d: Date) => (!rr.startDate || d >= rr.startDate) && d <= rr.endDate;
   const periodTxs = txs.filter((tx) => inPeriod(tx.occurredAt));
   let periodIn = 0, periodOut = 0;
@@ -220,8 +233,20 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
         <p className="page-subtitle">{t('sf.subtitle')}</p>
       </header>
 
-      {/* Summary */}
+      {/* Date window — drives the whole page (summary, owner balances, chart
+          and movements log). Pick a month-end "to" date to see the safe state
+          at that point. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <DateRangeControls defaultRange="all" />
+      </div>
+
+      {/* Summary — a snapshot as of the end of the selected window */}
       <section className="rounded-2xl p-5 shadow-lift border" style={{ background: 'var(--brand)', color: '#f4ecd9', borderColor: 'var(--brand-deep)' }}>
+        {!isLive && (
+          <p className="text-[11px] mb-3 font-semibold" style={{ color: 'var(--accent)' }}>
+            {t('sf.asOf').replace('{date}', asOfDate)}
+          </p>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--accent)' }}>{t('sf.inSafe')}</p>
@@ -249,7 +274,10 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
 
       {/* Per-owner ownership */}
       <section className="card">
-        <p className="font-semibold mb-1">{t('sf.ownerBalances')}</p>
+        <p className="font-semibold mb-1 flex flex-wrap items-baseline gap-2">
+          {t('sf.ownerBalances')}
+          {!isLive && <span className="text-xs font-normal" style={{ color: 'var(--ink-soft)' }}>· {t('sf.asOf').replace('{date}', asOfDate)}</span>}
+        </p>
         <p className="text-xs text-karni-700 mb-3">
           {t('sf.splitNote')}{!ownersFlagged && ` ${t('sf.ownersHint')}`}
         </p>
@@ -405,7 +433,9 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
       <section className="card">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <p className="font-semibold">{t('sf.allMovements')}</p>
-          <DateRangeControls defaultRange="all" />
+          <p className="text-xs text-karni-700">
+            {rr.startDate ? `${yerevanISODate(rr.startDate)} – ${asOfDate}` : (isLive ? t('sf.allTime') : `… – ${asOfDate}`)}
+          </p>
         </div>
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="card">
