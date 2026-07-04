@@ -108,7 +108,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       sellingPoint: { select: { id: true, name: true } },
       soldBy: { select: { id: true, fullName: true } },
       customer: { select: { id: true, fullName: true } },
-      lineItems: { include: { variant: { select: { id: true, sku: true, designName: true, category: true, collection: true, color: true, size: true, imageUrl: true, excludeFromTopSellers: true } } } },
+      lineItems: { include: { variant: { select: { id: true, sku: true, designName: true, category: true, collection: true, color: true, size: true, imageUrl: true, excludeFromTopSellers: true, costAmd: true } } } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -179,6 +179,13 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   let toSafeRevenue = 0;
   let toSafeCount = 0;
   let walkIns = 0;
+  // Gross-margin tracking. Cost isn't snapshotted per line, so we use each
+  // variant's current costAmd — an approximation. Only lines whose product has a
+  // known cost feed COGS; we also track how much revenue that covers so the
+  // margin can be shown honestly (e.g. "78% of revenue has cost data").
+  let cogs = 0;
+  let costedRevenue = 0;
+  const perSkuProfit = new Map<string, { variant: typeof sales[number]['lineItems'][number]['variant']; profit: number; revenue: number }>();
   const customers = new Set<string>();
   const bySp = new Map<string, { count: number; revenue: number }>();
   const byPerson = new Map<string, { count: number; revenue: number }>();
@@ -232,6 +239,15 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       pv.units += li.quantity;
       pv.revenue += lineRev;
       perSku.set(li.variant.id, pv);
+      if (li.variant.costAmd != null) {
+        const lineCost = Number(li.variant.costAmd) * li.quantity;
+        cogs += lineCost;
+        costedRevenue += lineRev;
+        const pp = perSkuProfit.get(li.variant.id) || { variant: li.variant, profit: 0, revenue: 0 };
+        pp.profit += lineRev - lineCost;
+        pp.revenue += lineRev;
+        perSkuProfit.set(li.variant.id, pp);
+      }
     }
     if (s.customer) {
       const pc = perCustomer.get(s.customer.id) || { name: s.customer.fullName, count: 0, revenue: 0 };
@@ -295,6 +311,75 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const avgItems = totalCount > 0 ? totalUnits / totalCount : 0;
   const repeatCustomers = Array.from(perCustomer.values()).filter((c) => c.count >= 2).length;
 
+  // ---- Key business metrics ------------------------------------------------
+  // Gross profit / margin (only over lines whose product has a known cost).
+  const grossProfit = costedRevenue - cogs;
+  const marginPct = costedRevenue > 0 ? (grossProfit / costedRevenue) * 100 : null;
+  const costCoverage = grossRevenue > 0 ? (costedRevenue / grossRevenue) * 100 : 0;
+  const profitRows = Array.from(perSkuProfit.values())
+    .sort((a, b) => b.profit - a.profit)
+    .map((p) => ({ name: p.variant.designName, sub: `${formatAmd(p.profit)} · ${p.revenue > 0 ? Math.round((p.profit / p.revenue) * 100) : 0}%` }));
+
+  // Return rate = returns ÷ (sales + returns); refund share of gross revenue.
+  const returnCount = returnsAgg._count;
+  const returnRate = totalCount + returnCount > 0 ? (returnCount / (totalCount + returnCount)) * 100 : 0;
+  const refundShare = grossRevenue > 0 ? (Math.max(0, netRefund) / grossRevenue) * 100 : 0;
+
+  // Effective discount rate against the pre-discount subtotal.
+  const subtotalRevenue = grossRevenue + totalDiscount;
+  const discountRate = subtotalRevenue > 0 ? (totalDiscount / subtotalRevenue) * 100 : 0;
+
+  // Sales velocity — sales & units per day across the span.
+  const salesPerDay = totalCount / spanDays;
+  const unitsPerDay = totalUnits / spanDays;
+
+  // Best (record) single day within the window.
+  const bestDayEntry = Array.from(revByDay.entries()).sort((a, b) => b[1] - a[1])[0] ?? null;
+  const bestDay = bestDayEntry ? { day: bestDayEntry[0], revenue: bestDayEntry[1] } : null;
+
+  // Period-over-period growth: net revenue this window vs the immediately
+  // preceding window of equal length. Only meaningful for a bounded range.
+  let prevNetRevenue: number | null = null;
+  if (startDate) {
+    const windowMs = now.getTime() - startDate.getTime();
+    const prevStart = new Date(startDate.getTime() - windowMs);
+    const prevWhere = {
+      createdAt: { gte: prevStart, lt: startDate },
+      ...saleSpWhere,
+      ...(soldByIds.length ? { soldById: { in: soldByIds } } : {}),
+      ...(paymentMethods.length ? { paymentMethod: { in: paymentMethods as never } } : {}),
+      returnAsExchange: { is: null },
+    };
+    const [prevSalesAgg, prevReturnsAgg] = await Promise.all([
+      prisma.sale.aggregate({ _sum: { totalAmd: true }, where: prevWhere }),
+      prisma.saleReturn.aggregate({
+        _sum: { returnedAmd: true, exchangeAmd: true },
+        where: {
+          createdAt: { gte: prevStart, lt: startDate },
+          ...saleSpWhere,
+          ...(soldByIds.length ? { performedById: { in: soldByIds } } : {}),
+        },
+      }),
+    ]);
+    const prevGross = Number(prevSalesAgg._sum.totalAmd ?? 0);
+    const prevRefund = Number(prevReturnsAgg._sum.returnedAmd ?? 0) - Number(prevReturnsAgg._sum.exchangeAmd ?? 0);
+    prevNetRevenue = prevGross - prevRefund;
+  }
+  const growthPct = prevNetRevenue != null && prevNetRevenue > 0
+    ? ((netRevenue - prevNetRevenue) / prevNetRevenue) * 100
+    : null;
+
+  // 7-point trailing rolling average of daily revenue, overlaid on the trend
+  // chart to smooth day-to-day noise. Aligned index-for-index with `timeline`.
+  const ROLL = 7;
+  const rollingAvg = timeline.map((d, i) => {
+    const from = Math.max(0, i - ROLL + 1);
+    const slice = timeline.slice(from, i + 1);
+    const avg = slice.reduce((s, p) => s + p.value, 0) / slice.length;
+    return { label: d.label, value: Math.round(avg) };
+  });
+  const showRolling = timeline.length >= ROLL;
+
   // Time-of-day: peak hour + chronological distribution of hours that had sales.
   const peakHour = Array.from(byHour.entries()).sort((a, b) => b[1].count - a[1].count)[0] ?? null;
   const hourData = Array.from(byHour.entries())
@@ -311,7 +396,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   // clicking a metric can reveal the underlying sales / customers / hours.
   type SaleLite = {
     saleNumber: string; when: string; customer: string; soldBy: string; sellingPoint: string;
-    payment: string; total: number; discount: number; cashToSafe: boolean; weekday: number; hour: number;
+    payment: string; total: number; discount: number; cashToSafe: boolean; weekday: number; hour: number; day: string;
     cashAmt: number; cardAmt: number; toSafeAmt: number; note: string;
     items: { name: string; qty: number; line: number; variantId: string }[];
   };
@@ -339,6 +424,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       cashToSafe: s.cashToSafe,
       weekday: yerevanWeekday(s.createdAt),
       hour: yerevanHour(s.createdAt),
+      day: yerevanDayKey(s.createdAt),
       cashAmt,
       cardAmt,
       toSafeAmt: (s.cashToSafe ? total : 0) + toSafeSplit,
@@ -355,7 +441,11 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     return m;
   }
   const salesByCustomer = groupSales((s) => s.customer);
+  const salesByDay = groupSales((s) => s.day);
   const salesByHour = groupSales((s) => String(s.hour));
+  const perDayRows = Array.from(salesByDay.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([day, list]) => ({ name: day, sub: `${list.length}× · ${formatAmd(list.reduce((n, s) => n + s.total, 0))}` }));
   const salesByWeekday = groupSales((s) => String(s.weekday));
   const salesBySku = groupSales((s) => [...new Set(s.items.map((i) => i.variantId))]);
 
@@ -527,7 +617,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       saleNumber: s.saleNumber, when: formatYerevanDateTime(s.createdAt),
       customer: s.customer?.fullName || 'Walk-in', soldBy: s.soldBy.fullName, sellingPoint: s.sellingPoint?.name || '—',
       payment: s.paymentMethod || 'CASH', total, discount: Number(s.discountAmd), cashToSafe: s.cashToSafe,
-      weekday: 0, hour: 0, cashAmt: total - cardAmt, cardAmt, toSafeAmt: 0,
+      weekday: 0, hour: 0, day: yerevanDayKey(s.createdAt), cashAmt: total - cardAmt, cardAmt, toSafeAmt: 0,
       note: isSplit ? `split: ${formatAmd(cardAmt)} by card (POS)` : '',
       items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
     };
@@ -711,6 +801,46 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
               title={t('sa.bankToSafe')} panel={renderBankToSafe(bankToSafeRangeRows)} />
           </section>
 
+          {/* Key business metrics — growth, profitability, quality-of-sales */}
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="font-semibold">{t('sa.businessMetrics')}</p>
+              <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.businessHint')}</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <DrillCard label={t('sa.growth')}
+                value={growthPct == null ? '—' : `${growthPct >= 0 ? '▲' : '▼'} ${Math.abs(growthPct).toFixed(1)}%`}
+                sub={prevNetRevenue == null ? t('sa.growthNA') : t('sa.vsPrev').replace('{n}', `${spanDays} ${t('sa.days')}`)}
+                title={t('sa.growth')} panel={renderNames([
+                  { name: t('sa.thisPeriod'), sub: formatAmd(netRevenue) },
+                  { name: t('sa.prevPeriod'), sub: prevNetRevenue == null ? '—' : formatAmd(prevNetRevenue) },
+                ])} />
+              <DrillCard label={t('sa.grossProfit')}
+                value={marginPct == null ? '—' : formatAmd(grossProfit)}
+                sub={marginPct == null ? t('sa.noCost') : t('sa.marginSub').replace('{margin}', marginPct.toFixed(0)).replace('{cov}', costCoverage.toFixed(0))}
+                title={t('sa.grossProfit')} panel={renderNames(profitRows)} />
+              <DrillCard label={t('sa.salesPerDay')}
+                value={salesPerDay.toFixed(salesPerDay < 10 ? 1 : 0)}
+                sub={t('sa.salesPerDaySub').replace('{units}', unitsPerDay.toFixed(1))}
+                title={t('sa.salesPerDay')} panel={renderNames(perDayRows)} />
+              <DrillCard label={t('sa.bestDay')}
+                value={bestDay ? formatAmd(bestDay.revenue) : '—'}
+                sub={bestDay ? bestDay.day : undefined}
+                title={t('sa.bestDay')} panel={renderSales(bestDay ? (salesByDay.get(bestDay.day) || []) : [])} />
+              <DrillCard label={t('sa.returnRate')}
+                value={`${returnRate.toFixed(1)}%`}
+                sub={t('sa.returnRateSub').replace('{n}', String(returnCount)).replace('{share}', refundShare.toFixed(0))}
+                title={t('sa.returnRate')} panel={renderNames([
+                  { name: t('sa.salesCount'), sub: `${totalCount}×` },
+                  { name: t('sa.refundsLabel'), sub: `${returnCount}× · ${formatAmd(Math.max(0, netRefund))}` },
+                ])} />
+              <DrillCard label={t('sa.discountRate')}
+                value={`${discountRate.toFixed(1)}%`}
+                sub={t('sa.discountRateSub').replace('{amount}', formatAmd(totalDiscount))}
+                title={t('sa.discountRate')} panel={renderSales(salesLite.filter((s) => s.discount > 0))} />
+            </div>
+          </section>
+
           <section className="card">
             <div className="flex items-center justify-between gap-3 mb-3">
               <p className="font-semibold">{t('sa.cardTracking')}</p>
@@ -785,7 +915,9 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
           <section className="card">
             <p className="font-semibold mb-3">{t('sa.revenueOverTime')}</p>
-            <LineChartHover series={timeline} unit="֏" />
+            <LineChartHover series={timeline} unit="֏"
+              overlay={showRolling ? rollingAvg : undefined}
+              seriesLabel={t('sa.dailyRevenue')} overlayLabel={t('sa.rollingAvg')} />
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">
