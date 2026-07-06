@@ -16,10 +16,13 @@ const hourLabel = (h: number) => {
  * hours for that weekday.
  */
 export function ActiveHoursChart({
-  data, height = 210,
+  data, height = 210, dayStart = 10, dayEnd = 22,
 }: {
   data: { label: string; open: number | null; peak: number | null; close: number | null; avgHours: number }[];
   height?: number;
+  /** Working-hours window the y-axis spans (defaults to 10am–10pm). */
+  dayStart?: number;
+  dayEnd?: number;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -36,13 +39,18 @@ export function ActiveHoursChart({
   const n = data.length;
   const band = innerW / n;
   const barW = Math.min(30, band * 0.5);
-  const yH = (h: number) => pad.top + innerH * (1 - h / 24);
+  // Fixed working-hours axis so the labels are consistent (3-hour intervals from
+  // dayStart to dayEnd). Everything is clamped into this window.
+  const span = dayEnd - dayStart;
+  const clamp = (h: number) => Math.max(dayStart, Math.min(dayEnd, h));
+  const yH = (h: number) => pad.top + innerH * (1 - (clamp(h) - dayStart) / span);
   const xCenter = (i: number) => pad.left + band * i + band / 2;
 
   const peakPts = data.map((d, i) => (d.peak == null ? null : { x: xCenter(i), y: yH(d.peak + 0.5), i }))
     .filter((p): p is { x: number; y: number; i: number } => p != null);
   const peakPath = peakPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const yTicks = [0, 6, 12, 18, 24];
+  const yTicks: number[] = [];
+  for (let h = dayStart; h <= dayEnd; h += 3) yTicks.push(h);
 
   function locate(clientX: number) {
     const el = wrapRef.current;
