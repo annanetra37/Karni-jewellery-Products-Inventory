@@ -8,7 +8,7 @@ import { LineChartHover } from '@/components/LineChartHover';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
 import { Drilldown, DrillCard } from './Drilldown';
-import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanISODate, formatYerevanDateTime } from '@/lib/datetime';
+import { yerevanHour, yerevanWeekday, yerevanDayKey, yerevanDayStart, yerevanISODate, formatYerevanDateTime } from '@/lib/datetime';
 import { resolveRange } from '@/lib/dateRange';
 
 type Params = Promise<{
@@ -195,6 +195,10 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const byHour = new Map<number, { count: number; revenue: number }>();
   const byWeekday = new Map<number, { count: number; revenue: number }>();
   const revByDay = new Map<string, number>();
+  // For "active selling hours by weekday": per calendar day, the set of clock
+  // hours that had a sale, plus that day's weekday.
+  const dayHourSet = new Map<string, Set<number>>();
+  const dayWeekday = new Map<string, number>();
   const perSku = new Map<string, { variant: typeof sales[number]['lineItems'][number]['variant']; units: number; revenue: number }>();
   const perCustomer = new Map<string, { name: string; count: number; revenue: number }>();
 
@@ -226,10 +230,16 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     // "To safe" overlay: full cash-to-safe (online) sales + safe split portions.
     const toSafe = (s.cashToSafe ? r : 0) + toSafeSplit;
     if (toSafe > 0) { toSafeRevenue += toSafe; toSafeCount += 1; }
-    bumpN(byHour, yerevanHour(s.createdAt), r);
-    bumpN(byWeekday, yerevanWeekday(s.createdAt), r);
+    const sHour = yerevanHour(s.createdAt);
+    const sWeekday = yerevanWeekday(s.createdAt);
+    bumpN(byHour, sHour, r);
+    bumpN(byWeekday, sWeekday, r);
     const dKey = yerevanDayKey(s.createdAt);
     revByDay.set(dKey, (revByDay.get(dKey) || 0) + r);
+    dayWeekday.set(dKey, sWeekday);
+    let hs = dayHourSet.get(dKey);
+    if (!hs) { hs = new Set(); dayHourSet.set(dKey, hs); }
+    hs.add(sHour);
     for (const li of s.lineItems) {
       const lineRev = Number(li.lineTotalAmd);
       totalUnits += li.quantity;
@@ -380,6 +390,50 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   });
   const showRolling = timeline.length >= ROLL;
 
+  // ---- Month-on-month & week-on-week revenue trends. Deliberately independent
+  // of the selected window (a trend needs history) but honouring the point /
+  // person / payment filters. Gross real-sales revenue (exchanges excluded).
+  const trendSince = new Date(yerevanDayStart(now).getTime() - 371 * DAY_MS); // ~53 weeks back
+  const trendSales = await prisma.sale.findMany({
+    where: {
+      createdAt: { gte: trendSince, lte: now },
+      ...saleSpWhere,
+      ...(soldByIds.length ? { soldById: { in: soldByIds } } : {}),
+      ...(paymentMethods.length ? { paymentMethod: { in: paymentMethods as never } } : {}),
+      returnAsExchange: { is: null },
+    },
+    select: { createdAt: true, totalAmd: true },
+  });
+  const monthRev = new Map<string, number>();
+  const weekRev = new Map<string, number>();
+  const weekMondayKey = (d: Date) => {
+    const isoDay = (yerevanWeekday(d) + 6) % 7; // 0 = Mon … 6 = Sun
+    return yerevanDayKey(new Date(yerevanDayStart(d).getTime() - isoDay * DAY_MS));
+  };
+  for (const s of trendSales) {
+    const amt = Number(s.totalAmd);
+    const mk = yerevanDayKey(s.createdAt).slice(0, 7);
+    monthRev.set(mk, (monthRev.get(mk) || 0) + amt);
+    const wk = weekMondayKey(s.createdAt);
+    weekRev.set(wk, (weekRev.get(wk) || 0) + amt);
+  }
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const withGrowth = (arr: [string, number][]) => arr.map(([key, value], i) => ({
+    key, value, growth: i > 0 && arr[i - 1][1] > 0 ? ((value - arr[i - 1][1]) / arr[i - 1][1]) * 100 : null,
+  }));
+  const monthTrend = withGrowth(Array.from(monthRev.entries()).sort(([a], [b]) => a.localeCompare(b))).slice(-12);
+  const weekTrend = withGrowth(Array.from(weekRev.entries()).sort(([a], [b]) => a.localeCompare(b))).slice(-12);
+  const monthLbl = (k: string) => `${MONTHS[Number(k.slice(5, 7)) - 1]} ${k.slice(2, 4)}`;
+  const monthChartSeries = monthTrend.map((m) => ({ label: monthLbl(m.key), value: Math.round(m.value) }));
+  const weekChartSeries = weekTrend.map((w) => ({ label: w.key.slice(5), value: Math.round(w.value) }));
+  const latestMonthGrowth = monthTrend.length ? monthTrend[monthTrend.length - 1].growth : null;
+  const latestWeekGrowth = weekTrend.length ? weekTrend[weekTrend.length - 1].growth : null;
+  const growthRows = (rows: { key: string; value: number; growth: number | null }[], label: (k: string) => string) =>
+    [...rows].reverse().map((r) => ({
+      name: label(r.key),
+      sub: `${formatAmd(r.value)}${r.growth != null ? ` · ${r.growth >= 0 ? '▲' : '▼'} ${Math.abs(r.growth).toFixed(0)}%` : ''}`,
+    }));
+
   // Time-of-day: peak hour + chronological distribution of hours that had sales.
   const peakHour = Array.from(byHour.entries()).sort((a, b) => b[1].count - a[1].count)[0] ?? null;
   const hourData = Array.from(byHour.entries())
@@ -391,6 +445,20 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const weekdayData = WEEK_ORDER
     .filter((d) => byWeekday.has(d))
     .map((d) => ({ label: WEEKDAYS[d], value: byWeekday.get(d)!.count, sub: formatAmd(byWeekday.get(d)!.revenue) }));
+
+  // Active selling hours by weekday (Mon-first): for each weekday, the average
+  // number of distinct clock-hours with a sale across that weekday's days in the
+  // window — i.e. how long the shop is actively selling on a typical Mon/Tue/…
+  const activeHoursByWd = new Map<number, { total: number; days: number }>();
+  for (const [day, hs] of dayHourSet) {
+    const wd = dayWeekday.get(day)!;
+    const e = activeHoursByWd.get(wd) || { total: 0, days: 0 };
+    e.total += hs.size; e.days += 1; activeHoursByWd.set(wd, e);
+  }
+  const activeHoursSeries = WEEK_ORDER.map((wd) => {
+    const e = activeHoursByWd.get(wd);
+    return { label: WEEKDAYS[wd], value: e ? Math.round((e.total / e.days) * 10) / 10 : 0 };
+  });
 
   // ---- Interactive drill-down data: a light per-sale record + groupings, so
   // clicking a metric can reveal the underlying sales / customers / hours.
@@ -918,6 +986,43 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <LineChartHover series={timeline} unit="֏"
               overlay={showRolling ? rollingAvg : undefined}
               seriesLabel={t('sa.dailyRevenue')} overlayLabel={t('sa.rollingAvg')} />
+          </section>
+
+          {/* Active selling hours, weekday by weekday */}
+          <section className="card">
+            <p className="font-semibold mb-1">{t('sa.activeHours')}</p>
+            <p className="text-xs mb-3" style={{ color: 'var(--ink-soft)' }}>{t('sa.activeHoursHint')}</p>
+            <LineChartHover series={activeHoursSeries} unit={t('sa.hoursUnit')} />
+          </section>
+
+          {/* Growth trends — month-on-month & week-on-week */}
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="font-semibold">{t('sa.growthTrends')}</p>
+              <p className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>{t('sa.trendNote')}</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="card">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="font-semibold">{t('sa.monthOnMonth')}</p>
+                  <Drilldown title={t('sa.monthOnMonth')} className="!w-auto btn-link text-xs" panel={renderNames(growthRows(monthTrend, monthLbl))}>{t('sa.details')}</Drilldown>
+                </div>
+                <p className="text-xs mb-3 tabular-nums font-semibold" style={{ color: latestMonthGrowth == null ? 'var(--ink-soft)' : latestMonthGrowth >= 0 ? 'var(--brand-deep)' : 'var(--danger, #b91c1c)' }}>
+                  {latestMonthGrowth == null ? t('sa.notEnough') : `${latestMonthGrowth >= 0 ? '▲' : '▼'} ${Math.abs(latestMonthGrowth).toFixed(1)}% ${t('sa.vsPrevMonth')}`}
+                </p>
+                <LineChartHover series={monthChartSeries} unit="֏" height={140} />
+              </div>
+              <div className="card">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="font-semibold">{t('sa.weekOnWeek')}</p>
+                  <Drilldown title={t('sa.weekOnWeek')} className="!w-auto btn-link text-xs" panel={renderNames(growthRows(weekTrend, (k) => k.slice(5)))}>{t('sa.details')}</Drilldown>
+                </div>
+                <p className="text-xs mb-3 tabular-nums font-semibold" style={{ color: latestWeekGrowth == null ? 'var(--ink-soft)' : latestWeekGrowth >= 0 ? 'var(--brand-deep)' : 'var(--danger, #b91c1c)' }}>
+                  {latestWeekGrowth == null ? t('sa.notEnough') : `${latestWeekGrowth >= 0 ? '▲' : '▼'} ${Math.abs(latestWeekGrowth).toFixed(1)}% ${t('sa.vsPrevWeek')}`}
+                </p>
+                <LineChartHover series={weekChartSeries} unit="֏" height={140} />
+              </div>
+            </div>
           </section>
 
           <section className="grid md:grid-cols-2 gap-3">
