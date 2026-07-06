@@ -5,6 +5,8 @@ import { formatAmd } from '@/lib/currency';
 import { getT } from '@/lib/i18n-server';
 import { BarChart, DonutChart } from '@/components/Charts';
 import { LineChartHover } from '@/components/LineChartHover';
+import { GrowthBarLineChart } from '@/components/GrowthBarLineChart';
+import { ActiveHoursChart } from '@/components/ActiveHoursChart';
 import { SalesAnalyticsFilters } from '@/components/SalesAnalyticsFilters';
 import { Thumb } from '@/components/Thumb';
 import { Drilldown, DrillCard } from './Drilldown';
@@ -196,9 +198,11 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const byWeekday = new Map<number, { count: number; revenue: number }>();
   const revByDay = new Map<string, number>();
   // For "active selling hours by weekday": per calendar day, the set of clock
-  // hours that had a sale, plus that day's weekday.
+  // hours that had a sale, plus that day's weekday. `hourByWeekday` counts sales
+  // per (weekday, hour) so we can find each weekday's busiest hour.
   const dayHourSet = new Map<string, Set<number>>();
   const dayWeekday = new Map<string, number>();
+  const hourByWeekday = new Map<number, Map<number, number>>();
   const perSku = new Map<string, { variant: typeof sales[number]['lineItems'][number]['variant']; units: number; revenue: number }>();
   const perCustomer = new Map<string, { name: string; count: number; revenue: number }>();
 
@@ -240,6 +244,9 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     let hs = dayHourSet.get(dKey);
     if (!hs) { hs = new Set(); dayHourSet.set(dKey, hs); }
     hs.add(sHour);
+    let hw = hourByWeekday.get(sWeekday);
+    if (!hw) { hw = new Map(); hourByWeekday.set(sWeekday, hw); }
+    hw.set(sHour, (hw.get(sHour) || 0) + 1);
     for (const li of s.lineItems) {
       const lineRev = Number(li.lineTotalAmd);
       totalUnits += li.quantity;
@@ -423,9 +430,12 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   }));
   const monthTrend = withGrowth(Array.from(monthRev.entries()).sort(([a], [b]) => a.localeCompare(b))).slice(-12);
   const weekTrend = withGrowth(Array.from(weekRev.entries()).sort(([a], [b]) => a.localeCompare(b))).slice(-12);
-  const monthLbl = (k: string) => `${MONTHS[Number(k.slice(5, 7)) - 1]} ${k.slice(2, 4)}`;
-  const monthChartSeries = monthTrend.map((m) => ({ label: monthLbl(m.key), value: Math.round(m.value) }));
-  const weekChartSeries = weekTrend.map((w) => ({ label: w.key.slice(5), value: Math.round(w.value) }));
+  // Label a month bucket "Jun ’26" (apostrophe = year, so it doesn't read like a
+  // day) and a week bucket by its Monday date "DD/MM".
+  const monthLbl = (k: string) => `${MONTHS[Number(k.slice(5, 7)) - 1]} ’${k.slice(2, 4)}`;
+  const weekLbl = (k: string) => `${k.slice(8, 10)}/${k.slice(5, 7)}`;
+  const monthComboData = monthTrend.map((m) => ({ label: monthLbl(m.key), value: Math.round(m.value), growth: m.growth }));
+  const weekComboData = weekTrend.map((w) => ({ label: weekLbl(w.key), value: Math.round(w.value), growth: w.growth }));
   const latestMonthGrowth = monthTrend.length ? monthTrend[monthTrend.length - 1].growth : null;
   const latestWeekGrowth = weekTrend.length ? weekTrend[weekTrend.length - 1].growth : null;
   const growthRows = (rows: { key: string; value: number; growth: number | null }[], label: (k: string) => string) =>
@@ -446,18 +456,32 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     .filter((d) => byWeekday.has(d))
     .map((d) => ({ label: WEEKDAYS[d], value: byWeekday.get(d)!.count, sub: formatAmd(byWeekday.get(d)!.revenue) }));
 
-  // Active selling hours by weekday (Mon-first): for each weekday, the average
-  // number of distinct clock-hours with a sale across that weekday's days in the
-  // window — i.e. how long the shop is actively selling on a typical Mon/Tue/…
-  const activeHoursByWd = new Map<number, { total: number; days: number }>();
+  // Active selling hours by weekday (Mon-first). For each weekday we collect,
+  // across its days in the window: the average first/last sale hour (the typical
+  // busy window in Yerevan time), the average count of distinct active hours,
+  // and the single busiest clock-hour (most sales).
+  const activeHoursByWd = new Map<number, { count: number; open: number; close: number; days: number }>();
   for (const [day, hs] of dayHourSet) {
     const wd = dayWeekday.get(day)!;
-    const e = activeHoursByWd.get(wd) || { total: 0, days: 0 };
-    e.total += hs.size; e.days += 1; activeHoursByWd.set(wd, e);
+    const hours = [...hs];
+    const e = activeHoursByWd.get(wd) || { count: 0, open: 0, close: 0, days: 0 };
+    e.count += hs.size;
+    e.open += Math.min(...hours);
+    e.close += Math.max(...hours);
+    e.days += 1;
+    activeHoursByWd.set(wd, e);
   }
-  const activeHoursSeries = WEEK_ORDER.map((wd) => {
+  const activeHoursData = WEEK_ORDER.map((wd) => {
     const e = activeHoursByWd.get(wd);
-    return { label: WEEKDAYS[wd], value: e ? Math.round((e.total / e.days) * 10) / 10 : 0 };
+    const hw = hourByWeekday.get(wd);
+    const peak = hw ? [...hw.entries()].sort((a, b) => b[1] - a[1])[0][0] : null;
+    return {
+      label: WEEKDAYS[wd],
+      open: e ? Math.round(e.open / e.days) : null,
+      close: e ? Math.round(e.close / e.days) : null,
+      peak,
+      avgHours: e ? Math.round((e.count / e.days) * 10) / 10 : 0,
+    };
   });
 
   // ---- Interactive drill-down data: a light per-sale record + groupings, so
@@ -540,6 +564,22 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       </ul>
     );
   };
+  // A small ⓘ button (opens a "how it's calculated" modal) and its panel: the
+  // text uses blank lines to separate paragraphs / bullet lines.
+  const infoIcon = (
+    <span className="inline-flex items-center justify-center rounded-full transition hover:opacity-70" style={{ color: 'var(--ink-faint)' }} aria-label={t('sa.howCalculated')}>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+      </svg>
+    </span>
+  );
+  const renderInfo = (text: string) => (
+    <div className="space-y-2 text-sm" style={{ color: 'var(--ink)' }}>
+      {text.split('\n').filter((l) => l.trim()).map((line, i) => (
+        <p key={i} style={line.startsWith('•') ? { paddingLeft: '0.5rem', color: 'var(--ink-soft)' } : undefined}>{line}</p>
+      ))}
+    </div>
+  );
   const renderNames = (rows: { name: string; sub?: string }[]) =>
     rows.length ? (
       <ul className="space-y-1.5">
@@ -990,9 +1030,14 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
 
           {/* Active selling hours, weekday by weekday */}
           <section className="card">
-            <p className="font-semibold mb-1">{t('sa.activeHours')}</p>
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="font-semibold">{t('sa.activeHours')}</p>
+              <Drilldown title={t('sa.activeHours')} className="!w-auto inline-flex items-center" panel={renderInfo(t('sa.activeHoursInfo'))}>
+                {infoIcon}
+              </Drilldown>
+            </div>
             <p className="text-xs mb-3" style={{ color: 'var(--ink-soft)' }}>{t('sa.activeHoursHint')}</p>
-            <LineChartHover series={activeHoursSeries} unit={t('sa.hoursUnit')} />
+            <ActiveHoursChart data={activeHoursData} />
           </section>
 
           {/* Growth trends — month-on-month & week-on-week */}
@@ -1004,23 +1049,33 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <div className="grid md:grid-cols-2 gap-3">
               <div className="card">
                 <div className="flex items-center justify-between gap-3 mb-1">
-                  <p className="font-semibold">{t('sa.monthOnMonth')}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-semibold">{t('sa.monthOnMonth')}</p>
+                    <Drilldown title={t('sa.monthOnMonth')} className="!w-auto inline-flex items-center" panel={renderInfo(t('sa.momInfo'))}>
+                      {infoIcon}
+                    </Drilldown>
+                  </div>
                   <Drilldown title={t('sa.monthOnMonth')} className="!w-auto btn-link text-xs" panel={renderNames(growthRows(monthTrend, monthLbl))}>{t('sa.details')}</Drilldown>
                 </div>
                 <p className="text-xs mb-3 tabular-nums font-semibold" style={{ color: latestMonthGrowth == null ? 'var(--ink-soft)' : latestMonthGrowth >= 0 ? 'var(--brand-deep)' : 'var(--danger, #b91c1c)' }}>
                   {latestMonthGrowth == null ? t('sa.notEnough') : `${latestMonthGrowth >= 0 ? '▲' : '▼'} ${Math.abs(latestMonthGrowth).toFixed(1)}% ${t('sa.vsPrevMonth')}`}
                 </p>
-                <LineChartHover series={monthChartSeries} unit="֏" height={140} />
+                <GrowthBarLineChart data={monthComboData} unit="֏" />
               </div>
               <div className="card">
                 <div className="flex items-center justify-between gap-3 mb-1">
-                  <p className="font-semibold">{t('sa.weekOnWeek')}</p>
-                  <Drilldown title={t('sa.weekOnWeek')} className="!w-auto btn-link text-xs" panel={renderNames(growthRows(weekTrend, (k) => k.slice(5)))}>{t('sa.details')}</Drilldown>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-semibold">{t('sa.weekOnWeek')}</p>
+                    <Drilldown title={t('sa.weekOnWeek')} className="!w-auto inline-flex items-center" panel={renderInfo(t('sa.wowInfo'))}>
+                      {infoIcon}
+                    </Drilldown>
+                  </div>
+                  <Drilldown title={t('sa.weekOnWeek')} className="!w-auto btn-link text-xs" panel={renderNames(growthRows(weekTrend, weekLbl))}>{t('sa.details')}</Drilldown>
                 </div>
                 <p className="text-xs mb-3 tabular-nums font-semibold" style={{ color: latestWeekGrowth == null ? 'var(--ink-soft)' : latestWeekGrowth >= 0 ? 'var(--brand-deep)' : 'var(--danger, #b91c1c)' }}>
                   {latestWeekGrowth == null ? t('sa.notEnough') : `${latestWeekGrowth >= 0 ? '▲' : '▼'} ${Math.abs(latestWeekGrowth).toFixed(1)}% ${t('sa.vsPrevWeek')}`}
                 </p>
-                <LineChartHover series={weekChartSeries} unit="֏" height={140} />
+                <GrowthBarLineChart data={weekComboData} unit="֏" />
               </div>
             </div>
           </section>
