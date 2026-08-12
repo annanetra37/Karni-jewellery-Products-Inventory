@@ -111,7 +111,10 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
 
   const [txs, sellingPoints, ownerUsers, superAdmins, sessions] = await Promise.all([
     prisma.safeTransaction.findMany({
-      orderBy: { occurredAt: 'desc' },
+      // Newest first. occurredAt is only a day (the form has no time), so within
+      // the same day fall back to createdAt — the real recording order — to keep
+      // it deterministic (the later-recorded movement sits on top).
+      orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
       include: { owner: { select: { fullName: true } }, sellingPoint: { select: { name: true } }, performedBy: { select: { fullName: true } } },
     }),
     prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
