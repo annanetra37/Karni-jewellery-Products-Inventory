@@ -9,6 +9,8 @@ const Body = z.object({
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   customerId: z.string().nullable().optional(),
   cashToSafe: z.boolean().optional(),
+  nonDrawerAmd: z.number().min(0).optional(),
+  nonDrawerToSafe: z.boolean().optional(),
   discount: DiscountSchema.nullable().optional(),
 });
 
@@ -27,14 +29,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (parsed.data.paymentMethod !== undefined && parsed.data.paymentMethod !== 'CASH') data.cashToSafe = false;
 
   // A discount change re-resolves against the (fixed) subtotal and re-derives
-  // the total.
-  if (parsed.data.discount !== undefined) {
-    const sale = await prisma.sale.findUnique({ where: { id }, select: { subtotalAmd: true } });
+  // the total. We also need the resulting total to clamp the transfer portion.
+  let newTotal: number | null = null;
+  if (parsed.data.discount !== undefined || parsed.data.nonDrawerAmd !== undefined) {
+    const sale = await prisma.sale.findUnique({ where: { id }, select: { subtotalAmd: true, totalAmd: true } });
     if (!sale) return NextResponse.json({ error: 'sale not found' }, { status: 404 });
-    const subtotal = Number(sale.subtotalAmd);
-    const discountAmd = resolveDiscount(subtotal, parsed.data.discount);
-    data.discountAmd = discountAmd;
-    data.totalAmd = subtotal - discountAmd;
+    if (parsed.data.discount !== undefined) {
+      const subtotal = Number(sale.subtotalAmd);
+      const discountAmd = resolveDiscount(subtotal, parsed.data.discount);
+      data.discountAmd = discountAmd;
+      data.totalAmd = subtotal - discountAmd;
+      newTotal = subtotal - discountAmd;
+    } else {
+      newTotal = Number(sale.totalAmd);
+    }
+  }
+
+  if (parsed.data.nonDrawerToSafe !== undefined) data.nonDrawerToSafe = parsed.data.nonDrawerToSafe;
+  if (parsed.data.nonDrawerAmd !== undefined) {
+    // The portion that didn't enter the drawer, capped at the sale total. Kept
+    // for any payment method so an admin can record/see it; only cash sales feed
+    // the drawer, so it never affects reconciliation for non-cash sales.
+    const cap = newTotal ?? Infinity;
+    data.nonDrawerAmd = Math.min(Math.max(0, parsed.data.nonDrawerAmd), cap);
   }
 
   try {

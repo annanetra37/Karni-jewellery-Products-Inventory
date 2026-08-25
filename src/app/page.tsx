@@ -4,6 +4,7 @@ import { ensureBirthdayReminders } from '@/lib/birthdays';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { Clock } from '@/components/Clock';
+import { RevealAmount } from '@/components/RevealAmount';
 import { getT } from '@/lib/i18n-server';
 
 export default async function HomePage() {
@@ -36,11 +37,25 @@ export default async function HomePage() {
   const openShiftsWhere = scope
     ? { status: 'OPEN' as const, sellingPointId: { in: scope } }
     : { status: 'OPEN' as const };
-  const [todaySalesCount, todayTotalAgg, openShift, lowStock, openShifts] = await Promise.all([
-    prisma.sale.count({ where: { createdAt: { gte: todayStart } } }),
-    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: { createdAt: { gte: todayStart } } }),
+  // Shift isolation: a salesperson only ever sees their own day's figures, so a
+  // second person working the same day can't see the previous shift's numbers.
+  // Admins see the whole day across every shift. Exchange purchases are paid
+  // with returned credit (not new money), so they're excluded from the sales
+  // count and revenue; returns then net their credit out of revenue below.
+  const todayWhere = admin
+    ? { createdAt: { gte: todayStart }, returnAsExchange: { is: null } }
+    : { createdAt: { gte: todayStart }, soldById: user.id, returnAsExchange: { is: null } };
+  const todayReturnWhere = admin
+    ? { createdAt: { gte: todayStart } }
+    : { createdAt: { gte: todayStart }, performedById: user.id };
+  const [todaySalesCount, todayTotalAgg, todayReturnAgg, openShift, lowStock, openShifts] = await Promise.all([
+    prisma.sale.count({ where: todayWhere }),
+    prisma.sale.aggregate({ _sum: { totalAmd: true }, where: todayWhere }),
+    prisma.saleReturn.aggregate({ _sum: { returnedAmd: true, exchangeAmd: true }, where: todayReturnWhere }),
     prisma.cashDrawerSession.findFirst({
-      where: { userId: user.id, status: 'OPEN' },
+      // "My shift" = any open drawer I'm an active participant of (I opened it
+      // or joined a co-worker's), not just one I personally opened.
+      where: { status: 'OPEN', participants: { some: { userId: user.id, leftAt: null } } },
       include: { sellingPoint: true, breaks: { where: { endedAt: null } } },
     }),
     prisma.inventoryItem.count({ where: { quantity: { lte: 2 } } }),
@@ -52,9 +67,18 @@ export default async function HomePage() {
         })
       : Promise.resolve([]),
   ]);
+  const todayRevenue = Number(todayTotalAgg._sum.totalAmd ?? 0)
+    - (Number(todayReturnAgg._sum.returnedAmd ?? 0) - Number(todayReturnAgg._sum.exchangeAmd ?? 0));
   // On the home page, only show OTHER people's open shifts here — the user's own
   // shift already has its dedicated card above.
   const otherOpenShifts = openShifts.filter((s) => s.userId !== user.id);
+
+  // Open team notes, surfaced on every home load so whoever is on shift sees them.
+  const openNotes = await prisma.teamNote.findMany({
+    where: { resolvedAt: null }, orderBy: { createdAt: 'desc' }, take: 5,
+    include: { author: { select: { fullName: true } } },
+  });
+  const openNotesCount = await prisma.teamNote.count({ where: { resolvedAt: null } });
 
   return (
     <div className="space-y-4">
@@ -116,6 +140,32 @@ export default async function HomePage() {
         </Link>
       )}
 
+      {/* Team notes — shared handover board, visible to everyone on login. */}
+      <Link href="/notes" className="card-interactive block">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm font-semibold" style={{ color: 'var(--brand-deep)' }}>
+            {t('tn.home')}
+            {openNotesCount > 0 && <span className="chip chip-accent ml-2">{openNotesCount}</span>}
+          </p>
+          <span style={{ color: 'var(--ink-soft)' }}>›</span>
+        </div>
+        {openNotes.length === 0 ? (
+          <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('tn.none')}</p>
+        ) : (
+          <ul className="space-y-1">
+            {openNotes.map((n) => (
+              <li key={n.id} className="text-sm flex justify-between gap-2">
+                <span className="truncate">{n.body}</span>
+                <span className="text-[11px] shrink-0" style={{ color: 'var(--ink-soft)' }}>{n.author.fullName}</span>
+              </li>
+            ))}
+            {openNotesCount > openNotes.length && (
+              <li className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>+{openNotesCount - openNotes.length} {t('tn.viewAll').toLowerCase()}…</li>
+            )}
+          </ul>
+        )}
+      </Link>
+
       {/* Store sales figures — only admins, or a sales user with an open shift. */}
       {(admin || openShift) && (
       <section className="grid grid-cols-2 gap-3">
@@ -124,17 +174,18 @@ export default async function HomePage() {
           <p className="display text-3xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{todaySalesCount}</p>
           <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
         </Link>
-        <Link href="/sales?range=today" className="card-interactive block">
+        <div className="card block">
           <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('h.revenueToday')}</p>
-          <p className="display text-2xl font-semibold mt-1" style={{ color: 'var(--brand-deep)' }}>{formatAmd(Number(todayTotalAgg._sum.totalAmd ?? 0))}</p>
-          <p className="text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</p>
-        </Link>
+          <RevealAmount value={formatAmd(todayRevenue)} viewLabel={t('h.view')} hideLabel={t('h.hide')} />
+          <Link href="/sales?range=today" className="block text-[11px] mt-1" style={{ color: 'var(--ink-soft)' }}>{t('h.viewDetails')} →</Link>
+        </div>
       </section>
       )}
 
       <section className="grid grid-cols-2 gap-3">
         <Link href="/sell" className="btn-primary">{t('h.startSale')}</Link>
         <Link href="/receive" className="btn-secondary">{t('h.receiveStock')}</Link>
+        <Link href="/return" className="btn-secondary">{t('rx.home')}</Link>
         <Link href="/orders/new" className="btn-secondary">{t('h.newOrder')}</Link>
         <Link href="/customers" className="btn-secondary">{t('h.customers')}</Link>
       </section>
@@ -151,7 +202,9 @@ export default async function HomePage() {
             <Link href="/admin/analytics-hub" className="btn-accent">{t('h.karniAnalytics')}</Link>
             <Link href="/admin/photos" className="btn-secondary">{t('h.photos')}</Link>
             {admin && <Link href="/admin/safe" className="btn-secondary">{t('h.safe')}</Link>}
+            <Link href="/admin/transfer" className="btn-secondary">{t('h.transfer')}</Link>
             <Link href="/admin/reports" className="btn-secondary">{t('h.reports')}</Link>
+            {isSuperAdmin(user) && <Link href="/admin/health" className="btn-secondary">{t('h.health')}</Link>}
           </div>
         </section>
       )}

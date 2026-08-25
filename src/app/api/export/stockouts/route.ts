@@ -24,7 +24,13 @@ export async function GET(req: NextRequest) {
     ? new Date(yerevanDateStringStart(toStr).getTime() + 24 * 60 * 60 * 1000)
     : null;
 
-  const { stock, orders } = await getProductionList({ from, to });
+  const { stock, orders } = await getProductionList({
+    from, to,
+    states: sp.getAll('state').filter((x) => ['OUT', 'LOW'].includes(x)),
+    categories: sp.getAll('cat'),
+    collections: sp.getAll('col'),
+    points: sp.getAll('pt'),
+  });
 
   const header = ['Type', 'Product', 'SKU', 'Collection', 'Category', 'Location', 'Status', 'Qty', 'Reorder point', 'Date (Yerevan)', 'Deadline (Yerevan)', 'Reference', 'Customer', 'Production details', 'Order notes'];
   const lines = [header.map(csvCell).join(',')];

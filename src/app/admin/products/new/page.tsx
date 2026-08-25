@@ -110,6 +110,10 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
     select: { id: true, designId: true, nameEn: true, category: true, collection: true, subcollection: true },
     take: 500,
   });
+  // Offer every category already in the catalog (plus the standard set), so new
+  // products aren't limited to a hardcoded list.
+  const catRows = await prisma.variant.groupBy({ by: ['category'], where: { category: { not: null } }, orderBy: { category: 'asc' } });
+  const categoryOptions = Array.from(new Set(['Pendant', 'Earring', 'Ring', 'Bracelet', 'Necklace', 'Brooch', ...catRows.map((r) => r.category!)].filter(Boolean)));
 
   return (
     <div className="space-y-4">
@@ -161,8 +165,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
               <label className="label">Category</label>
               <select className="input" name="category" defaultValue="">
                 <option value="">—</option>
-                <option>Pendant</option><option>Earring</option><option>Ring</option>
-                <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>

@@ -20,13 +20,17 @@ type CartLine = {
   stockAtSp: number;
 };
 type Customer = { id: string; fullName: string; phone: string | null; email: string | null };
+type Seller = { id: string; name: string; onShift: boolean };
 
-export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoints: SP[]; defaultSellingPointId: string }) {
+export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [spId, setSpId] = useState(defaultSellingPointId || (sellingPoints[0]?.id ?? ''));
+  const [soldById, setSoldById] = useState(currentUserId || sellers[0]?.id || '');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'>('CASH');
   const [cashToSafe, setCashToSafe] = useState(false);
+  const [nonDrawer, setNonDrawer] = useState('');
+  const [nonDrawerToSafe, setNonDrawerToSafe] = useState(false);
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [custQ, setCustQ] = useState('');
@@ -34,6 +38,9 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
   const [addNew, setAddNew] = useState(false);
   const [newName, setNewName] = useState(''); const [newPhone, setNewPhone] = useState(''); const [newEmail, setNewEmail] = useState('');
   const [newBirthday, setNewBirthday] = useState('');
+  const [newAddress, setNewAddress] = useState(''); const [newInstagram, setNewInstagram] = useState('');
+  const [newGender, setNewGender] = useState(''); const [newNotes, setNewNotes] = useState('');
+  const [newProfession, setNewProfession] = useState('');
 
   const [pickerMode, setPickerMode] = useState<'browse' | 'search'>('browse');
   const [pickerOpen, setPickerOpen] = useState(true);
@@ -87,11 +94,17 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
     setErr(''); setSubmitting(true);
     try {
       let customerId = customer?.id ?? null;
-      if (addNew && newName && (newPhone || newEmail)) {
-        if (!newBirthday) { setErr(t('s.birthdayRequired')); setSubmitting(false); return; }
+      // All customer fields are optional — save a new customer if any field was filled.
+      const hasNewCustomer = addNew && (newName || newPhone || newEmail || newBirthday || newAddress || newInstagram || newGender || newProfession || newNotes);
+      if (hasNewCustomer) {
         const cr = await fetch('/api/customers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fullName: newName, phone: newPhone || null, email: newEmail || null, birthday: newBirthday }),
+          body: JSON.stringify({
+            fullName: newName || null, phone: newPhone || null, email: newEmail || null,
+            birthday: newBirthday || null, address: newAddress || null,
+            instagram: newInstagram || null, gender: newGender || null,
+            profession: newProfession || null, notes: newNotes || null,
+          }),
         });
         const cj = await cr.json();
         if (!cr.ok) { setErr(cj.error || 'Could not save customer'); setSubmitting(false); return; }
@@ -102,8 +115,11 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
         body: JSON.stringify({
           sellingPointId: spId,
           customerId,
+          soldById: soldById || undefined,
           paymentMethod,
           cashToSafe: paymentMethod === 'CASH' ? cashToSafe : false,
+          nonDrawerAmd: paymentMethod === 'CASH' && !cashToSafe ? (Number(nonDrawer) || 0) : 0,
+          nonDrawerToSafe,
           discount,
           lines: cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
         }),
@@ -213,6 +229,17 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
+            {sellers.length > 1 && (
+              <div>
+                <label className="label">{t('s.soldBy')}</label>
+                <select className="input" value={soldById} onChange={(e) => setSoldById(e.target.value)}>
+                  {sellers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}{s.onShift ? ` · ${t('s.onShift')}` : ''}</option>
+                  ))}
+                </select>
+                <span className="block text-xs text-karni-700 mt-1">{t('s.soldByHint')}</span>
+              </div>
+            )}
             <div>
               <label className="label">{t('s.paymentMethod')}</label>
               <div className="grid grid-cols-4 gap-2">
@@ -232,6 +259,25 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
                 </span>
               </label>
             )}
+            {paymentMethod === 'CASH' && !cashToSafe && (
+              <div className="space-y-2">
+                <div>
+                  <label className="label">{t('s.nonDrawer')}</label>
+                  <input className="input" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0"
+                    value={nonDrawer} onChange={(e) => setNonDrawer(e.target.value)} />
+                  <span className="block text-xs text-karni-700 mt-1">{t('s.nonDrawerHint')}</span>
+                </div>
+                {(Number(nonDrawer) || 0) > 0 && (
+                  <div>
+                    <label className="label">{t('s.nonDrawerWhere')}</label>
+                    <select className="input" value={nonDrawerToSafe ? 'safe' : 'bank'} onChange={(e) => setNonDrawerToSafe(e.target.value === 'safe')}>
+                      <option value="bank">{t('s.nonDrawerBank')}</option>
+                      <option value="safe">{t('s.nonDrawerSafe')}</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="card space-y-2">
@@ -247,10 +293,21 @@ export function SellFlow({ sellingPoints, defaultSellingPointId }: { sellingPoin
             ) : addNew ? (
               <div className="space-y-2">
                 <input className="input" placeholder={t('s.fullName')} value={newName} onChange={(e) => setNewName(e.target.value)} />
-                <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
-                <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-                <label className="label">{t('s.birthday')} <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input className="input" placeholder={t('s.phone')} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+                  <input className="input" placeholder={t('l.email')} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                  <select className="input" value={newGender} onChange={(e) => setNewGender(e.target.value)} aria-label={t('cu.gender')}>
+                    <option value="">{t('cu.gender')}</option>
+                    {['Female', 'Male', 'Other'].map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <input className="input" placeholder="@instagram" value={newInstagram} onChange={(e) => setNewInstagram(e.target.value)} />
+                  <input className="input" placeholder={t('cu.profession')} value={newProfession} onChange={(e) => setNewProfession(e.target.value)} />
+                </div>
+                <input className="input" placeholder={t('cu.address')} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
+                <label className="label">{t('s.birthday')}</label>
                 <BirthdayPicker value={newBirthday} onChange={setNewBirthday} />
+                <textarea className="input min-h-[60px]" placeholder={t('cu.notes')} value={newNotes} onChange={(e) => setNewNotes(e.target.value)} />
+                <p className="text-xs text-karni-700">{t('cu.allOptional')}</p>
                 <button className="text-karni-700 underline text-sm" onClick={() => setAddNew(false)}>{t('c.cancel')}</button>
               </div>
             ) : (

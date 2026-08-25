@@ -4,51 +4,56 @@ import { Prisma } from '@prisma/client';
 import { ReceiveFlow } from './ReceiveFlow';
 import { Thumb } from '@/components/Thumb';
 import { getT } from '@/lib/i18n-server';
-import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
+import { formatAmd } from '@/lib/currency';
+import { yerevanDateStringStart } from '@/lib/datetime';
+import { CheckinFilters } from '@/components/CheckinFilters';
 import Link from 'next/link';
 
 const PER_PAGE = 20;
 
-type Search = Promise<{ cp?: string; order?: string; who?: string; point?: string; from?: string; to?: string; q?: string; category?: string; collection?: string; size?: string; color?: string }>;
+type Search = Promise<Record<string, string | string[] | undefined>>;
+
+const arr = (v: string | string[] | undefined): string[] => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
+const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v[0] || '') : v || '');
 
 export default async function ReceivePage({ searchParams }: { searchParams: Search }) {
   const user = await requireUser();
-  const { t, tl } = await getT();
+  const { t } = await getT();
   const sp = await searchParams;
-  const cp = Math.max(0, Number(sp.cp || 0));
-  const order: 'asc' | 'desc' = sp.order === 'asc' ? 'asc' : 'desc';
+  const cp = Math.max(0, Number(one(sp.cp) || 0));
+  const order: 'asc' | 'desc' = one(sp.order) === 'asc' ? 'asc' : 'desc';
 
-  // Filters
-  const who = (sp.who || '').trim();
-  const point = (sp.point || '').trim();
-  const q = (sp.q || '').trim();
-  const category = (sp.category || '').trim();
-  const collection = (sp.collection || '').trim();
-  const size = (sp.size || '').trim();
-  const color = (sp.color || '').trim();
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.from || '') ? sp.from! : '';
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(sp.to || '') ? sp.to! : '';
+  // Filters (all multi-select except the text search and the date range)
+  const who = arr(sp.who);
+  const point = arr(sp.point);
+  const q = one(sp.q).trim();
+  const category = arr(sp.category);
+  const collection = arr(sp.collection);
+  const size = arr(sp.size);
+  const color = arr(sp.color);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.from)) ? one(sp.from) : '';
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(one(sp.to)) ? one(sp.to) : '';
   let createdAt: { gte?: Date; lt?: Date } | undefined;
   if (from) createdAt = { ...(createdAt || {}), gte: yerevanDateStringStart(from) };
   if (to) createdAt = { ...(createdAt || {}), lt: new Date(yerevanDateStringStart(to).getTime() + 24 * 60 * 60 * 1000) };
 
   const variantWhere: Prisma.VariantWhereInput = {};
   if (q) variantWhere.OR = [{ designName: { contains: q, mode: 'insensitive' } }, { sku: { contains: q, mode: 'insensitive' } }];
-  if (category) variantWhere.category = category;
-  if (collection) variantWhere.collection = collection;
-  if (size) variantWhere.size = size;
-  if (color) variantWhere.color = color;
+  if (category.length) variantWhere.category = { in: category };
+  if (collection.length) variantWhere.collection = { in: collection };
+  if (size.length) variantWhere.size = { in: size };
+  if (color.length) variantWhere.color = { in: color };
   const hasVariantFilter = Object.keys(variantWhere).length > 0;
 
   const where: Prisma.StockMovementWhereInput = {
     type: 'CHECKIN',
-    ...(who ? { performedById: who } : {}),
-    ...(point ? { sellingPointId: point } : {}),
+    ...(who.length ? { performedById: { in: who } } : {}),
+    ...(point.length ? { sellingPointId: { in: point } } : {}),
     ...(createdAt ? { createdAt } : {}),
     ...(hasVariantFilter ? { variant: variantWhere } : {}),
   };
 
-  const [sps, openShift, megamall, recent, totalRecent, checkinUsers, catRows, collRows, sizeRows, colorRows] = await Promise.all([
+  const [sps, openShift, megamall, recent, totalRecent, summaryRows, checkinUsers, catRows, collRows, sizeRows, colorRows] = await Promise.all([
     prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
     prisma.cashDrawerSession.findFirst({ where: { userId: user.id, status: 'OPEN' } }),
     prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } }),
@@ -60,6 +65,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
       include: { variant: true, sellingPoint: true, performedBy: true },
     }),
     prisma.stockMovement.count({ where }),
+    prisma.stockMovement.findMany({ where, select: { qtyDelta: true, variantId: true, variant: { select: { priceAmd: true } } } }),
     prisma.user.findMany({ where: { isActive: true }, orderBy: { fullName: 'asc' }, select: { id: true, fullName: true } }),
     prisma.variant.groupBy({ by: ['category'], where: { category: { not: null } }, orderBy: { category: 'asc' } }),
     prisma.variant.groupBy({ by: ['collection'], where: { collection: { not: null } }, orderBy: { collection: 'asc' } }),
@@ -71,6 +77,30 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
   const sizes = sizeRows.map((r) => r.size!).filter(Boolean);
   const colors = colorRows.map((r) => r.color!).filter(Boolean);
 
+  // Summary over the whole filtered set (not just the current page).
+  let unitsAdded = 0;
+  let stockValue = 0;
+  const variantSet = new Set<string>();
+  for (const m of summaryRows) {
+    unitsAdded += m.qtyDelta;
+    stockValue += m.qtyDelta * Number(m.variant.priceAmd);
+    variantSet.add(m.variantId);
+  }
+  const distinctVariants = variantSet.size;
+
+  // Recent receiving sessions that have book-page photos attached, so the
+  // received counts can be checked against the owner's hand-written list.
+  const photoBatches = await prisma.receivingBatch.findMany({
+    where: { photoUrls: { isEmpty: false }, ...(point.length ? { sellingPointId: { in: point } } : {}) },
+    orderBy: { createdAt: 'desc' },
+    take: 12,
+    include: {
+      performedBy: { select: { fullName: true } },
+      sellingPoint: { select: { name: true } },
+      movements: { include: { variant: { select: { designName: true, sku: true } } } },
+    },
+  });
+
   const allowed = await allowedSellingPoints(user, sps);
   const allowedIds = new Set(allowed.map((s) => s.id));
   const receiveDefault =
@@ -81,24 +111,22 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
   const lastPage = Math.max(0, Math.ceil(totalRecent / PER_PAGE) - 1);
   const start = totalRecent === 0 ? 0 : cp * PER_PAGE + 1;
   const end = Math.min(totalRecent, (cp + 1) * PER_PAGE);
-  const filtersActive = !!(who || point || from || to || q || category || collection || size || color);
-
-  // Preserve filters across sort/pagination links.
+  // Preserve filters across sort/pagination links (array filters repeat).
   const buildHref = (next: Partial<{ cp: number; order: 'asc' | 'desc' }>) => {
     const u = new URLSearchParams();
     const newCp = next.cp ?? cp;
     const newOrder = next.order ?? order;
     if (newCp > 0) u.set('cp', String(newCp));
     if (newOrder !== 'desc') u.set('order', newOrder);
-    if (who) u.set('who', who);
-    if (point) u.set('point', point);
+    who.forEach((v) => u.append('who', v));
+    point.forEach((v) => u.append('point', v));
     if (from) u.set('from', from);
     if (to) u.set('to', to);
     if (q) u.set('q', q);
-    if (category) u.set('category', category);
-    if (collection) u.set('collection', collection);
-    if (size) u.set('size', size);
-    if (color) u.set('color', color);
+    category.forEach((v) => u.append('category', v));
+    collection.forEach((v) => u.append('collection', v));
+    size.forEach((v) => u.append('size', v));
+    color.forEach((v) => u.append('color', v));
     const qs = u.toString();
     return qs ? `/receive?${qs}` : '/receive';
   };
@@ -113,6 +141,51 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
         sellingPoints={allowed.map((s) => ({ id: s.id, name: s.name, type: String(s.type) }))}
         defaultSellingPointId={receiveDefault}
       />
+
+      <div className="flex justify-end">
+        <Link href="/admin/stock-movements" className="btn-link text-sm">{t('r.viewMovements')} →</Link>
+      </div>
+
+      {photoBatches.length > 0 && (
+        <section className="card">
+          <p className="font-semibold mb-3">{t('r.bookPageBatches')}</p>
+          <ul className="space-y-3">
+            {photoBatches.map((b) => {
+              const units = b.movements.reduce((n, m) => n + m.qtyDelta, 0);
+              return (
+                <li key={b.id} className="border-b border-karni-100 pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-sm font-medium">{b.sellingPoint.name} · {t('o.by').toLowerCase()} {b.performedBy.fullName}</p>
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{b.createdAt.toLocaleString()}</p>
+                  </div>
+                  <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                    {b.movements.length > 0
+                      ? `${b.movements.length} ${t('r.variants').toLowerCase()} · ${units} ${t('r.received')}`
+                      : t('r.photosOnly')}{b.note ? ` · ${b.note}` : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {b.photoUrls.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="w-24 h-24 object-cover rounded-lg border border-karni-200" />
+                      </a>
+                    ))}
+                  </div>
+                  <ul className="mt-2 text-xs" style={{ color: 'var(--ink-soft)' }}>
+                    {b.movements.map((m) => (
+                      <li key={m.id} className="flex justify-between gap-2">
+                        <span className="truncate">{m.variant.designName} <span className="font-mono opacity-70">{m.variant.sku}</span></span>
+                        <span className="tabular-nums whitespace-nowrap">+{m.qtyDelta}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="card">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <p className="font-semibold">
@@ -133,47 +206,31 @@ export default async function ReceivePage({ searchParams }: { searchParams: Sear
           </Link>
         </div>
 
-        {/* Filters — track who added what, when */}
-        <form method="get" className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
-          <input type="hidden" name="order" value={order} />
-          <select className="input" name="who" defaultValue={who} aria-label={t('r.who')}>
-            <option value="">{t('r.anyone')}</option>
-            {checkinUsers.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-          </select>
-          <select className="input" name="point" defaultValue={point} aria-label={t('c.sellingPoint')}>
-            <option value="">{t('r.anyPoint')}</option>
-            {sps.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <input className="input" name="q" defaultValue={q} placeholder={t('c.search')} />
-          <select className="input" name="collection" defaultValue={collection} aria-label={t('c.collection')}>
-            <option value="">{t('r.anyCollection')}</option>
-            {collections.map((c) => <option key={c} value={c}>{tl(c)}</option>)}
-          </select>
-          <select className="input" name="category" defaultValue={category} aria-label={t('c.category')}>
-            <option value="">{t('c.allCategories')}</option>
-            {categories.map((c) => <option key={c} value={c}>{tl(c)}</option>)}
-          </select>
-          <select className="input" name="size" defaultValue={size} aria-label={t('c.anySize')}>
-            <option value="">{t('c.anySize')}</option>
-            {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select className="input" name="color" defaultValue={color} aria-label={t('c.color')}>
-            <option value="">{t('r.anyColor')}</option>
-            {colors.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-soft)' }}>
-            {t('r.from')}
-            <input className="input" name="from" type="date" defaultValue={from} max={yerevanISODate()} />
-          </label>
-          <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-soft)' }}>
-            {t('r.to')}
-            <input className="input" name="to" type="date" defaultValue={to} max={yerevanISODate()} />
-          </label>
-          <div className="flex items-center gap-2">
-            <button type="submit" className="btn-primary text-sm flex-1">{t('r.applyFilters')}</button>
-            {filtersActive && <Link href="/receive" scroll={false} className="btn-link text-xs">{t('r.clearFilters')}</Link>}
+        {/* Summary for the current filter (whole filtered set, not just this page) */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('r.unitsAdded')}</p>
+            <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{unitsAdded.toLocaleString()}</p>
           </div>
-        </form>
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('r.variants')}</p>
+            <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{distinctVariants.toLocaleString()}</p>
+          </div>
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--brand)' }}>{t('r.stockValue')}</p>
+            <p className="display text-2xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{formatAmd(stockValue)}</p>
+          </div>
+        </div>
+
+        {/* Filters — elegant multi-select dropdowns + date window */}
+        <div className="mb-3">
+          <CheckinFilters
+            who={checkinUsers.map((u) => ({ id: u.id, name: u.fullName }))}
+            points={sps.map((s) => ({ id: s.id, name: s.name }))}
+            collections={collections} categories={categories} sizes={sizes} colors={colors}
+            showSearch
+          />
+        </div>
 
         <ul className="space-y-2">
           {recent.map((m) => (

@@ -1,4 +1,4 @@
-import { requireUser, isAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
+import { requireUser, isAdmin, isSuperAdmin, allowedSellingPoints, sellingPointScope } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatAmd } from '@/lib/currency';
 import { reconcileSessions, isMismatch, type SessionRecon } from '@/lib/reconcile';
@@ -103,6 +103,8 @@ async function openShiftAction(formData: FormData) {
       priorClosingAmd: priorClosing ?? undefined,
       handoverMismatch: mismatch,
       status: 'OPEN',
+      // The opener is the first participant of the shift.
+      participants: { create: { userId: u.id, joinedAt: now } },
     },
   });
   if (mismatch && thisHandover) {
@@ -114,6 +116,43 @@ async function openShiftAction(formData: FormData) {
       relatedId: session.id,
     });
   }
+  redirect('/kacca');
+}
+
+async function joinShiftAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  // Joining shares the already-counted drawer — no recount. Idempotent: if the
+  // user is already an active participant, do nothing.
+  const active = await prisma.shiftParticipant.findFirst({ where: { sessionId, userId: u.id, leftAt: null } });
+  if (!active) await prisma.shiftParticipant.create({ data: { sessionId, userId: u.id } });
+  redirect('/kacca');
+}
+
+async function leaveShiftAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sessionId = String(formData.get('sessionId') || '');
+  const session = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.status !== 'OPEN') redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session!.sellingPointId)) redirect('/kacca?err=forbidden');
+  // Step away without closing the drawer — just stamp this rep's leave time.
+  await prisma.shiftParticipant.updateMany({
+    where: { sessionId, userId: u.id, leftAt: null },
+    data: { leftAt: new Date() },
+  });
   redirect('/kacca');
 }
 
@@ -166,27 +205,71 @@ async function closeShiftAction(formData: FormData) {
   // Compute expected from cash sales between openingAt and now at this sellingPoint.
   // Cash-to-safe sales (online/delivery cash that bypassed the drawer) are excluded.
   const cashSales = await prisma.sale.aggregate({
-    _sum: { totalAmd: true },
+    _sum: { totalAmd: true, nonDrawerAmd: true },
     where: {
       sellingPointId: session!.sellingPointId,
       paymentMethod: 'CASH',
       cashToSafe: false,
       createdAt: { gte: session!.openingAt },
+      // Exchange purchases are paid with returned credit, not new cash — their
+      // drawer effect is carried by the return's drawerDeltaAmd below.
+      returnAsExchange: { is: null },
     },
   });
-  const cashRevenue = Number(cashSales._sum.totalAmd ?? 0);
-  const expected = Number(session!.openingCountAmd) + cashRevenue;
-  const discrepancy = closingCountAmd - expected;
+  // Only the cash actually collected entered the drawer; any part that went
+  // elsewhere (bank transfer / card, or straight to the safe) doesn't count.
+  const cashRevenue = Number(cashSales._sum.totalAmd ?? 0) - Number(cashSales._sum.nonDrawerAmd ?? 0);
+  // Returns/exchanges carry a signed net drawer effect attributed to a session
+  // (or, if untied, matched by time). Adding it matches `expectedCloseBySession`,
+  // so the close check and the reports stay in lock-step.
+  const drawerReturns = await prisma.saleReturn.aggregate({
+    _sum: { drawerDeltaAmd: true },
+    where: {
+      OR: [
+        { cashSessionId: session!.id },
+        { cashSessionId: null, sellingPointId: session!.sellingPointId, createdAt: { gte: session!.openingAt } },
+      ],
+    },
+  });
+  const returnDelta = Number(drawerReturns._sum.drawerDeltaAmd ?? 0);
+  const baseExpected = Number(session!.openingCountAmd) + cashRevenue + returnDelta;
+  // Drawer cash moved to the safe during the shift lowers the expected close.
+  // Run the SAME reconciliation the reports use, so the close check and the
+  // reports can never disagree (previously this ignored mid-shift safe moves and
+  // raised false discrepancies).
+  const { reconcileSessions } = await import('@/lib/reconcile');
+  const { yerevanDayStart } = await import('@/lib/datetime');
+  const closeAt = new Date();
+  const depositRows = await prisma.safeTransaction.findMany({
+    where: { type: 'DEPOSIT', sellingPointId: session!.sellingPointId, occurredAt: { gte: yerevanDayStart(session!.openingAt) } },
+    select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
+  });
+  const { byId } = reconcileSessions(
+    [{
+      id: session!.id, sellingPointId: session!.sellingPointId, pointName: '', status: 'CLOSED',
+      openingAt: session!.openingAt, openingCountAmd: Number(session!.openingCountAmd),
+      closingAt: closeAt, closingCountAmd, expectedCloseAmd: baseExpected,
+    }],
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
+  );
+  const sr = byId.get(session!.id);
+  const expected = sr?.expectedClose ?? baseExpected;
+  const discrepancy = sr?.closeDiff ?? (closingCountAmd - baseExpected);
   await prisma.cashDrawerSession.update({
     where: { id: sessionId },
     data: {
       closingCountAmd,
       closingById: u.id,
-      closingAt: new Date(),
+      closingAt: closeAt,
       expectedClosingAmd: expected,
       discrepancyAmd: discrepancy,
       status: Math.abs(discrepancy) > 0.001 ? 'DISPUTED' : 'CLOSED',
     },
+  });
+  // Closing the drawer ends the shift for everyone still on it.
+  await prisma.shiftParticipant.updateMany({
+    where: { sessionId, leftAt: null },
+    data: { leftAt: closeAt },
   });
   if (Math.abs(discrepancy) > 0.001) {
     const { notify } = await import('@/lib/notify');
@@ -287,6 +370,68 @@ async function editOpeningCountAction(formData: FormData) {
   redirect('/kacca');
 }
 
+// Super-admin correction of a CLOSED shift's counted-at-close amount. Recomputes
+// the expected close and discrepancy with the same reconciliation the reports
+// use, so a miscounted close can be fixed and the status re-derived.
+async function editClosingCountAction(formData: FormData) {
+  'use server';
+  const { requireUser, isSuperAdmin, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  if (!isSuperAdmin(u)) redirect('/kacca?err=forbidden');
+  const sessionId = String(formData.get('sessionId') || '');
+  const closingCountAmd = Number(formData.get('closingCountAmd') || 0);
+  const found = await prisma.cashDrawerSession.findUnique({ where: { id: sessionId } });
+  if (!found || (found.status !== 'CLOSED' && found.status !== 'DISPUTED')) redirect('/kacca');
+  const session = found!;
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(session.sellingPointId)) redirect('/kacca?err=forbidden');
+
+  const { reconcileSessions } = await import('@/lib/reconcile');
+  const { expectedCloseBySession } = await import('@/lib/shiftCash');
+  const [pointSessions, depositRows] = await Promise.all([
+    prisma.cashDrawerSession.findMany({
+      where: { sellingPointId: session.sellingPointId, status: { in: ['CLOSED', 'DISPUTED', 'OPEN'] } },
+      orderBy: { openingAt: 'asc' },
+      include: { sellingPoint: { select: { name: true } } },
+    }),
+    prisma.safeTransaction.findMany({
+      where: { type: 'DEPOSIT', sellingPointId: session.sellingPointId },
+      select: { id: true, sellingPointId: true, occurredAt: true, amountAmd: true, fromDrawer: true },
+    }),
+  ]);
+  const expMap = await expectedCloseBySession(pointSessions.map((s) => ({
+    id: s.id, sellingPointId: s.sellingPointId, openingAt: s.openingAt, closingAt: s.closingAt,
+    openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+  })));
+  const { byId } = reconcileSessions(
+    pointSessions.map((s) => ({
+      id: s.id, sellingPointId: s.sellingPointId, pointName: s.sellingPoint.name, status: s.status,
+      openingAt: s.openingAt, openingCountAmd: s.openingCountAmd == null ? null : Number(s.openingCountAmd),
+      // Use the corrected counted-at-close amount for the session being edited.
+      closingAt: s.closingAt,
+      closingCountAmd: s.id === sessionId ? closingCountAmd : (s.closingCountAmd == null ? null : Number(s.closingCountAmd)),
+      expectedCloseAmd: expMap.get(s.id) ?? null,
+    })),
+    depositRows.map((d) => ({ id: d.id, sellingPointId: d.sellingPointId, occurredAt: d.occurredAt, amountAmd: Number(d.amountAmd), fromDrawer: d.fromDrawer })),
+  );
+  const sr = byId.get(sessionId);
+  const expected = sr?.expectedClose ?? (session.expectedClosingAmd == null ? null : Number(session.expectedClosingAmd));
+  const discrepancy = sr?.closeDiff ?? (expected == null ? null : closingCountAmd - expected);
+  await prisma.cashDrawerSession.update({
+    where: { id: sessionId },
+    data: {
+      closingCountAmd,
+      closingById: u.id,
+      expectedClosingAmd: expected,
+      discrepancyAmd: discrepancy,
+      status: discrepancy != null && Math.abs(discrepancy) > 0.001 ? 'DISPUTED' : 'CLOSED',
+    },
+  });
+  redirect('/kacca');
+}
+
 export default async function KaccaPage({ searchParams }: { searchParams: Promise<{ err?: string; by?: string }> }) {
   const user = await requireUser();
   const { t } = await getT();
@@ -309,7 +454,10 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
     prisma.cashDrawerSession.findFirst({
       where: openWhere,
       orderBy: { openingAt: 'asc' },
-      include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'desc' } } },
+      include: {
+        sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'desc' } },
+        participants: { where: { leftAt: null }, include: { user: { select: { id: true, fullName: true } } }, orderBy: { joinedAt: 'asc' } },
+      },
     }),
     prisma.cashDrawerSession.findMany({
       where: recentWhere,
@@ -320,7 +468,10 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       ? prisma.cashDrawerSession.findMany({
           where: openShiftsWhere,
           orderBy: { openingAt: 'asc' },
-          include: { sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'asc' } } },
+          include: {
+            sellingPoint: true, openingBy: true, breaks: { orderBy: { startedAt: 'asc' } },
+            participants: { where: { leftAt: null }, include: { user: { select: { id: true, fullName: true } } }, orderBy: { joinedAt: 'asc' } },
+          },
         })
       : Promise.resolve([]),
   ]);
@@ -384,6 +535,8 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
       {openShift ? (() => {
         const activeBreak = openShift.breaks.find((b) => b.endedAt == null) ?? null;
         const onHold = !!activeBreak;
+        const iAmParticipant = openShift.participants.some((p) => p.user.id === user.id);
+        const participantNames = openShift.participants.map((p) => p.user.fullName).join(', ');
         return (
         <div className={`card space-y-3 ${onHold ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
           <p className="font-medium">
@@ -392,53 +545,72 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
           </p>
           <p className="text-sm">{openShift.sellingPoint.name} · {t('k.opened')} {openShift.openingAt.toLocaleString()}</p>
           <p className="text-sm">{t('h.openingCount')}: <b>{formatAmd(Number(openShift.openingCountAmd))}</b> · {t('o.by').toLowerCase()} {openShift.openingBy.fullName}</p>
+          <p className="text-sm">{t('k.onShift')}: <b>{participantNames || '—'}</b></p>
 
-          {/* Break controls */}
-          {onHold ? (
-            <div className="rounded-xl p-3 bg-amber-100/60 border border-amber-200 space-y-2">
-              <p className="text-sm font-medium text-amber-900">{t('k.onBreakSince')} {activeBreak!.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-              <form action={endBreakAction}>
+          {iAmParticipant ? (
+            <>
+              {/* Step away without closing the shared drawer. */}
+              <form action={leaveShiftAction}>
                 <input type="hidden" name="sessionId" value={openShift.id} />
-                <button className="btn-primary w-full" type="submit">{t('k.endBreak')}</button>
+                <button className="btn-secondary w-full" type="submit">{t('k.leaveShift')}</button>
               </form>
-            </div>
+
+              {/* Break controls */}
+              {onHold ? (
+                <div className="rounded-xl p-3 bg-amber-100/60 border border-amber-200 space-y-2">
+                  <p className="text-sm font-medium text-amber-900">{t('k.onBreakSince')} {activeBreak!.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <form action={endBreakAction}>
+                    <input type="hidden" name="sessionId" value={openShift.id} />
+                    <button className="btn-primary w-full" type="submit">{t('k.endBreak')}</button>
+                  </form>
+                </div>
+              ) : (
+                <form action={startBreakAction}>
+                  <input type="hidden" name="sessionId" value={openShift.id} />
+                  <button className="btn-secondary w-full" type="submit">{t('k.startBreak')}</button>
+                </form>
+              )}
+
+              {openShift.breaks.length > 0 && (
+                <ul className="text-xs space-y-0.5" style={{ color: 'var(--ink-soft)' }}>
+                  {openShift.breaks.map((b) => (
+                    <li key={b.id}>
+                      {t('k.break')}: {b.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {b.endedAt ? b.endedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '…'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Cash a participant took from the drawer for a delivery. */}
+              <details className="pt-1 border-t border-emerald-200">
+                <summary className="cursor-pointer select-none text-sm font-medium">🛵 {t('k.deliveryCash')}</summary>
+                <form action={recordDeliveryCashAction} className="space-y-2 mt-2">
+                  <input type="hidden" name="sellingPointId" value={openShift.sellingPointId} />
+                  <input className="input" name="amount" type="number" step="0.01" min="0" placeholder={t('k.deliveryAmount')} required />
+                  <input className="input" name="note" placeholder={t('k.deliveryNote')} />
+                  <button className="btn-secondary w-full" type="submit">{t('k.recordDelivery')}</button>
+                  <p className="text-xs text-karni-700">{t('k.deliveryHint')}</p>
+                </form>
+              </details>
+
+              <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
+                <input type="hidden" name="sessionId" value={openShift.id} />
+                <label className="label">{t('k.closingCount')}</label>
+                <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
+                <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
+                <button className="btn-primary w-full" type="submit" disabled={onHold}>{t('k.endShift')}</button>
+                {onHold && <p className="text-xs text-amber-800">{t('k.endBreakFirst')}</p>}
+              </form>
+            </>
           ) : (
-            <form action={startBreakAction}>
+            // A shift is already open at this point — a second rep joins the
+            // shared drawer instead of opening a new one (no recount).
+            <form action={joinShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
               <input type="hidden" name="sessionId" value={openShift.id} />
-              <button className="btn-secondary w-full" type="submit">{t('k.startBreak')}</button>
+              <p className="text-sm text-karni-700">{t('k.joinHint')}</p>
+              <button className="btn-primary w-full" type="submit">{t('k.joinShift')}</button>
             </form>
           )}
-
-          {openShift.breaks.length > 0 && (
-            <ul className="text-xs space-y-0.5" style={{ color: 'var(--ink-soft)' }}>
-              {openShift.breaks.map((b) => (
-                <li key={b.id}>
-                  {t('k.break')}: {b.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {b.endedAt ? b.endedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '…'}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Cash a seller took from the drawer for a delivery. */}
-          <details className="pt-1 border-t border-emerald-200">
-            <summary className="cursor-pointer select-none text-sm font-medium">🛵 {t('k.deliveryCash')}</summary>
-            <form action={recordDeliveryCashAction} className="space-y-2 mt-2">
-              <input type="hidden" name="sellingPointId" value={openShift.sellingPointId} />
-              <input className="input" name="amount" type="number" step="0.01" min="0" placeholder={t('k.deliveryAmount')} required />
-              <input className="input" name="note" placeholder={t('k.deliveryNote')} />
-              <button className="btn-secondary w-full" type="submit">{t('k.recordDelivery')}</button>
-              <p className="text-xs text-karni-700">{t('k.deliveryHint')}</p>
-            </form>
-          </details>
-
-          <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
-            <input type="hidden" name="sessionId" value={openShift.id} />
-            <label className="label">{t('k.closingCount')}</label>
-            <input className="input" name="closingCountAmd" type="number" step="0.01" min="0" required />
-            <p className="text-xs text-karni-700">{t('k.closeHint')}</p>
-            <button className="btn-primary w-full" type="submit" disabled={onHold}>{t('k.endShift')}</button>
-            {onHold && <p className="text-xs text-amber-800">{t('k.endBreakFirst')}</p>}
-          </form>
         </div>
         );
       })() : (
@@ -473,7 +645,7 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                       <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${onHold ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true" />
                       <span className="min-w-0">
                         <span className="font-medium">{s.sellingPoint.name}</span>
-                        <span className="text-karni-700"> · {t('k.openedBy')} {s.openingBy.fullName}</span>
+                        <span className="text-karni-700"> · {t('k.onShift')}: {s.participants.length > 0 ? s.participants.map((p) => p.user.fullName).join(', ') : s.openingBy.fullName}</span>
                         {onHold && <span className="chip chip-warn ml-2">{t('k.onHold')}</span>}
                       </span>
                     </span>
@@ -551,6 +723,17 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                   {s.closingCountAmd != null && <p>Closed: {formatAmd(Number(s.closingCountAmd))}</p>}
                   {closeDiff != null && Math.abs(closeDiff) > 0.001 && (
                     <p className="text-red-700">Diff: {formatAmd(closeDiff)}</p>
+                  )}
+                  {isSuperAdmin(user) && s.closingCountAmd != null && (s.status === 'CLOSED' || s.status === 'DISPUTED') && (
+                    <details className="text-left mt-1">
+                      <summary className="btn-link cursor-pointer select-none">{t('k.editClose')}</summary>
+                      <form action={editClosingCountAction} className="flex items-center gap-2 mt-2">
+                        <input type="hidden" name="sessionId" value={s.id} />
+                        <input className="input py-1.5 w-32" name="closingCountAmd" type="number" step="0.01" min="0"
+                          defaultValue={Number(s.closingCountAmd)} required />
+                        <button className="btn-primary px-3 py-1.5" type="submit">{t('c.save')}</button>
+                      </form>
+                    </details>
                   )}
                   {handoverFor(s) && <div className="text-left"><MismatchDetail h={handoverFor(s)!} t={t} /></div>}
                 </div>

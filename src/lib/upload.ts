@@ -35,19 +35,29 @@ function getBlobService(): BlobServiceClient | null {
  * `<img src>` can reach it directly.
  *
  * Dev fallback: writes to ./public/uploads/ and returns /uploads/<file>.
+ *
+ * `folder` places the image under a sub-prefix (e.g. "book-pages") in the same
+ * blob container / uploads dir, keeping different kinds of uploads separated.
  */
-export async function saveImage(file: File): Promise<string> {
+export async function saveImage(file: File, folder?: string): Promise<string> {
   validate(file);
   const svc = getBlobService();
-  if (svc) return saveToAzure(svc, file);
-  return saveLocal(file);
+  if (svc) return saveToAzure(svc, file, folder);
+  return saveLocal(file, folder);
 }
 
-async function saveToAzure(svc: BlobServiceClient, file: File): Promise<string> {
+// Keep folder names simple and safe for both blob prefixes and local paths.
+function safeFolder(folder?: string): string {
+  if (!folder) return '';
+  const clean = folder.replace(/[^a-zA-Z0-9_-]/g, '');
+  return clean ? `${clean}/` : '';
+}
+
+async function saveToAzure(svc: BlobServiceClient, file: File, folder?: string): Promise<string> {
   const containerName = process.env.AZURE_STORAGE_CONTAINER || 'karni-uploads';
   const container = svc.getContainerClient(containerName);
   await container.createIfNotExists({ access: 'blob' });
-  const name = generateName(file);
+  const name = `${safeFolder(folder)}${generateName(file)}`;
   const blob = container.getBlockBlobClient(name);
   const buf = Buffer.from(await file.arrayBuffer());
   await blob.uploadData(buf, {
@@ -56,11 +66,12 @@ async function saveToAzure(svc: BlobServiceClient, file: File): Promise<string> 
   return blob.url;
 }
 
-async function saveLocal(file: File): Promise<string> {
-  const dir = path.join(process.cwd(), 'public', 'uploads');
+async function saveLocal(file: File, folder?: string): Promise<string> {
+  const sub = safeFolder(folder);
+  const dir = path.join(process.cwd(), 'public', 'uploads', sub);
   await mkdir(dir, { recursive: true });
   const name = generateName(file);
   const buf = Buffer.from(await file.arrayBuffer());
   await writeFile(path.join(dir, name), buf);
-  return `/uploads/${name}`;
+  return `/uploads/${sub}${name}`;
 }

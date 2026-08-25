@@ -95,8 +95,14 @@ model User {
   cashOpens        CashDrawerSession[] @relation("CashOpenBy")
   cashCloses       CashDrawerSession[] @relation("CashCloseBy")
   shifts           CashDrawerSession[] @relation("ShiftUser")
+  shiftParticipations ShiftParticipant[] @relation("ShiftParticipantUser")
   customersCreated Customer[]        @relation("CustomerCreatedBy")
   inventoryCreated InventoryItem[]   @relation("InventoryCreatedBy")
+  returnsPerformed SaleReturn[]      @relation("ReturnPerformedBy")
+  receivingBatches ReceivingBatch[]  @relation("ReceivingBatchBy")
+  teamNotes        TeamNote[]        @relation("TeamNoteAuthor")
+  teamNotesResolved TeamNote[]       @relation("TeamNoteResolvedBy")
+  priceChanges     VariantPriceChange[] @relation("PriceChangedBy")
   notifications    Notification[]
   adminSellingPoints AdminSellingPoint[]
   safeWithdrawals  SafeTransaction[] @relation("SafeOwner")
@@ -154,6 +160,9 @@ model Variant {
   imageUrl      String?
   weightG       Decimal? @db.Decimal(10, 3)
   reorderPoint  Int      @default(2)
+  // A default add-on (e.g. the accessory chain bundled with pendants) that would
+  // otherwise dominate the "most sold" lists — excluded from top-seller reports.
+  excludeFromTopSellers Boolean @default(false)
   status        VariantStatus @default(ACTIVE)
   onWebsite     Boolean  @default(false)
   onEtsy        Boolean  @default(false)
@@ -167,6 +176,8 @@ model Variant {
   movements      StockMovement[]
   saleLineItems  SaleLineItem[]
   orderLineItems OrderLineItem[]
+  returnLineItems SaleReturnLineItem[]
+  priceChanges   VariantPriceChange[]
 
   @@index([category])
   @@index([collection])
@@ -189,11 +200,14 @@ model SellingPoint {
   cashSessions   CashDrawerSession[]
   admins         AdminSellingPoint[]
   safeTransactions SafeTransaction[]
+  returns        SaleReturn[]
+  receivingBatches ReceivingBatch[]
 }
 
 enum SafeTxType {
-  DEPOSIT     // cash moved from a drawer into the safe
-  WITHDRAWAL  // money taken out of the safe by an owner
+  DEPOSIT       // cash moved from a drawer into the safe
+  WITHDRAWAL    // money taken out of the safe by an owner
+  BANK_TO_SAFE  // card revenue moved out of the bank into the safe
 }
 
 // Ledger of money moving into / out of the owners' safe.
@@ -258,6 +272,8 @@ model StockMovement {
   unitPriceAmd   Decimal? @db.Decimal(12, 2)
   performedById  String
   saleId         String?
+  returnId       String?
+  batchId        String?
   note           String?
   createdAt      DateTime @default(now())
 
@@ -265,6 +281,8 @@ model StockMovement {
   sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
   performedBy  User         @relation("MovementBy", fields: [performedById], references: [id])
   sale         Sale?        @relation(fields: [saleId], references: [id])
+  saleReturn   SaleReturn?  @relation(fields: [returnId], references: [id])
+  batch        ReceivingBatch? @relation(fields: [batchId], references: [id])
 
   @@index([variantId])
   @@index([sellingPointId, createdAt])
@@ -280,14 +298,16 @@ model Customer {
   address     String?
   instagram   String?
   gender      String?
+  profession  String?
   notes       String?
   isLoyalty   Boolean @default(true)
   createdById String?
   createdBy   User?   @relation("CustomerCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
 
-  sales  Sale[]
-  orders Order[]
+  sales   Sale[]
+  orders  Order[]
+  returns SaleReturn[]
 
   @@index([phone])
   @@index([email])
@@ -308,6 +328,14 @@ model Sale {
   // A cash sale whose money went straight to the safe (online/delivery order),
   // so it never entered the drawer — excluded from drawer reconciliation.
   cashToSafe     Boolean  @default(false)
+  // Portion of a cash sale that did NOT enter the drawer — the customer paid it
+  // another way (bank transfer / card) or it was handed straight to the safe.
+  // Lowers the drawer's expected cash by this amount without changing the total.
+  nonDrawerAmd   Decimal  @default(0) @db.Decimal(12, 2)
+  // Where that non-drawer portion went: the safe (true) or the company bank
+  // account (false — e.g. card / transfer). Drawer reconciliation is the same
+  // either way; this records the destination.
+  nonDrawerToSafe Boolean @default(false)
   createdAt      DateTime @default(now())
 
   sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
@@ -315,6 +343,10 @@ model Sale {
   soldBy       User         @relation("SoldBy", fields: [soldById], references: [id])
   lineItems    SaleLineItem[]
   movements    StockMovement[]
+  // Returns that credited this sale (the original/gift sale being returned).
+  returnsFromThis  SaleReturn[] @relation("ReturnOriginalSale")
+  // If this sale was itself created as the exchange purchase of a return.
+  returnAsExchange SaleReturn?  @relation("ReturnExchangeSale")
 
   @@index([sellingPointId, createdAt])
   @@index([soldById, createdAt])
@@ -330,6 +362,83 @@ model SaleLineItem {
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   variant Variant @relation(fields: [variantId], references: [id])
+}
+
+// A return / exchange event. Returned goods are restocked (RETURN movements)
+// and credited to the customer; any new pieces taken in exchange are a normal
+// linked Sale (its own SALE movements). The whole transaction's net cash impact
+// on a drawer is captured as a signed `drawerDeltaAmd` (negative = cash refunded
+// out) and attributed to a chosen `cashSession` — the drawer the cash actually
+// moved through — so it reconciles against the right shift even when recorded
+// later, with no change to the original sale's shift. The exchange Sale's cash
+// is represented entirely by `drawerDeltaAmd`, so it is excluded from the
+// drawer-cash sum in reconciliation (it was paid with returned credit, not new
+// money).
+model SaleReturn {
+  id               String   @id @default(cuid())
+  returnNumber     String   @unique
+  sellingPointId   String
+  customerId       String?
+  performedById    String
+  originalSaleId   String?  // the original (gift) sale being returned, if known
+  exchangeSaleId   String?  @unique // new purchase taken in exchange, if any
+  // The cash drawer session the refund/top-up actually passed through. Null =
+  // not tied to a drawer (e.g. refunded by bank transfer, or no shift was open),
+  // in which case reconciliation falls back to matching by time.
+  cashSessionId    String?
+  returnedAmd      Decimal  @db.Decimal(12, 2) // credit for returned goods
+  exchangeAmd      Decimal  @default(0) @db.Decimal(12, 2) // value of new items taken (denormalised)
+  // Signed net cash into(+) / out(−) of the drawer for this whole transaction.
+  drawerDeltaAmd   Decimal  @default(0) @db.Decimal(12, 2)
+  // Was the credit paid out of the drawer in cash? If false (e.g. refunded by
+  // bank transfer), it does not move the drawer.
+  refundFromDrawer Boolean  @default(true)
+  note             String?
+  createdAt        DateTime @default(now())
+
+  sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+  performedBy  User         @relation("ReturnPerformedBy", fields: [performedById], references: [id])
+  originalSale Sale?        @relation("ReturnOriginalSale", fields: [originalSaleId], references: [id])
+  exchangeSale Sale?        @relation("ReturnExchangeSale", fields: [exchangeSaleId], references: [id])
+  cashSession  CashDrawerSession? @relation(fields: [cashSessionId], references: [id])
+  lineItems    SaleReturnLineItem[]
+  movements    StockMovement[]
+
+  @@index([sellingPointId, createdAt])
+  @@index([cashSessionId])
+}
+
+// A receiving session: a batch of stock check-ins recorded together, optionally
+// with photos of the owner's hand-written "ready for Megamall" book pages so the
+// received quantities can be checked against what was written down.
+model ReceivingBatch {
+  id             String   @id @default(cuid())
+  sellingPointId String
+  performedById  String
+  note           String?
+  photoUrls      String[] @default([]) // captured book-page photos
+  createdAt      DateTime @default(now())
+
+  sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])
+  performedBy  User         @relation("ReceivingBatchBy", fields: [performedById], references: [id])
+  movements    StockMovement[]
+
+  @@index([sellingPointId, createdAt])
+}
+
+model SaleReturnLineItem {
+  id           String  @id @default(cuid())
+  returnId     String
+  variantId    String
+  quantity     Int
+  unitPriceAmd Decimal @db.Decimal(12, 2)
+  lineTotalAmd Decimal @db.Decimal(12, 2)
+
+  saleReturn SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  variant    Variant    @relation(fields: [variantId], references: [id])
+
+  @@index([returnId])
 }
 
 model Order {
@@ -394,6 +503,8 @@ model CashDrawerSession {
   openingBy    User         @relation("CashOpenBy", fields: [openingById], references: [id])
   closingBy    User?        @relation("CashCloseBy", fields: [closingById], references: [id])
   breaks       ShiftBreak[]
+  participants ShiftParticipant[]
+  returns      SaleReturn[]
 
   @@index([sellingPointId, status])
   @@index([userId, openingAt])
@@ -410,6 +521,25 @@ model ShiftBreak {
   @@index([sessionId])
 }
 
+// Who is working a shift. The drawer (CashDrawerSession) is shared per selling
+// point and counted once; each sales rep present is a participant. The first to
+// arrive opens (counts the drawer) and is a participant; others join without
+// recounting. Sales are still attributed per rep via Sale.soldById; this records
+// attendance/hours and lets every participant see they're on shift.
+model ShiftParticipant {
+  id        String    @id @default(cuid())
+  sessionId String
+  userId    String
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+
+  session CashDrawerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User              @relation("ShiftParticipantUser", fields: [userId], references: [id])
+
+  @@index([sessionId])
+  @@index([userId, joinedAt])
+}
+
 model Notification {
   id        String   @id @default(cuid())
   userId    String?  // null = broadcast to all admins
@@ -423,6 +553,43 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, isRead, createdAt])
+}
+
+// A shared note any signed-in user can post for the whole team — handover info,
+// "customer X will come back tomorrow for Y", reminders. Visible to everyone so
+// the next person on shift stays updated. Anyone can mark one done.
+model TeamNote {
+  id           String    @id @default(cuid())
+  body         String
+  authorId     String
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime  @default(now())
+
+  author     User  @relation("TeamNoteAuthor", fields: [authorId], references: [id])
+  resolvedBy User? @relation("TeamNoteResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([resolvedAt, createdAt])
+}
+
+// Audit trail of a variant's price (and cost) changes. Written whenever the
+// product editor changes priceAmd or costAmd. Past sales are unaffected — they
+// snapshot their own price — this just records the product's price timeline.
+model VariantPriceChange {
+  id          String   @id @default(cuid())
+  variantId   String
+  oldPriceAmd Decimal? @db.Decimal(12, 2)
+  newPriceAmd Decimal  @db.Decimal(12, 2)
+  oldCostAmd  Decimal? @db.Decimal(12, 2)
+  newCostAmd  Decimal? @db.Decimal(12, 2)
+  changedById String?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  variant   Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  changedBy User?   @relation("PriceChangedBy", fields: [changedById], references: [id])
+
+  @@index([variantId, createdAt])
 }
 
 model FxRate {

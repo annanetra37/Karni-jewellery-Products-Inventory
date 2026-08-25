@@ -150,7 +150,7 @@ async function importVariants(wb: ExcelJS.Workbook) {
 
 async function seedSellingPoints() {
   const points: Array<{ name: string; type: SellingPointType; address?: string }> = [
-    { name: 'Megamall', type: 'PHYSICAL', address: 'Megamall Yerevan, 34 Tsitsernakaberd Hwy, Yerevan, Armenia' },
+    { name: 'Megamall', type: 'PHYSICAL', address: 'Megamall Yerevan, 16 Gai Ave, Yerevan, Armenia' },
     { name: 'Website', type: 'ONLINE' },
     { name: 'Instagram DM', type: 'ONLINE' },
     { name: 'Etsy', type: 'ONLINE' },

@@ -31,7 +31,12 @@ export type OrderRow = {
  * export so both always agree. `from`/`to` bound the stock rows' "went low/out"
  * date; open orders are always included in full.
  */
-export async function getProductionList(opts: { from?: Date | null; to?: Date | null } = {}): Promise<{ stock: StockRow[]; orders: OrderRow[] }> {
+export type ProductionFacets = { categories: string[]; collections: string[]; points: string[] };
+export type ProductionFilters = { states?: string[]; categories?: string[]; collections?: string[]; points?: string[] };
+
+export async function getProductionList(
+  opts: { from?: Date | null; to?: Date | null } & ProductionFilters = {},
+): Promise<{ stock: StockRow[]; orders: OrderRow[]; facets: ProductionFacets }> {
   const from = opts.from ?? null;
   const to = opts.to ?? null;
 
@@ -67,20 +72,27 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
   for (const c of candidates) {
     const isOut = c.quantity <= 0;
     const ms = byPair.get(`${c.variantId}|${c.sellingPointId}`) || []; // newest → oldest
+    // The "went" date must track the row's *current* level: the most recent sale
+    // that left it in its present low/out state. A low item that drops further
+    // (e.g. 2 → 1) should show the later sale, not the one that first made it
+    // low. Walk back through the contiguous run that stayed within the relevant
+    // threshold (0 for out, reorder point for low) and take the newest sale in
+    // it — which, for an OUT item, is exactly the sale that took it to zero.
+    const threshold = isOut ? 0 : c.reorderPoint;
     let running = c.quantity;
-    let earliestSale: Move | null = null;
+    let triggerSale: Move | null = null;
     for (const m of ms) {
-      if (running > c.reorderPoint) break;
-      if (m.type === 'SALE') earliestSale = m;
+      if (running > threshold) break;
+      if (m.type === 'SALE') { triggerSale = m; break; }
       running -= m.qtyDelta;
     }
-    if (!earliestSale) continue;
-    if (from && earliestSale.createdAt < from) continue;
-    if (to && earliestSale.createdAt >= to) continue;
+    if (!triggerSale) continue;
+    if (from && triggerSale.createdAt < from) continue;
+    if (to && triggerSale.createdAt >= to) continue;
     stock.push({
       product: c.designName, sku: c.sku, collection: c.collection, category: c.category,
       location: c.sellingPointName, state: isOut ? 'OUT' : 'LOW', qty: c.quantity,
-      reorderPoint: c.reorderPoint, wentAt: earliestSale.createdAt, saleNumber: earliestSale.sale?.saleNumber ?? '',
+      reorderPoint: c.reorderPoint, wentAt: triggerSale.createdAt, saleNumber: triggerSale.sale?.saleNumber ?? '',
     });
   }
   stock.sort((a, b) => b.wentAt.getTime() - a.wentAt.getTime());
@@ -131,5 +143,25 @@ export async function getProductionList(opts: { from?: Date | null; to?: Date | 
     }
   }
 
-  return { stock, orders: orderRows };
+  // Facets from the full (unfiltered) worklist, so the filter UI always offers
+  // every value that exists — even when a filter is already narrowing the list.
+  const facets: ProductionFacets = {
+    categories: [...new Set([...stock, ...orderRows].map((r) => r.category).filter((x): x is string => !!x))].sort(),
+    collections: [...new Set([...stock, ...orderRows].map((r) => r.collection).filter((x): x is string => !!x))].sort(),
+    points: [...new Set([...stock, ...orderRows].map((r) => r.location).filter(Boolean))].sort(),
+  };
+
+  const states = opts.states ?? [];
+  const categories = opts.categories ?? [];
+  const collections = opts.collections ?? [];
+  const points = opts.points ?? [];
+  const matchCommon = (r: { category: string | null; collection: string | null; location: string }) =>
+    (categories.length === 0 || (r.category != null && categories.includes(r.category))) &&
+    (collections.length === 0 || (r.collection != null && collections.includes(r.collection))) &&
+    (points.length === 0 || points.includes(r.location));
+
+  const stockOut = stock.filter((r) => (states.length === 0 || states.includes(r.state)) && matchCommon(r));
+  const ordersOut = orderRows.filter(matchCommon);
+
+  return { stock: stockOut, orders: ordersOut, facets };
 }

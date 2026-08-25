@@ -1,28 +1,53 @@
 import { requireAdmin } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 import { getProductionList } from '@/lib/production';
-import { formatYerevanDateTime, yerevanISODate, yerevanDateStringStart } from '@/lib/datetime';
-import Link from 'next/link';
+import { formatYerevanDateTime } from '@/lib/datetime';
+import { resolveRange } from '@/lib/dateRange';
+import { DateRangeControls } from '@/components/DateRangeControls';
+import { ProductionFilters } from '@/components/ProductionFilters';
+import { BookPagesUploader } from '@/components/BookPagesUploader';
+import { getT } from '@/lib/i18n-server';
 
 export const dynamic = 'force-dynamic';
 
-const RANGES = [
-  { key: '7d', label: 'Last 7 days', days: 7 },
-  { key: '30d', label: 'Last 30 days', days: 30 },
-  { key: 'all', label: 'All time', days: 0 },
-];
+type PSearch = Promise<Record<string, string | string[] | undefined>>;
+const arr = (v: string | string[] | undefined): string[] => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
+const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v[0] || '') : v || '');
 
-export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+export default async function ProductionPage({ searchParams }: { searchParams: PSearch }) {
   await requireAdmin();
   const sp = await searchParams;
-  const range = RANGES.find((r) => r.key === sp.range) ?? RANGES[0];
+  const rr = resolveRange({ range: one(sp.range), from: one(sp.from), to: one(sp.to), defaultRange: '7d' });
 
-  const today = yerevanISODate();
-  const fromISO = range.days ? yerevanISODate(new Date(Date.now() - range.days * 24 * 60 * 60 * 1000)) : '';
-  const from = fromISO ? yerevanDateStringStart(fromISO) : null;
-  const to = range.days ? new Date(yerevanDateStringStart(today).getTime() + 24 * 60 * 60 * 1000) : null;
-  const downloadHref = range.days ? `/api/export/stockouts?from=${fromISO}&to=${today}` : '/api/export/stockouts';
+  const states = arr(sp.state).filter((x) => ['OUT', 'LOW'].includes(x));
+  const categories = arr(sp.cat);
+  const collections = arr(sp.col);
+  const points = arr(sp.pt);
 
-  const { stock, orders } = await getProductionList({ from, to });
+  // The filters travel with the CSV download so it exports exactly what's shown.
+  const dl = new URLSearchParams();
+  dl.set('from', rr.from); dl.set('to', rr.to);
+  states.forEach((v) => dl.append('state', v));
+  categories.forEach((v) => dl.append('cat', v));
+  collections.forEach((v) => dl.append('col', v));
+  points.forEach((v) => dl.append('pt', v));
+  const downloadHref = `/api/export/stockouts?${dl.toString()}`;
+
+  const { stock, orders, facets } = await getProductionList({
+    from: rr.startDate, to: rr.endDate, states, categories, collections, points,
+  });
+
+  const { t } = await getT();
+  // Book pages: photograph the owner's hand-written production/restock notes and
+  // keep them dated, viewable here and in the receive gallery.
+  const [pointRows, megamall, bookBatches] = await Promise.all([
+    prisma.sellingPoint.findMany({ where: { isActive: true, type: { in: ['PHYSICAL', 'CONSIGNMENT'] } }, orderBy: { name: 'asc' } }),
+    prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } }),
+    prisma.receivingBatch.findMany({
+      where: { photoUrls: { isEmpty: false } }, orderBy: { createdAt: 'desc' }, take: 8,
+      include: { performedBy: { select: { fullName: true } }, sellingPoint: { select: { name: true } } },
+    }),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -34,18 +59,42 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         <a href={downloadHref} className="btn-primary text-sm shrink-0">Download CSV</a>
       </header>
 
-      <div className="flex flex-wrap gap-1.5">
-        {RANGES.map((r) => (
-          <Link key={r.key} href={`/admin/production?range=${r.key}`} scroll={false}
-            className="px-3 py-1.5 rounded-full text-xs font-semibold transition"
-            style={range.key === r.key
-              ? { background: 'var(--brand)', color: '#fff' }
-              : { background: 'var(--surface)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}>
-            {r.label}
-          </Link>
-        ))}
-        <span className="text-[11px] self-center" style={{ color: 'var(--ink-soft)' }}>(date range applies to stock-outs; all open orders shown)</span>
+      <details className="card">
+        <summary className="cursor-pointer font-medium select-none">{t('r.bookPages')}</summary>
+        <div className="mt-3 space-y-3">
+          <BookPagesUploader
+            sellingPoints={pointRows.map((s) => ({ id: s.id, name: s.name }))}
+            defaultSellingPointId={megamall?.id || pointRows[0]?.id || ''}
+          />
+          {bookBatches.length > 0 && (
+            <div>
+              <p className="font-semibold text-sm mb-2">{t('r.bookPagesArchive')}</p>
+              <ul className="space-y-2">
+                {bookBatches.map((b) => (
+                  <li key={b.id} className="border-b border-karni-100 pb-2 last:border-0">
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{b.sellingPoint.name} · {b.performedBy.fullName} · {b.createdAt.toLocaleString()}{b.note ? ` · ${b.note}` : ''}</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {b.photoUrls.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-karni-200" />
+                        </a>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
+
+      <div className="flex flex-col gap-1.5">
+        <DateRangeControls defaultRange="7d" />
+        <span className="text-[11px]" style={{ color: 'var(--ink-soft)' }}>(date range applies to stock-outs; all open orders shown)</span>
       </div>
+
+      <ProductionFilters categories={facets.categories} collections={facets.collections} points={facets.points} />
 
       {/* Low / out of stock */}
       <section className="card">

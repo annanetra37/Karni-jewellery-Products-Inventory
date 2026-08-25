@@ -15,8 +15,14 @@ function escapeHtml(s: string): string {
 const Body = z.object({
   sellingPointId: z.string(),
   customerId: z.string().nullable().optional(),
+  // Who actually made the sale — picked at checkout on a shared device so each
+  // rep's sales count toward their own performance regardless of who is logged
+  // in. Defaults to the logged-in user.
+  soldById: z.string().optional(),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   cashToSafe: z.boolean().optional(),
+  nonDrawerAmd: z.number().min(0).optional(),
+  nonDrawerToSafe: z.boolean().optional(),
   discount: DiscountSchema.nullable().optional(),
   lines: z.array(z.object({
     variantId: z.string(),
@@ -31,13 +37,27 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { sellingPointId, customerId, paymentMethod, discount, lines } = parsed.data;
   // "Cash to safe" only makes sense for a cash sale (money that bypassed the drawer).
-  const cashToSafe = (paymentMethod || 'CASH') === 'CASH' ? (parsed.data.cashToSafe ?? false) : false;
+  const isCash = (paymentMethod || 'CASH') === 'CASH';
+  const cashToSafe = isCash ? (parsed.data.cashToSafe ?? false) : false;
+  // Portion of a cash sale that didn't enter the drawer (part-cash sale), and
+  // where it went (the safe vs the bank). Only for cash sales not already
+  // fully cash-to-safe. Clamped to the total after discount further below.
+  const nonDrawerToSafe = isCash && !cashToSafe ? (parsed.data.nonDrawerToSafe ?? false) : false;
 
   // Enforce the seller's selling-point scope server-side (UI restriction alone
   // is not enough).
   const scope = await sellingPointScope(u);
   if (scope && !scope.includes(sellingPointId)) {
     return NextResponse.json({ error: 'You do not have access to this selling point.' }, { status: 403 });
+  }
+
+  // Resolve who the sale is credited to. On a shared device the cashier picks
+  // the rep who served the customer; we accept it only if it's an active user,
+  // otherwise fall back to the logged-in account.
+  let soldById = u.id;
+  if (parsed.data.soldById && parsed.data.soldById !== u.id) {
+    const seller = await prisma.user.findFirst({ where: { id: parsed.data.soldById, isActive: true }, select: { id: true } });
+    if (seller) soldById = seller.id;
   }
 
   // Reject duplicate variantIds — caller should consolidate first.
@@ -91,6 +111,10 @@ export async function POST(req: NextRequest) {
 
       const subtotal = prepared.reduce((s, p) => s + p.lineTotalAmd, 0);
       const discountAmd = resolveDiscount(subtotal, discount);
+      const total = subtotal - discountAmd;
+      const nonDrawerAmd = isCash && !cashToSafe
+        ? Math.min(Math.max(0, parsed.data.nonDrawerAmd ?? 0), total)
+        : 0;
       const n = await nextNumber(tx, 'sale');
       const sNumber = saleNumber(n);
 
@@ -99,12 +123,14 @@ export async function POST(req: NextRequest) {
           saleNumber: sNumber,
           sellingPointId,
           customerId: customerId || null,
-          soldById: u.id,
+          soldById,
           subtotalAmd: subtotal,
           discountAmd,
-          totalAmd: subtotal - discountAmd,
+          totalAmd: total,
           paymentMethod: paymentMethod || 'CASH',
           cashToSafe,
+          nonDrawerAmd,
+          nonDrawerToSafe: nonDrawerAmd > 0 ? nonDrawerToSafe : false,
           lineItems: {
             create: prepared.map((p) => ({
               variantId: p.variantId,
@@ -148,10 +174,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  // Post-commit notifications, debounced per (sku, location).
+  // Post-commit low-stock alerts, debounced per (sku, location). Within the
+  // debounce window we *refresh* the existing alert to the current level and
+  // severity instead of skipping — otherwise an item that goes LOW then sells
+  // out moments later would keep showing a stale "1 left" while it's actually
+  // out of stock. Bumping createdAt and clearing readBy resurfaces it as new.
   if (lowStockHits.length > 0) {
     const ten = new Date(Date.now() - 10 * 60 * 1000);
     for (const r of lowStockHits) {
+      const title = `${r.remaining <= 0 ? 'Out of stock' : 'Low stock'}: ${r.variantSku}`;
+      const body = `${r.remaining} left at ${r.sellingPointName}`;
       const recent = await prisma.notification.findFirst({
         where: {
           type: 'LOW_STOCK',
@@ -159,14 +191,15 @@ export async function POST(req: NextRequest) {
           body: { contains: r.sellingPointName },
           createdAt: { gte: ten },
         },
+        orderBy: { createdAt: 'desc' },
       });
-      if (!recent) {
-        await notify({
-          type: 'LOW_STOCK', toAdmins: true,
-          title: `Low stock: ${r.variantSku}`,
-          body: `${r.remaining} left at ${r.sellingPointName}`,
-          relatedId: r.variantSku,
+      if (recent) {
+        await prisma.notification.update({
+          where: { id: recent.id },
+          data: { title, body, readBy: [], createdAt: new Date() },
         });
+      } else {
+        await notify({ type: 'LOW_STOCK', toAdmins: true, title, body, relatedId: r.variantSku });
       }
     }
   }

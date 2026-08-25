@@ -4,11 +4,12 @@ import { METAL_TYPES, FILLING_MATERIALS, PLATING_TYPES, sumCost } from '@/lib/ma
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
+import { BackLink } from '@/components/BackLink';
 import { ImageUploadField } from '@/components/ImageUploadField';
 
 async function saveAction(formData: FormData) {
   'use server';
-  await requireAdmin();
+  const actor = await requireAdmin();
   const id = String(formData.get('id') || '');
   const designId = String(formData.get('designId') || '');
 
@@ -43,6 +44,7 @@ async function saveAction(formData: FormData) {
   const onEtsy = formData.get('onEtsy') === 'on';
   const onIg = formData.get('onIg') === 'on';
   const inStockists = formData.get('inStockists') === 'on';
+  const excludeFromTopSellers = formData.get('excludeFromTopSellers') === 'on';
 
   // Image was already uploaded to blob storage client-side; we just store the URL.
   const imageUrl = String(formData.get('imageUrl') || '').trim() || null;
@@ -55,11 +57,29 @@ async function saveAction(formData: FormData) {
     designName, category, collection, subcollection, size, color, barcode,
   ].filter(Boolean).map((s) => String(s).toLowerCase()).join(' ');
 
+  // Snapshot the current price/cost so we can log a change to the timeline.
+  const before = await prisma.variant.findUnique({ where: { id }, select: { priceAmd: true, costAmd: true } });
+  const oldPrice = before ? Number(before.priceAmd) : null;
+  const oldCost = before?.costAmd != null ? Number(before.costAmd) : null;
+  const newCost = costAmd == null ? null : Number(costAmd);
+  const priceChanged = oldPrice == null || Math.abs(oldPrice - priceAmd) > 0.001;
+  const costChanged = (oldCost ?? null) !== (newCost ?? null);
+
   await prisma.$transaction(async (tx) => {
     await tx.design.update({
       where: { id: designId },
       data: { nameEn: designName, nameHy: designNameHy || null, category, collection, subcollection, motif, culturalMeaningEn },
     });
+    if (before && (priceChanged || costChanged)) {
+      await tx.variantPriceChange.create({
+        data: {
+          variantId: id,
+          oldPriceAmd: oldPrice, newPriceAmd: priceAmd,
+          oldCostAmd: oldCost, newCostAmd: newCost,
+          changedById: actor.id,
+        },
+      });
+    }
     await tx.variant.update({
       where: { id },
       data: {
@@ -68,7 +88,7 @@ async function saveAction(formData: FormData) {
         metalType, metalCostAmd, fillingMaterial, fillingCostAmd,
         platingType, platingCostAmd, laborCostAmd,
         imageUrl, status,
-        onWebsite, onEtsy, onIg, inStockists,
+        onWebsite, onEtsy, onIg, inStockists, excludeFromTopSellers,
         priceUsd: r.USD ? priceAmd * r.USD : undefined,
         priceEur: r.EUR ? priceAmd * r.EUR : undefined,
         priceRub: r.RUB ? priceAmd * r.RUB : undefined,
@@ -152,11 +172,28 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   if (!v) notFound();
   const sps = await prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
   const totalStock = v.inventoryItems.reduce((s, ii) => s + ii.quantity, 0);
+  const priceHistory = await prisma.variantPriceChange.findMany({
+    where: { variantId: id }, orderBy: { createdAt: 'desc' }, take: 50,
+    include: { changedBy: { select: { fullName: true } } },
+  });
+
+  // Build the Category / Size option lists from the catalog itself, plus the
+  // standard set, and ALWAYS include this variant's current value. Otherwise a
+  // value outside a hardcoded list would silently reset to "—" and be wiped on
+  // save (which is exactly how categories were getting lost after a photo edit).
+  const STANDARD_CATEGORIES = ['Pendant', 'Earring', 'Ring', 'Bracelet', 'Necklace', 'Brooch'];
+  const STANDARD_SIZES = ['small', 'medium', 'large'];
+  const [catRows, sizeRows] = await Promise.all([
+    prisma.variant.groupBy({ by: ['category'], where: { category: { not: null } }, orderBy: { category: 'asc' } }),
+    prisma.variant.groupBy({ by: ['size'], where: { size: { not: null } }, orderBy: { size: 'asc' } }),
+  ]);
+  const categoryOptions = Array.from(new Set([...STANDARD_CATEGORIES, ...catRows.map((r) => r.category!), ...(v.category ? [v.category] : [])].filter(Boolean)));
+  const sizeOptions = Array.from(new Set([...STANDARD_SIZES, ...sizeRows.map((r) => r.size!), ...(v.size ? [v.size] : [])].filter(Boolean)));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link href="/admin/products" className="btn-link">← Back to products</Link>
+        <BackLink fallback="/admin/products" className="btn-link">← Back to products</BackLink>
         <span className="chip">{totalStock} on hand</span>
       </div>
       <header>
@@ -188,8 +225,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               <label className="label">Category</label>
               <select className="input" name="category" defaultValue={v.category || ''}>
                 <option value="">—</option>
-                <option>Pendant</option><option>Earring</option><option>Ring</option>
-                <option>Bracelet</option><option>Necklace</option><option>Brooch</option>
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -218,9 +254,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               <label className="label">Size</label>
               <select className="input" name="size" defaultValue={v.size || ''}>
                 <option value="">—</option>
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
+                {sizeOptions.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
               </select>
             </div>
             <div>
@@ -303,6 +337,12 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <label className="flex items-center gap-2"><input type="checkbox" name="onIg" defaultChecked={v.onIg} className="accent-karni-600" /> Instagram</label>
             <label className="flex items-center gap-2"><input type="checkbox" name="inStockists" defaultChecked={v.inStockists} className="accent-karni-600" /> Consignment</label>
           </div>
+          <label className="flex items-start gap-2 text-sm mt-1">
+            <input type="checkbox" name="excludeFromTopSellers" defaultChecked={v.excludeFromTopSellers} className="accent-karni-600 mt-0.5" />
+            <span>Exclude from “most sold” reports
+              <span className="block text-xs" style={{ color: 'var(--ink-soft)' }}>For default add-ons like the accessory chain bundled with pendants.</span>
+            </span>
+          </label>
         </fieldset>
 
         <div className="flex flex-wrap gap-2">
@@ -310,6 +350,38 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           <Link href="/admin/products" className="btn-secondary">Cancel</Link>
         </div>
       </form>
+
+      <section className="card space-y-3">
+        <p className="font-semibold">Price history</p>
+        {priceHistory.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--ink-soft)' }}>No price changes recorded yet. Future edits to the price or cost will be logged here.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {priceHistory.map((h) => {
+              const oldP = h.oldPriceAmd == null ? null : Number(h.oldPriceAmd);
+              const newP = Number(h.newPriceAmd);
+              const priceMoved = oldP != null && Math.abs(oldP - newP) > 0.001;
+              const oldC = h.oldCostAmd == null ? null : Number(h.oldCostAmd);
+              const newC = h.newCostAmd == null ? null : Number(h.newCostAmd);
+              const costMoved = (oldC ?? null) !== (newC ?? null);
+              const amd = (n: number | null) => n == null ? '—' : `${n.toLocaleString()} ֏`;
+              return (
+                <li key={h.id} className="border-b border-karni-100 pb-2 last:border-0 last:pb-0">
+                  {priceMoved ? (
+                    <p>Price: <span style={{ color: 'var(--ink-soft)' }}>{amd(oldP)}</span> → <b style={{ color: newP > (oldP ?? 0) ? 'var(--success)' : 'var(--danger)' }}>{amd(newP)}</b></p>
+                  ) : (
+                    <p>Price set to <b>{amd(newP)}</b></p>
+                  )}
+                  {costMoved && (
+                    <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>Cost: {amd(oldC)} → {amd(newC)}</p>
+                  )}
+                  <p className="text-xs" style={{ color: 'var(--ink-faint)' }}>{h.createdAt.toLocaleString()}{h.changedBy ? ` · ${h.changedBy.fullName}` : ''}</p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <section className="card space-y-3">
         <p className="font-semibold">Stock by selling point</p>

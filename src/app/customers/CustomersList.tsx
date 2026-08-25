@@ -12,6 +12,8 @@ type C = {
   address: string | null;
   instagram: string | null;
   gender: string | null;
+  profession: string | null;
+  notes: string | null;
   createdAt?: string | null;
 };
 
@@ -23,9 +25,11 @@ type Draft = {
   address: string;
   instagram: string;
   gender: string;
+  profession: string;
+  notes: string;
 };
 
-const EMPTY_DRAFT: Draft = { fullName: '', phone: '', email: '', birthday: '', address: '', instagram: '', gender: '' };
+const EMPTY_DRAFT: Draft = { fullName: '', phone: '', email: '', birthday: '', address: '', instagram: '', gender: '', profession: '', notes: '' };
 const GENDERS = ['Female', 'Male', 'Other'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -48,8 +52,13 @@ function birthdayLabel(v: string | null): string {
   return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+// Nothing is mandatory — we just avoid saving a completely empty record.
 function draftValid(d: Draft): boolean {
-  return !!d.fullName && !!d.birthday && (!!d.phone || !!d.email);
+  return !!(d.fullName || d.phone || d.email || d.birthday || d.address || d.instagram || d.gender || d.profession || d.notes);
+}
+
+function displayName(c: C): string {
+  return c.fullName || c.phone || c.email || (c.instagram ? (c.instagram.startsWith('@') ? c.instagram : `@${c.instagram}`) : '') || '(no name)';
 }
 
 /** Shared field set for both the add and edit forms. */
@@ -61,7 +70,7 @@ function CustomerFields({ draft, set }: { draft: Draft; set: (patch: Partial<Dra
         <input className="input" placeholder="Full name" value={draft.fullName} onChange={(e) => set({ fullName: e.target.value })} />
       </div>
       <div>
-        <label className="label">Birthday <span style={{ color: 'var(--danger)' }}>*</span></label>
+        <label className="label">Birthday</label>
         <BirthdayPicker value={draft.birthday} onChange={(v) => set({ birthday: v })} />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -84,17 +93,30 @@ function CustomerFields({ draft, set }: { draft: Draft; set: (patch: Partial<Dra
           <label className="label">Instagram</label>
           <input className="input" placeholder="@handle" value={draft.instagram} onChange={(e) => set({ instagram: e.target.value })} />
         </div>
+        <div>
+          <label className="label">Profession</label>
+          <input className="input" placeholder="Profession (optional)" value={draft.profession} onChange={(e) => set({ profession: e.target.value })} />
+        </div>
         <div className="sm:col-span-2">
           <label className="label">Address</label>
           <input className="input" placeholder="Address" value={draft.address} onChange={(e) => set({ address: e.target.value })} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Notes</label>
+          <textarea className="input min-h-[72px]" placeholder="Anything to remember — preferences, sizes, past conversations…"
+            value={draft.notes} onChange={(e) => set({ notes: e.target.value })} />
         </div>
       </div>
     </>
   );
 }
 
-export function CustomersList({ initial }: { initial: C[] }) {
+const PAGE_SIZE = 20;
+
+export function CustomersList({ initial, total: initialTotal }: { initial: C[]; total: number }) {
   const [rows, setRows] = useState<C[]>(initial);
+  const [total, setTotal] = useState(initialTotal);
+  const [page, setPage] = useState(0);
   const [q, setQ] = useState('');
   const [fMonth, setFMonth] = useState('');
   const [fDay, setFDay] = useState('');
@@ -112,6 +134,9 @@ export function CustomersList({ initial }: { initial: C[] }) {
 
   const filtersActive = !!(q || fMonth || fDay || fYear);
 
+  // Any change to the search/filters jumps back to the first page.
+  useEffect(() => { setPage(0); }, [q, fMonth, fDay, fYear]);
+
   useEffect(() => {
     const t = setTimeout(async () => {
       const sp = new URLSearchParams();
@@ -119,12 +144,18 @@ export function CustomersList({ initial }: { initial: C[] }) {
       if (fMonth) sp.set('month', fMonth);
       if (fDay) sp.set('day', fDay);
       if (fYear) sp.set('year', fYear);
+      if (page) sp.set('page', String(page));
       const r = await fetch(`/api/customers?${sp.toString()}`);
       const j = await r.json();
       setRows(j.results || []);
+      setTotal(j.total ?? 0);
     }, 200);
     return () => clearTimeout(t);
-  }, [q, fMonth, fDay, fYear]);
+  }, [q, fMonth, fDay, fYear, page]);
+
+  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(total, page * PAGE_SIZE + rows.length);
 
   function clearFilters() {
     setQ(''); setFMonth(''); setFDay(''); setFYear('');
@@ -139,12 +170,14 @@ export function CustomersList({ initial }: { initial: C[] }) {
           fullName: addDraft.fullName, phone: addDraft.phone || null, email: addDraft.email || null,
           birthday: addDraft.birthday, address: addDraft.address || null,
           instagram: addDraft.instagram || null, gender: addDraft.gender || null,
+          profession: addDraft.profession || null, notes: addDraft.notes || null,
         }),
       });
       const j = await r.json();
       if (!r.ok) { setErr(j.error || 'Failed'); return; }
       setAddDraft(EMPTY_DRAFT); setAdding(false);
       setRows((rs) => [j, ...rs.filter((x) => x.id !== j.id)]);
+      if (!j.existing) setTotal((n) => n + 1);
     } finally {
       setSaving(false);
     }
@@ -155,7 +188,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
     setEditDraft({
       fullName: c.fullName, phone: c.phone || '', email: c.email || '',
       birthday: dateOnly(c.birthday), address: c.address || '',
-      instagram: c.instagram || '', gender: c.gender || '',
+      instagram: c.instagram || '', gender: c.gender || '', profession: c.profession || '', notes: c.notes || '',
     });
   }
 
@@ -169,6 +202,7 @@ export function CustomersList({ initial }: { initial: C[] }) {
           id: editingId, fullName: editDraft.fullName, phone: editDraft.phone || null, email: editDraft.email || null,
           birthday: editDraft.birthday, address: editDraft.address || null,
           instagram: editDraft.instagram || null, gender: editDraft.gender || null,
+          profession: editDraft.profession || null, notes: editDraft.notes || null,
         }),
       });
       const j = await r.json();
@@ -212,8 +246,14 @@ export function CustomersList({ initial }: { initial: C[] }) {
           <button className="btn-primary w-full" disabled={saving || !draftValid(addDraft)} onClick={create}>
             {saving ? 'Saving…' : 'Save'}
           </button>
-          <p className="text-xs text-karni-700">Birthday is required. Phone or email is also required.</p>
+          <p className="text-xs text-karni-700">All fields are optional — fill in whatever you have.</p>
         </div>
+      )}
+
+      {total > 0 && (
+        <p className="text-xs px-1" style={{ color: 'var(--ink-soft)' }}>
+          Showing {rangeStart}–{rangeEnd} of {total}
+        </p>
       )}
 
       <ul className="space-y-2">
@@ -233,15 +273,17 @@ export function CustomersList({ initial }: { initial: C[] }) {
             ) : (
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-medium">{c.fullName}</p>
+                  <p className="font-medium">{displayName(c)}</p>
                   <p className="text-xs text-karni-700">{[c.phone, c.email].filter(Boolean).join(' · ')}</p>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-karni-700">
                     {c.birthday && <span>🎂 {birthdayLabel(c.birthday)}</span>}
                     {c.gender && <span>{c.gender}</span>}
+                    {c.profession && <span>💼 {c.profession}</span>}
                     {c.instagram && <span>IG {c.instagram.startsWith('@') ? c.instagram : `@${c.instagram}`}</span>}
                     {c.address && <span className="truncate">{c.address}</span>}
                     {c.createdAt && <span style={{ color: 'var(--ink-faint)' }}>Added {addedLabel(c.createdAt)}</span>}
                   </div>
+                  {c.notes && <p className="text-xs text-karni-700 mt-1 whitespace-pre-wrap break-words">📝 {c.notes}</p>}
                 </div>
                 <button className="btn-link text-xs shrink-0" onClick={() => startEdit(c)}>Edit</button>
               </div>
@@ -250,6 +292,18 @@ export function CustomersList({ initial }: { initial: C[] }) {
         ))}
         {rows.length === 0 && <li className="text-center text-sm text-karni-700 py-6">No customers.</li>}
       </ul>
+
+      {lastPage > 0 && (
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <button className="btn-secondary" disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+            ← Prev
+          </button>
+          <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>Page {page + 1} of {lastPage + 1}</span>
+          <button className="btn-secondary" disabled={page >= lastPage} onClick={() => setPage((p) => Math.min(lastPage, p + 1))}>
+            Next →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

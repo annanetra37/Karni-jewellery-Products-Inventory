@@ -29,6 +29,10 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
   }, [spId, defaultSellingPointId, picking, pickerMode]);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [batchNote, setBatchNote] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [savingPages, setSavingPages] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -82,15 +86,57 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
 
   const totalSelected = lines.reduce((s, l) => s + l.quantity, 0);
 
+  async function addPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setErr(''); setPhotoBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const fd = new FormData(); fd.append('file', file);
+        const r = await fetch('/api/receiving-photo', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (r.ok && j.url) setPhotos((p) => [...p, j.url]);
+        else setErr(j.error || 'Photo upload failed');
+      }
+    } catch (e) {
+      setErr(String((e as Error).message || e));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  // Save the book photos on their own (no items needed), so a page can be
+  // captured and dated by itself. It appears in the gallery below.
+  async function saveBookPages() {
+    if (photos.length === 0) return;
+    setErr(''); setSavingPages(true);
+    try {
+      const r = await fetch('/api/receiving-batch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellingPointId: spId, photoUrls: photos, note: batchNote || undefined }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setErr(j.error || 'Could not save book pages'); setSavingPages(false); return; }
+      setPhotos([]); setBatchNote(''); setSavingPages(false);
+      router.refresh();
+    } catch (e) {
+      setErr(String((e as Error).message || e)); setSavingPages(false);
+    }
+  }
+
   async function submit() {
     setErr(''); setSubmitting(true);
     const r = await fetch('/api/stock-checkin', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sellingPointId: spId, lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, note: l.note })) }),
+      body: JSON.stringify({
+        sellingPointId: spId,
+        photoUrls: photos,
+        batchNote: batchNote || undefined,
+        lines: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, note: l.note })),
+      }),
     });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || 'Check-in failed'); setSubmitting(false); return; }
-    router.refresh(); setLines([]); setStockMap({}); setSubmitting(false);
+    router.refresh(); setLines([]); setStockMap({}); setPhotos([]); setBatchNote(''); setSubmitting(false);
   }
 
   return (
@@ -136,6 +182,45 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
       ) : (
         <button className="btn-secondary w-full" onClick={() => setPicking(true)}>{t('r.addVariant')}</button>
       )}
+
+      {/* Book pages: photos of the owner's hand-written list for this whole
+          receiving session (uploaded once, not per item). Kept with the check-in
+          so the counts can be checked against it later. */}
+      <div className="card space-y-2">
+        <p className="font-medium text-sm">{t('r.bookPages')}</p>
+        <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('r.bookPagesHint')}</p>
+        {photos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {photos.map((url, i) => (
+              <div key={i} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-karni-200" />
+                <button type="button" aria-label={t('c.remove')}
+                  onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-karni-300 text-xs leading-none shadow">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="btn-secondary inline-flex cursor-pointer text-sm">
+            {photoBusy ? t('c.processing') : t('r.addPhoto')}
+            <input type="file" accept="image/*" multiple className="hidden"
+              onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+          </label>
+        </div>
+        <input className="input" placeholder={t('r.bookNote')} value={batchNote} onChange={(e) => setBatchNote(e.target.value)} />
+        {photos.length > 0 && (
+          lines.length === 0 ? (
+            <button type="button" className="btn-primary w-full" disabled={savingPages || photoBusy} onClick={saveBookPages}>
+              {savingPages ? t('c.saving') : t('r.saveBookPages')}
+            </button>
+          ) : (
+            <p className="text-xs" style={{ color: 'var(--ink-soft)' }}>{t('r.photosWithCheckin')}</p>
+          )
+        )}
+        {err && !submitting && <p className="text-sm text-red-700">{err}</p>}
+      </div>
 
       {lines.length > 0 && (
         <div className="card space-y-3">
@@ -188,7 +273,7 @@ export function ReceiveFlow({ sellingPoints, defaultSellingPointId }: { sellingP
             );
           })}
           {err && <p className="text-sm text-red-700">{err}</p>}
-          <button className="btn-primary w-full" disabled={submitting} onClick={submit}>
+          <button className="btn-primary w-full" disabled={submitting || photoBusy} onClick={submit}>
             {submitting ? t('c.saving') : `${t('r.checkInN')} ${lines.reduce((s, l) => s + l.quantity, 0)} ${t('c.items')}`}
           </button>
         </div>

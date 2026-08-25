@@ -28,6 +28,24 @@ export function yerevanDateStringStart(s: string): Date {
   return new Date(Date.UTC(y, (m || 1) - 1, day || 1) - OFFSET_MS);
 }
 
+// Bucketing helpers for analytics. These derive the Yerevan-local hour / weekday
+// / calendar day from a UTC instant explicitly, so metrics like "sales by hour"
+// are correct no matter what timezone the process happens to run in (rather than
+// relying on the ambient TZ via Date.getHours()/getDay()).
+
+/** Hour of day (0–23) in Yerevan. */
+export function yerevanHour(d: Date): number {
+  return new Date(d.getTime() + OFFSET_MS).getUTCHours();
+}
+/** Day of week in Yerevan, 0 = Sunday … 6 = Saturday (matches Date.getDay). */
+export function yerevanWeekday(d: Date): number {
+  return new Date(d.getTime() + OFFSET_MS).getUTCDay();
+}
+/** `YYYY-MM-DD` for the Yerevan day containing `d`. */
+export function yerevanDayKey(d: Date): string {
+  return new Date(d.getTime() + OFFSET_MS).toISOString().slice(0, 10);
+}
+
 const dateTimeFmt = new Intl.DateTimeFormat('en-GB', {
   timeZone: YEREVAN_TZ, day: '2-digit', month: '2-digit', year: 'numeric',
   hour: '2-digit', minute: '2-digit', hour12: false,
