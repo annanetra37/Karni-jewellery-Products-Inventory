@@ -665,6 +665,17 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
                       </form>
                     </details>
                   </div>
+                  {/* Admin: record delivery cash taken from this open drawer. */}
+                  <details className="mt-1 pl-4 text-xs">
+                    <summary className="btn-link cursor-pointer select-none">🛵 {t('k.deliveryCash')}</summary>
+                    <form action={recordDeliveryCashAction} className="flex flex-wrap items-center gap-2 mt-2">
+                      <input type="hidden" name="sellingPointId" value={s.sellingPointId} />
+                      <input className="input py-1.5 w-32" name="amount" type="number" step="0.01" min="0" placeholder={t('k.deliveryAmount')} required />
+                      <input className="input py-1.5 flex-1 min-w-[8rem]" name="note" placeholder={t('k.deliveryNote')} />
+                      <button className="btn-secondary px-3 py-1.5" type="submit">{t('k.recordDelivery')}</button>
+                    </form>
+                    <p className="mt-1 text-karni-700">{t('k.deliveryHint')}</p>
+                  </details>
                   {handoverFor(s) && <div className="mt-1 pl-4"><MismatchDetail h={handoverFor(s)!} t={t} /></div>}
                   {/* Break detail */}
                   <div className="mt-1 pl-4 text-xs" style={{ color: 'var(--ink-soft)' }}>
