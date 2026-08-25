@@ -200,6 +200,40 @@ async function closeShiftAction(formData: FormData) {
   redirect('/kacca');
 }
 
+// A seller took cash from the drawer to pay for a delivery. Record it as two
+// linked safe movements so the books stay right: (1) a "from drawer" deposit —
+// so the drawer reconciliation knows that cash left the drawer — and (2) a
+// withdrawal as a shared Investment (the delivery expense). Net effect on the
+// safe balance is zero; the cash simply passed through.
+async function recordDeliveryCashAction(formData: FormData) {
+  'use server';
+  const { requireUser, sellingPointScope } = await import('@/lib/auth');
+  const { prisma } = await import('@/lib/db');
+  const { redirect } = await import('next/navigation');
+  const u = await requireUser();
+  const sellingPointId = String(formData.get('sellingPointId') || '');
+  const amount = Number(formData.get('amount') || 0);
+  const note = String(formData.get('note') || '').trim();
+  if (!sellingPointId || !amount || amount <= 0) redirect('/kacca');
+  const scope = await sellingPointScope(u);
+  if (scope && !scope.includes(sellingPointId)) redirect('/kacca?err=forbidden');
+  // The cash comes from that point's drawer, so a shift must be open there.
+  const shift = await prisma.cashDrawerSession.findFirst({ where: { sellingPointId, status: 'OPEN' } });
+  if (!shift) redirect('/kacca');
+  const label = note ? `Delivery — ${note}` : 'Delivery';
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.safeTransaction.create({
+      data: { type: 'DEPOSIT', amountAmd: amount, sellingPointId, fromDrawer: true, performedById: u.id, note: label, occurredAt: now },
+    }),
+    // Stamped a second later so the expense (newer) sorts above the deposit.
+    prisma.safeTransaction.create({
+      data: { type: 'WITHDRAWAL', amountAmd: amount, splitAll: true, reason: 'INVESTMENT', performedById: u.id, note: label, occurredAt: new Date(now.getTime() + 1000) },
+    }),
+  ]);
+  redirect('/kacca');
+}
+
 async function editOpeningCountAction(formData: FormData) {
   'use server';
   const { requireUser, isAdmin, sellingPointScope } = await import('@/lib/auth');
@@ -384,6 +418,18 @@ export default async function KaccaPage({ searchParams }: { searchParams: Promis
               ))}
             </ul>
           )}
+
+          {/* Cash a seller took from the drawer for a delivery. */}
+          <details className="pt-1 border-t border-emerald-200">
+            <summary className="cursor-pointer select-none text-sm font-medium">🛵 {t('k.deliveryCash')}</summary>
+            <form action={recordDeliveryCashAction} className="space-y-2 mt-2">
+              <input type="hidden" name="sellingPointId" value={openShift.sellingPointId} />
+              <input className="input" name="amount" type="number" step="0.01" min="0" placeholder={t('k.deliveryAmount')} required />
+              <input className="input" name="note" placeholder={t('k.deliveryNote')} />
+              <button className="btn-secondary w-full" type="submit">{t('k.recordDelivery')}</button>
+              <p className="text-xs text-karni-700">{t('k.deliveryHint')}</p>
+            </form>
+          </details>
 
           <form action={closeShiftAction} className="space-y-2 pt-1 border-t border-emerald-200">
             <input type="hidden" name="sessionId" value={openShift.id} />
