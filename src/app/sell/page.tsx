@@ -1,4 +1,4 @@
-import { requireUser, allowedSellingPoints } from '@/lib/auth';
+import { requireUser, allowedSellingPoints, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { SellFlow } from './SellFlow';
 import { getT } from '@/lib/i18n-server';
@@ -41,6 +41,7 @@ export default async function SellPage() {
         sellers={sellers}
         currentUserId={user.id}
         creditToName={creditUser?.fullName ?? ''}
+        showInternal={isAdmin(user)}
       />
     </div>
   );
