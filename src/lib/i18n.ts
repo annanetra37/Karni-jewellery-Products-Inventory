@@ -382,6 +382,7 @@ const D: Record<string, Record<Locale, string>> = {
   's.modeOnline': { en: 'Online sale', hy: 'Առցանց վաճառք', ru: 'Онлайн-продажа' },
   's.onlineCredited': { en: 'Credited to', hy: 'Գրանցվում է', ru: 'Засчитывается' },
   's.onlineHint': { en: 'Not counted toward your sales. The purchase amount is booked to the safe (not the drawer); add any delivery cash you took from the drawer below.', hy: 'Չի հաշվվում ձեր վաճառքներում։ Գնման գումարը գրանցվում է սեյֆում (ոչ դրամարկղից)․ ստորև ավելացրեք դրամարկղից վերցված առաքման կանխիկը։', ru: 'Не засчитывается в ваши продажи. Сумма покупки заносится в сейф (не из кассы); ниже добавьте наличные на доставку, взятые из кассы.' },
+  's.onlineHintRep': { en: 'Record the online purchase: pick the channel, add the customer and items, and enter any delivery cash you took from the drawer.', hy: 'Գրանցեք առցանց գնումը՝ ընտրեք ալիքը, ավելացրեք հաճախորդին ու ապրանքները և մուտքագրեք դրամարկղից վերցված առաքման կանխիկը։', ru: 'Запишите онлайн-покупку: выберите канал, добавьте клиента и товары и укажите наличные на доставку, взятые из кассы.' },
   's.onlineSource': { en: 'Channel', hy: 'Ալիք', ru: 'Канал' },
   's.onlineSourceHint': { en: 'Which channel the order came through — for measuring what works best (not a selling point).', hy: 'Ո՞ր ալիքով է եկել պատվերը — չափելու համար, թե որն է լավագույնը (ոչ վաճառակետ)։', ru: 'Через какой канал пришёл заказ — чтобы измерять, что работает лучше (не точка продаж).' },
   's.chInstagram': { en: 'Instagram', hy: 'Instagram', ru: 'Instagram' },

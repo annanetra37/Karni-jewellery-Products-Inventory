@@ -22,7 +22,7 @@ type CartLine = {
 type Customer = { id: string; fullName: string; phone: string | null; email: string | null };
 type Seller = { id: string; name: string; onShift: boolean };
 
-export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '', creditToName = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string; creditToName?: string }) {
+export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '', creditToName = '', showInternal = false }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string; creditToName?: string; showInternal?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<'store' | 'online'>('store');
   const online = mode === 'online';
@@ -157,8 +157,14 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
       </div>
       {online && (
         <div className="card bg-emerald-50 border-emerald-200 text-sm space-y-0.5">
-          <p>{t('s.onlineCredited')} <b>{creditToName || '—'}</b>.</p>
-          <p className="text-xs text-karni-700">{t('s.onlineHint')}</p>
+          {showInternal ? (
+            <>
+              <p>{t('s.onlineCredited')} <b>{creditToName || '—'}</b>.</p>
+              <p className="text-xs text-karni-700">{t('s.onlineHint')}</p>
+            </>
+          ) : (
+            <p className="text-xs text-karni-700">{t('s.onlineHintRep')}</p>
+          )}
         </div>
       )}
 

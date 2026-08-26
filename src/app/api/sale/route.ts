@@ -8,6 +8,10 @@ import { formatAmd } from '@/lib/currency';
 import { publicOriginFromReq } from '@/lib/origin';
 import { DiscountSchema, resolveDiscount } from '@/lib/discount';
 
+// Online purchases are credited to this person (falls back to any owner if the
+// name isn't found). Keep in sync with the Sell page banner.
+const ONLINE_CREDIT_NAME = 'Mher Davoudian';
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
@@ -76,12 +80,10 @@ export async function POST(req: NextRequest) {
   let deliveryCashAmd = 0;
   const deliveryNote = (parsed.data.deliveryNote ?? '').trim();
   if (online) {
-    const owner = await prisma.user.findFirst({
-      where: { isOwner: true, isActive: true },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
-    if (owner) soldById = owner.id;
+    const credited =
+      await prisma.user.findFirst({ where: { isActive: true, fullName: ONLINE_CREDIT_NAME }, select: { id: true } })
+      ?? await prisma.user.findFirst({ where: { isOwner: true, isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+    if (credited) soldById = credited.id;
     deliveryCashAmd = Math.max(0, parsed.data.deliveryCashAmd ?? 0);
   }
 
