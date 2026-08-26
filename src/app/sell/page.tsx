@@ -13,9 +13,11 @@ export default async function SellPage() {
     prisma.user.findMany({ where: { isActive: true }, orderBy: { fullName: 'asc' }, select: { id: true, fullName: true } }),
     // Reps currently on an open shift — listed first in the "Sold by" picker.
     prisma.shiftParticipant.findMany({ where: { leftAt: null, session: { status: 'OPEN' } }, select: { userId: true } }),
-    // Online purchases are credited to a business owner (an admin flagged owner).
-    prisma.user.findFirst({ where: { isOwner: true, isActive: true }, orderBy: { createdAt: 'asc' }, select: { fullName: true } }),
+    // Online purchases are credited to Mher Davoudian (fallback: any owner).
+    // Keep this name in sync with ONLINE_CREDIT_NAME in /api/sale.
+    prisma.user.findFirst({ where: { isActive: true, fullName: 'Mher Davoudian' }, select: { fullName: true } }),
   ]);
+  const creditUser = owner ?? await prisma.user.findFirst({ where: { isOwner: true, isActive: true }, orderBy: { createdAt: 'asc' }, select: { fullName: true } });
   const onShiftIds = new Set(onShift.map((p) => p.userId));
   // On-shift reps first (most likely the seller on a shared device), then the rest.
   const sellers = [...activeUsers].sort((a, b) => {
@@ -38,7 +40,7 @@ export default async function SellPage() {
         defaultSellingPointId={preferred}
         sellers={sellers}
         currentUserId={user.id}
-        creditToName={owner?.fullName ?? ''}
+        creditToName={creditUser?.fullName ?? ''}
       />
     </div>
   );
