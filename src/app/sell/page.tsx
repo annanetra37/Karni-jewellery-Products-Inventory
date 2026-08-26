@@ -6,21 +6,16 @@ import { getT } from '@/lib/i18n-server';
 export default async function SellPage() {
   const user = await requireUser();
   const { t } = await getT();
-  const [sps, openShift, megamall, activeUsers, onShift, superAdmin] = await Promise.all([
+  const [sps, openShift, megamall, activeUsers, onShift, owner] = await Promise.all([
     prisma.sellingPoint.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
     prisma.cashDrawerSession.findFirst({ where: { userId: user.id, status: 'OPEN' } }),
     prisma.sellingPoint.findFirst({ where: { name: 'Megamall' }, select: { id: true } }),
     prisma.user.findMany({ where: { isActive: true }, orderBy: { fullName: 'asc' }, select: { id: true, fullName: true } }),
     // Reps currently on an open shift — listed first in the "Sold by" picker.
     prisma.shiftParticipant.findMany({ where: { leftAt: null, session: { status: 'OPEN' } }, select: { userId: true } }),
-    // Online purchases are credited to this super admin (prefer the owner).
-    prisma.user.findFirst({ where: { role: 'SUPER_ADMIN', isActive: true }, orderBy: [{ isOwner: 'desc' }, { createdAt: 'asc' }], select: { fullName: true } }),
+    // Online purchases are credited to a business owner (an admin flagged owner).
+    prisma.user.findFirst({ where: { isOwner: true, isActive: true }, orderBy: { createdAt: 'asc' }, select: { fullName: true } }),
   ]);
-  // Any active point can be an online source label (Instagram DM, website…),
-  // ONLINE-type ones first. Unscoped — it's a money source, not a sales location.
-  const onlineSources = [...sps]
-    .sort((a, b) => (a.type === 'ONLINE' ? 0 : 1) - (b.type === 'ONLINE' ? 0 : 1) || a.name.localeCompare(b.name))
-    .map((s) => ({ id: s.id, name: s.name, type: String(s.type) }));
   const onShiftIds = new Set(onShift.map((p) => p.userId));
   // On-shift reps first (most likely the seller on a shared device), then the rest.
   const sellers = [...activeUsers].sort((a, b) => {
@@ -43,8 +38,7 @@ export default async function SellPage() {
         defaultSellingPointId={preferred}
         sellers={sellers}
         currentUserId={user.id}
-        onlineSources={onlineSources}
-        superAdminName={superAdmin?.fullName ?? ''}
+        creditToName={owner?.fullName ?? ''}
       />
     </div>
   );

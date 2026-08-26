@@ -336,6 +336,9 @@ model Sale {
   // account (false — e.g. card / transfer). Drawer reconciliation is the same
   // either way; this records the destination.
   nonDrawerToSafe Boolean @default(false)
+  // For an online sale: which channel it came through (FACEBOOK | INSTAGRAM).
+  // A measurement label only — not tied to a selling point.
+  onlineChannel  String?
   createdAt      DateTime @default(now())
 
   sellingPoint SellingPoint @relation(fields: [sellingPointId], references: [id])

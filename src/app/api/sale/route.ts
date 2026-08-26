@@ -27,7 +27,7 @@ const Body = z.object({
   // its full amount deposited to the safe from an online source (not the drawer),
   // and optional delivery cash taken from the drawer.
   online: z.boolean().optional(),
-  onlineSourceId: z.string().nullable().optional(),
+  onlineChannel: z.enum(['FACEBOOK', 'INSTAGRAM']).nullable().optional(),
   deliveryCashAmd: z.number().min(0).optional(),
   deliveryNote: z.string().optional(),
   discount: DiscountSchema.nullable().optional(),
@@ -69,22 +69,19 @@ export async function POST(req: NextRequest) {
     if (seller) soldById = seller.id;
   }
 
-  // Online purchases are credited to a super admin (the owner), not the rep who
-  // records them — online orders don't count toward a rep's personal sales.
-  let onlineSourceId: string | null = null;
+  // Online purchases are credited to a business owner (an admin flagged as
+  // owner), not the rep who records them — online orders don't count toward a
+  // rep's personal sales.
+  const onlineChannel = online ? (parsed.data.onlineChannel ?? null) : null;
   let deliveryCashAmd = 0;
   const deliveryNote = (parsed.data.deliveryNote ?? '').trim();
   if (online) {
-    const sa = await prisma.user.findFirst({
-      where: { role: 'SUPER_ADMIN', isActive: true },
-      orderBy: [{ isOwner: 'desc' }, { createdAt: 'asc' }],
+    const owner = await prisma.user.findFirst({
+      where: { isOwner: true, isActive: true },
+      orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
-    if (sa) soldById = sa.id;
-    if (parsed.data.onlineSourceId) {
-      const src = await prisma.sellingPoint.findUnique({ where: { id: parsed.data.onlineSourceId }, select: { id: true } });
-      onlineSourceId = src?.id ?? null;
-    }
+    if (owner) soldById = owner.id;
     deliveryCashAmd = Math.max(0, parsed.data.deliveryCashAmd ?? 0);
   }
 
@@ -159,6 +156,7 @@ export async function POST(req: NextRequest) {
           cashToSafe,
           nonDrawerAmd,
           nonDrawerToSafe: nonDrawerAmd > 0 ? nonDrawerToSafe : false,
+          onlineChannel,
           lineItems: {
             create: prepared.map((p) => ({
               variantId: p.variantId,
@@ -198,13 +196,15 @@ export async function POST(req: NextRequest) {
       }
 
       // Online purchase: record the money in the safe. The purchase amount comes
-      // in from the online source (e.g. Instagram DM), NOT from any drawer.
+      // in from the online channel, NOT from any drawer (so, no selling point —
+      // the channel is a measurement label carried in the note).
       if (online) {
+        const channelLabel = onlineChannel === 'FACEBOOK' ? 'Facebook' : onlineChannel === 'INSTAGRAM' ? 'Instagram' : null;
         await tx.safeTransaction.create({
           data: {
-            type: 'DEPOSIT', amountAmd: total, sellingPointId: onlineSourceId,
+            type: 'DEPOSIT', amountAmd: total, sellingPointId: null,
             fromDrawer: false, performedById: u.id,
-            note: `Online purchase — ${sNumber}`, occurredAt: new Date(),
+            note: `Online purchase${channelLabel ? ` (${channelLabel})` : ''} — ${sNumber}`, occurredAt: new Date(),
           },
         });
         // Delivery cash the rep took from the physical drawer, if any: a
