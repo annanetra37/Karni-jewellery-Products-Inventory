@@ -22,8 +22,10 @@ type CartLine = {
 type Customer = { id: string; fullName: string; phone: string | null; email: string | null };
 type Seller = { id: string; name: string; onShift: boolean };
 
-export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string }) {
+export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '', onlineSources = [], superAdminName = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string; onlineSources?: SP[]; superAdminName?: string }) {
   const router = useRouter();
+  const [mode, setMode] = useState<'store' | 'online'>('store');
+  const online = mode === 'online';
   const [cart, setCart] = useState<CartLine[]>([]);
   const [spId, setSpId] = useState(defaultSellingPointId || (sellingPoints[0]?.id ?? ''));
   const [soldById, setSoldById] = useState(currentUserId || sellers[0]?.id || '');
@@ -31,6 +33,10 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
   const [cashToSafe, setCashToSafe] = useState(false);
   const [nonDrawer, setNonDrawer] = useState('');
   const [nonDrawerToSafe, setNonDrawerToSafe] = useState(false);
+  // Online-sale fields.
+  const [onlineSourceId, setOnlineSourceId] = useState(onlineSources[0]?.id ?? '');
+  const [deliveryCash, setDeliveryCash] = useState('');
+  const [deliveryNote, setDeliveryNote] = useState('');
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [custQ, setCustQ] = useState('');
@@ -115,11 +121,16 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
         body: JSON.stringify({
           sellingPointId: spId,
           customerId,
-          soldById: soldById || undefined,
-          paymentMethod,
-          cashToSafe: paymentMethod === 'CASH' ? cashToSafe : false,
-          nonDrawerAmd: paymentMethod === 'CASH' && !cashToSafe ? (Number(nonDrawer) || 0) : 0,
-          nonDrawerToSafe,
+          // Online sales are credited to a super admin server-side, so no soldBy.
+          soldById: online ? undefined : (soldById || undefined),
+          paymentMethod: online ? 'CASH' : paymentMethod,
+          cashToSafe: online ? true : (paymentMethod === 'CASH' ? cashToSafe : false),
+          nonDrawerAmd: !online && paymentMethod === 'CASH' && !cashToSafe ? (Number(nonDrawer) || 0) : 0,
+          nonDrawerToSafe: online ? false : nonDrawerToSafe,
+          online,
+          onlineSourceId: online ? (onlineSourceId || null) : undefined,
+          deliveryCashAmd: online ? (Number(deliveryCash) || 0) : undefined,
+          deliveryNote: online ? deliveryNote : undefined,
           discount,
           lines: cart.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
         }),
@@ -134,6 +145,23 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
 
   return (
     <div className="space-y-3">
+      {/* In-store vs online sale. Online is credited to the owner and its money
+          is booked straight to the safe, not the drawer. */}
+      <div className="inline-flex p-1 rounded-xl bg-karni-100 border border-karni-200">
+        {(['store', 'online'] as const).map((m) => (
+          <button key={m} type="button" onClick={() => setMode(m)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${mode === m ? 'bg-white shadow-soft text-karni-900' : 'text-karni-700 hover:text-karni-900'}`}>
+            {m === 'store' ? `🛍️ ${t('s.modeStore')}` : `🌐 ${t('s.modeOnline')}`}
+          </button>
+        ))}
+      </div>
+      {online && (
+        <div className="card bg-emerald-50 border-emerald-200 text-sm space-y-0.5">
+          <p>{t('s.onlineCredited')} <b>{superAdminName || '—'}</b>.</p>
+          <p className="text-xs text-karni-700">{t('s.onlineHint')}</p>
+        </div>
+      )}
+
       {cart.length > 0 && (
         <div className="card space-y-3">
           <div className="flex justify-between items-baseline">
@@ -229,7 +257,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
                 {sellingPoints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            {sellers.length > 1 && (
+            {!online && sellers.length > 1 && (
               <div>
                 <label className="label">{t('s.soldBy')}</label>
                 <select className="input" value={soldById} onChange={(e) => setSoldById(e.target.value)}>
@@ -240,43 +268,68 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
                 <span className="block text-xs text-karni-700 mt-1">{t('s.soldByHint')}</span>
               </div>
             )}
-            <div>
-              <label className="label">{t('s.paymentMethod')}</label>
-              <div className="grid grid-cols-4 gap-2">
-                {(['CASH', 'CARD', 'TRANSFER', 'OTHER'] as const).map((m) => (
-                  <button key={m} type="button"
-                    className={`btn ${paymentMethod === m ? 'bg-karni-600 text-white' : 'bg-karni-100 text-karni-900'}`}
-                    onClick={() => setPaymentMethod(m)}>{t('s.pm' + m.charAt(0) + m.slice(1).toLowerCase())}</button>
-                ))}
-              </div>
-            </div>
-            {paymentMethod === 'CASH' && (
-              <label className="flex items-start gap-2 text-sm cursor-pointer">
-                <input type="checkbox" className="mt-1" checked={cashToSafe} onChange={(e) => setCashToSafe(e.target.checked)} />
-                <span>
-                  {t('s.cashToSafe')}
-                  <span className="block text-xs text-karni-700">{t('s.cashToSafeHint')}</span>
-                </span>
-              </label>
-            )}
-            {paymentMethod === 'CASH' && !cashToSafe && (
-              <div className="space-y-2">
+            {!online && (
+              <>
                 <div>
-                  <label className="label">{t('s.nonDrawer')}</label>
-                  <input className="input" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0"
-                    value={nonDrawer} onChange={(e) => setNonDrawer(e.target.value)} />
-                  <span className="block text-xs text-karni-700 mt-1">{t('s.nonDrawerHint')}</span>
+                  <label className="label">{t('s.paymentMethod')}</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(['CASH', 'CARD', 'TRANSFER', 'OTHER'] as const).map((m) => (
+                      <button key={m} type="button"
+                        className={`btn ${paymentMethod === m ? 'bg-karni-600 text-white' : 'bg-karni-100 text-karni-900'}`}
+                        onClick={() => setPaymentMethod(m)}>{t('s.pm' + m.charAt(0) + m.slice(1).toLowerCase())}</button>
+                    ))}
+                  </div>
                 </div>
-                {(Number(nonDrawer) || 0) > 0 && (
-                  <div>
-                    <label className="label">{t('s.nonDrawerWhere')}</label>
-                    <select className="input" value={nonDrawerToSafe ? 'safe' : 'bank'} onChange={(e) => setNonDrawerToSafe(e.target.value === 'safe')}>
-                      <option value="bank">{t('s.nonDrawerBank')}</option>
-                      <option value="safe">{t('s.nonDrawerSafe')}</option>
-                    </select>
+                {paymentMethod === 'CASH' && (
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" className="mt-1" checked={cashToSafe} onChange={(e) => setCashToSafe(e.target.checked)} />
+                    <span>
+                      {t('s.cashToSafe')}
+                      <span className="block text-xs text-karni-700">{t('s.cashToSafeHint')}</span>
+                    </span>
+                  </label>
+                )}
+                {paymentMethod === 'CASH' && !cashToSafe && (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="label">{t('s.nonDrawer')}</label>
+                      <input className="input" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0"
+                        value={nonDrawer} onChange={(e) => setNonDrawer(e.target.value)} />
+                      <span className="block text-xs text-karni-700 mt-1">{t('s.nonDrawerHint')}</span>
+                    </div>
+                    {(Number(nonDrawer) || 0) > 0 && (
+                      <div>
+                        <label className="label">{t('s.nonDrawerWhere')}</label>
+                        <select className="input" value={nonDrawerToSafe ? 'safe' : 'bank'} onChange={(e) => setNonDrawerToSafe(e.target.value === 'safe')}>
+                          <option value="bank">{t('s.nonDrawerBank')}</option>
+                          <option value="safe">{t('s.nonDrawerSafe')}</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
+            )}
+            {online && (
+              <>
+                <div>
+                  <label className="label">{t('s.onlineSource')}</label>
+                  <select className="input" value={onlineSourceId} onChange={(e) => setOnlineSourceId(e.target.value)}>
+                    {onlineSources.length === 0 && <option value="">—</option>}
+                    {onlineSources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <span className="block text-xs text-karni-700 mt-1">{t('s.onlineSourceHint')}</span>
+                </div>
+                <div>
+                  <label className="label">{t('s.deliveryFromDrawer')}</label>
+                  <input className="input" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0"
+                    value={deliveryCash} onChange={(e) => setDeliveryCash(e.target.value)} />
+                  <span className="block text-xs text-karni-700 mt-1">{t('s.deliveryFromDrawerHint')}</span>
+                </div>
+                {(Number(deliveryCash) || 0) > 0 && (
+                  <input className="input" placeholder={t('s.deliveryNote')} value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} />
+                )}
+              </>
             )}
           </div>
 
@@ -342,7 +395,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
           )}
 
           <button className="btn-primary w-full text-lg py-4" disabled={submitting || !spId || cart.length === 0} onClick={submit}>
-            {submitting ? t('c.processing') : `${t('s.confirmSell')} — ${total.toLocaleString()} ֏`}
+            {submitting ? t('c.processing') : `${online ? t('s.confirmOnline') : t('s.confirmSell')} — ${total.toLocaleString()} ֏`}
           </button>
         </>
       )}
