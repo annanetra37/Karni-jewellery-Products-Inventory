@@ -156,15 +156,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
         ))}
       </div>
       {online && (
-        <div className="card bg-emerald-50 border-emerald-200 text-sm space-y-0.5">
-          {showInternal ? (
-            <>
-              <p>{t('s.onlineCredited')} <b>{creditToName || '—'}</b>.</p>
-              <p className="text-xs text-karni-700">{t('s.onlineHint')}</p>
-            </>
-          ) : (
-            <p className="text-xs text-karni-700">{t('s.onlineHintRep')}</p>
-          )}
+        <div className="card bg-emerald-50 border-emerald-200 text-sm">
+          <p className="text-xs text-karni-700">{t('s.onlineHintRep')}</p>
         </div>
       )}
 
