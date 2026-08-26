@@ -192,6 +192,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const bySp = new Map<string, { count: number; revenue: number }>();
   const byPerson = new Map<string, { count: number; revenue: number }>();
   const byPay = new Map<string, { count: number; revenue: number }>();
+  const byChannel = new Map<string, { count: number; revenue: number }>();
   const byCat = new Map<string, { count: number; revenue: number }>();
   const byCollection = new Map<string, { count: number; revenue: number }>();
   const byHour = new Map<number, { count: number; revenue: number }>();
@@ -234,6 +235,8 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
     // "To safe" overlay: full cash-to-safe (online) sales + safe split portions.
     const toSafe = (s.cashToSafe ? r : 0) + toSafeSplit;
     if (toSafe > 0) { toSafeRevenue += toSafe; toSafeCount += 1; }
+    // Online sales channel (Instagram vs Facebook) — which one sells better.
+    if (s.onlineChannel) bucket(byChannel, s.onlineChannel === 'FACEBOOK' ? 'Facebook' : s.onlineChannel === 'INSTAGRAM' ? 'Instagram' : s.onlineChannel, 1, r);
     const sHour = yerevanHour(s.createdAt);
     const sWeekday = yerevanWeekday(s.createdAt);
     bumpN(byHour, sHour, r);
@@ -302,6 +305,7 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const spData = sortByValue(bySp);
   const personData = sortByValue(byPerson);
   const payData = sortByValue(byPay);
+  const chanData = sortByValue(byChannel);
   const catData = sortByCount(byCat);
   const collData = sortByValue(byCollection);
   const topSkus = Array.from(perSku.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
@@ -904,6 +908,11 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
             <DrillCard label={t('sa.bySellingPoint')} value={(spData[0]?.label || '—')}
               sub={spData[0] ? formatAmd(spData[0].value) : undefined}
               title={t('sa.bySellingPoint')} panel={renderBreakdown(toBreakdown(bySp))} />
+            {chanData.length > 0 && (
+              <DrillCard label={t('sa.byChannel')} value={(chanData[0]?.label || '—')}
+                sub={chanData[0] ? formatAmd(chanData[0].value) : undefined}
+                title={t('sa.byChannel')} panel={renderBreakdown(toBreakdown(byChannel))} />
+            )}
             <DrillCard label={t('sa.bankToSafe')} value={formatAmd(bankToSafeRange)}
               sub={`${bankToSafeRangeCount}× · ${t('sa.thisRange')}`}
               title={t('sa.bankToSafe')} panel={renderBankToSafe(bankToSafeRangeRows)} />

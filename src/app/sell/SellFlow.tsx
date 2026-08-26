@@ -22,7 +22,7 @@ type CartLine = {
 type Customer = { id: string; fullName: string; phone: string | null; email: string | null };
 type Seller = { id: string; name: string; onShift: boolean };
 
-export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '', onlineSources = [], superAdminName = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string; onlineSources?: SP[]; superAdminName?: string }) {
+export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], currentUserId = '', creditToName = '' }: { sellingPoints: SP[]; defaultSellingPointId: string; sellers?: Seller[]; currentUserId?: string; creditToName?: string }) {
   const router = useRouter();
   const [mode, setMode] = useState<'store' | 'online'>('store');
   const online = mode === 'online';
@@ -33,8 +33,8 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
   const [cashToSafe, setCashToSafe] = useState(false);
   const [nonDrawer, setNonDrawer] = useState('');
   const [nonDrawerToSafe, setNonDrawerToSafe] = useState(false);
-  // Online-sale fields.
-  const [onlineSourceId, setOnlineSourceId] = useState(onlineSources[0]?.id ?? '');
+  // Online-sale fields. Channel is a measurement label (which does better).
+  const [onlineChannel, setOnlineChannel] = useState<'INSTAGRAM' | 'FACEBOOK'>('INSTAGRAM');
   const [deliveryCash, setDeliveryCash] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
 
@@ -128,7 +128,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
           nonDrawerAmd: !online && paymentMethod === 'CASH' && !cashToSafe ? (Number(nonDrawer) || 0) : 0,
           nonDrawerToSafe: online ? false : nonDrawerToSafe,
           online,
-          onlineSourceId: online ? (onlineSourceId || null) : undefined,
+          onlineChannel: online ? onlineChannel : undefined,
           deliveryCashAmd: online ? (Number(deliveryCash) || 0) : undefined,
           deliveryNote: online ? deliveryNote : undefined,
           discount,
@@ -157,7 +157,7 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
       </div>
       {online && (
         <div className="card bg-emerald-50 border-emerald-200 text-sm space-y-0.5">
-          <p>{t('s.onlineCredited')} <b>{superAdminName || '—'}</b>.</p>
+          <p>{t('s.onlineCredited')} <b>{creditToName || '—'}</b>.</p>
           <p className="text-xs text-karni-700">{t('s.onlineHint')}</p>
         </div>
       )}
@@ -314,10 +314,15 @@ export function SellFlow({ sellingPoints, defaultSellingPointId, sellers = [], c
               <>
                 <div>
                   <label className="label">{t('s.onlineSource')}</label>
-                  <select className="input" value={onlineSourceId} onChange={(e) => setOnlineSourceId(e.target.value)}>
-                    {onlineSources.length === 0 && <option value="">—</option>}
-                    {onlineSources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['INSTAGRAM', 'FACEBOOK'] as const).map((ch) => (
+                      <button key={ch} type="button"
+                        className={`btn ${onlineChannel === ch ? 'bg-karni-600 text-white' : 'bg-karni-100 text-karni-900'}`}
+                        onClick={() => setOnlineChannel(ch)}>
+                        {ch === 'INSTAGRAM' ? `📸 ${t('s.chInstagram')}` : `👍 ${t('s.chFacebook')}`}
+                      </button>
+                    ))}
+                  </div>
                   <span className="block text-xs text-karni-700 mt-1">{t('s.onlineSourceHint')}</span>
                 </div>
                 <div>
