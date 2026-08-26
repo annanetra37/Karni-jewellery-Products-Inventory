@@ -23,6 +23,13 @@ const Body = z.object({
   cashToSafe: z.boolean().optional(),
   nonDrawerAmd: z.number().min(0).optional(),
   nonDrawerToSafe: z.boolean().optional(),
+  // Online purchase: credited to a super admin (not the person recording it),
+  // its full amount deposited to the safe from an online source (not the drawer),
+  // and optional delivery cash taken from the drawer.
+  online: z.boolean().optional(),
+  onlineSourceId: z.string().nullable().optional(),
+  deliveryCashAmd: z.number().min(0).optional(),
+  deliveryNote: z.string().optional(),
   discount: DiscountSchema.nullable().optional(),
   lines: z.array(z.object({
     variantId: z.string(),
@@ -36,9 +43,11 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   const { sellingPointId, customerId, paymentMethod, discount, lines } = parsed.data;
+  const online = parsed.data.online === true;
   // "Cash to safe" only makes sense for a cash sale (money that bypassed the drawer).
+  // An online purchase always bypasses the drawer (its money goes to the safe).
   const isCash = (paymentMethod || 'CASH') === 'CASH';
-  const cashToSafe = isCash ? (parsed.data.cashToSafe ?? false) : false;
+  const cashToSafe = online ? true : (isCash ? (parsed.data.cashToSafe ?? false) : false);
   // Portion of a cash sale that didn't enter the drawer (part-cash sale), and
   // where it went (the safe vs the bank). Only for cash sales not already
   // fully cash-to-safe. Clamped to the total after discount further below.
@@ -58,6 +67,25 @@ export async function POST(req: NextRequest) {
   if (parsed.data.soldById && parsed.data.soldById !== u.id) {
     const seller = await prisma.user.findFirst({ where: { id: parsed.data.soldById, isActive: true }, select: { id: true } });
     if (seller) soldById = seller.id;
+  }
+
+  // Online purchases are credited to a super admin (the owner), not the rep who
+  // records them — online orders don't count toward a rep's personal sales.
+  let onlineSourceId: string | null = null;
+  let deliveryCashAmd = 0;
+  const deliveryNote = (parsed.data.deliveryNote ?? '').trim();
+  if (online) {
+    const sa = await prisma.user.findFirst({
+      where: { role: 'SUPER_ADMIN', isActive: true },
+      orderBy: [{ isOwner: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+    if (sa) soldById = sa.id;
+    if (parsed.data.onlineSourceId) {
+      const src = await prisma.sellingPoint.findUnique({ where: { id: parsed.data.onlineSourceId }, select: { id: true } });
+      onlineSourceId = src?.id ?? null;
+    }
+    deliveryCashAmd = Math.max(0, parsed.data.deliveryCashAmd ?? 0);
   }
 
   // Reject duplicate variantIds — caller should consolidate first.
@@ -166,6 +194,31 @@ export async function POST(req: NextRequest) {
         }
         if (p.newQty <= p.reorderPoint) {
           lowStockHits.push({ variantSku: p.sku, remaining: p.newQty, sellingPointName: sp.name });
+        }
+      }
+
+      // Online purchase: record the money in the safe. The purchase amount comes
+      // in from the online source (e.g. Instagram DM), NOT from any drawer.
+      if (online) {
+        await tx.safeTransaction.create({
+          data: {
+            type: 'DEPOSIT', amountAmd: total, sellingPointId: onlineSourceId,
+            fromDrawer: false, performedById: u.id,
+            note: `Online purchase — ${sNumber}`, occurredAt: new Date(),
+          },
+        });
+        // Delivery cash the rep took from the physical drawer, if any: a
+        // "from drawer" deposit (so the drawer close drops) + a shared Investment
+        // withdrawal (the delivery expense). Mirrors the Kacca delivery-cash flow.
+        if (deliveryCashAmd > 0) {
+          const dnote = deliveryNote ? `Delivery — ${deliveryNote}` : 'Delivery';
+          const t0 = new Date();
+          await tx.safeTransaction.create({
+            data: { type: 'DEPOSIT', amountAmd: deliveryCashAmd, sellingPointId, fromDrawer: true, performedById: u.id, note: dnote, occurredAt: t0 },
+          });
+          await tx.safeTransaction.create({
+            data: { type: 'WITHDRAWAL', amountAmd: deliveryCashAmd, splitAll: true, reason: 'INVESTMENT', performedById: u.id, note: dnote, occurredAt: new Date(t0.getTime() + 1000) },
+          });
         }
       }
       return sale.id;
