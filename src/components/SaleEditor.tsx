@@ -12,9 +12,10 @@ const PAYMENTS = ['CASH', 'CARD', 'TRANSFER', 'OTHER'] as const;
 type Payment = (typeof PAYMENTS)[number];
 
 export function SaleEditor({
-  saleId, payment, cashToSafe, nonDrawerAmd, nonDrawerToSafe, customerId, customerName, sellingPointId, subtotal, discountAmd, lines,
+  saleId, saleDateISO, payment, cashToSafe, nonDrawerAmd, nonDrawerToSafe, customerId, customerName, sellingPointId, subtotal, discountAmd, lines,
 }: {
   saleId: string;
+  saleDateISO: string;
   payment: Payment;
   cashToSafe: boolean;
   nonDrawerAmd: number;
@@ -28,6 +29,8 @@ export function SaleEditor({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [saleDate, setSaleDate] = useState(saleDateISO);
+  const [deleting, setDeleting] = useState(false);
   const [pay, setPay] = useState<Payment>(payment);
   const [c2s, setC2s] = useState(cashToSafe);
   const [transfer, setTransfer] = useState(nonDrawerAmd ? String(nonDrawerAmd) : '');
@@ -73,7 +76,7 @@ export function SaleEditor({
   const effectiveC2s = pay === 'CASH' && c2s;
   const transferNum = !effectiveC2s ? Math.min(Math.max(0, Number(transfer) || 0), newTotal) : 0;
   const effectiveToSafe = transferNum > 0 && toSafe;
-  const dirty = pay !== payment || effectiveC2s !== cashToSafe || transferNum !== nonDrawerAmd || effectiveToSafe !== nonDrawerToSafe || custId !== customerId || newDiscountAmd !== discountAmd;
+  const dirty = pay !== payment || effectiveC2s !== cashToSafe || transferNum !== nonDrawerAmd || effectiveToSafe !== nonDrawerToSafe || custId !== customerId || newDiscountAmd !== discountAmd || (!!saleDate && saleDate !== saleDateISO);
 
   function pick(c: Customer) {
     setCustId(c.id); setCustLabel(c.fullName); setQuery(''); setResults([]); setShowList(false);
@@ -92,6 +95,7 @@ export function SaleEditor({
           nonDrawerAmd: transferNum,
           nonDrawerToSafe: effectiveToSafe,
           customerId: custId,
+          saleDate: saleDate && saleDate !== saleDateISO ? saleDate : undefined,
           discount: { kind: discKind, value: discountValueNum },
         }),
       });
@@ -109,6 +113,22 @@ export function SaleEditor({
     }
   }
 
+  async function remove() {
+    if (!window.confirm('Delete this sale permanently? The stock will be returned to inventory. This can’t be undone.')) return;
+    setDeleting(true); setMsg(null);
+    try {
+      const r = await fetch(`/api/sale/${saleId}`, { method: 'DELETE' });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        setMsg(e.error || 'Failed to delete.'); setDeleting(false);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setMsg('Network error.'); setDeleting(false);
+    }
+  }
+
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="btn-link text-xs inline-block">
@@ -120,6 +140,11 @@ export function SaleEditor({
   return (
     <div className="rounded-xl border p-3 space-y-4" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)' }}>
       <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-soft)' }}>Edit sale</p>
+
+      <div className="space-y-1">
+        <label className="label">Sale date</label>
+        <input className="input" type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+      </div>
 
       <div className="space-y-1">
         <label className="label">Payment method</label>
@@ -214,6 +239,9 @@ export function SaleEditor({
           {saving ? 'Saving…' : 'Save changes'}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="btn-ghost text-xs">Close</button>
+        <button type="button" onClick={remove} disabled={deleting || saving} className="btn-link text-xs text-red-700 ml-auto disabled:opacity-50">
+          {deleting ? 'Deleting…' : 'Delete sale'}
+        </button>
         {msg && <span className="text-xs" style={{ color: 'var(--ink-soft)' }}>{msg}</span>}
       </div>
 

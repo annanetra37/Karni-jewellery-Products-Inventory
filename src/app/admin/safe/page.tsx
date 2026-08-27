@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { LineChartHover } from '@/components/LineChartHover';
 import { reconcileSessions, isMismatch } from '@/lib/reconcile';
 import { expectedCloseBySession } from '@/lib/shiftCash';
+import { ConfirmButton } from '@/components/ConfirmButton';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 import { resolveRange } from '@/lib/dateRange';
 import { DateRangeControls } from '@/components/DateRangeControls';
@@ -497,7 +498,7 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
                         </form>
                         <form action={deleteSafeTx}>
                           <input type="hidden" name="id" value={tx.id} />
-                          <button type="submit" className="btn-link text-[11px] text-red-700">{t('sf.delete')}</button>
+                          <ConfirmButton message={t('c.confirmDelete')} className="btn-link text-[11px] text-red-700">{t('sf.delete')}</ConfirmButton>
                         </form>
                       </div>
                     </details>
