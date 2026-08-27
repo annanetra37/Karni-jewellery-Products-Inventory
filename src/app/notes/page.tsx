@@ -1,6 +1,7 @@
 import { requireUser, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getT } from '@/lib/i18n-server';
+import { ConfirmButton } from '@/components/ConfirmButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,7 +104,7 @@ export default async function NotesPage() {
                     {(admin || n.authorId === user.id) && (
                       <form action={deleteNote}>
                         <input type="hidden" name="id" value={n.id} />
-                        <button type="submit" className="btn-link text-xs text-red-700">{t('c.delete')}</button>
+                        <ConfirmButton message={t('c.confirmDelete')} className="btn-link text-xs text-red-700">{t('c.delete')}</ConfirmButton>
                       </form>
                     )}
                   </div>
@@ -133,7 +134,7 @@ export default async function NotesPage() {
                     {(admin || n.authorId === user.id) && (
                       <form action={deleteNote}>
                         <input type="hidden" name="id" value={n.id} />
-                        <button type="submit" className="btn-link text-xs text-red-700">{t('c.delete')}</button>
+                        <ConfirmButton message={t('c.confirmDelete')} className="btn-link text-xs text-red-700">{t('c.delete')}</ConfirmButton>
                       </form>
                     )}
                   </div>

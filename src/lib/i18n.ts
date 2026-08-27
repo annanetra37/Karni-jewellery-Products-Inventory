@@ -19,6 +19,7 @@ const D: Record<string, Record<Locale, string>> = {
   'c.saveChanges': { en: 'Save changes', hy: 'Պահպանել փոփոխությունները', ru: 'Сохранить изменения' },
   'c.cancel': { en: 'Cancel', hy: 'Չեղարկել', ru: 'Отмена' },
   'c.delete': { en: 'Delete', hy: 'Ջնջել', ru: 'Удалить' },
+  'c.confirmDelete': { en: 'Delete this permanently? This can’t be undone.', hy: 'Ջնջե՞լ ընդմիշտ։ Սա հնարավոր չէ վերականգնել։', ru: 'Удалить навсегда? Это нельзя отменить.' },
   'c.remove': { en: 'Remove', hy: 'Հեռացնել', ru: 'Удалить' },
   'c.add': { en: 'Add', hy: 'Ավելացնել', ru: 'Добавить' },
   'c.edit': { en: 'Edit', hy: 'Խմբագրել', ru: 'Изменить' },

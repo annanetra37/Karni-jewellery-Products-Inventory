@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { BackLink } from '@/components/BackLink';
 import { ImageUploadField } from '@/components/ImageUploadField';
+import { ConfirmButton } from '@/components/ConfirmButton';
 
 async function saveAction(formData: FormData) {
   'use server';
@@ -418,7 +419,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             : <>Hard-deletes the variant (and the design if no other variants remain). Use Archive if you want it kept.</>
           }
         </p>
-        <button className="btn-danger" type="submit">{v._count.saleLineItems > 0 ? 'Archive' : 'Delete permanently'}</button>
+        <ConfirmButton message={v._count.saleLineItems > 0 ? 'Archive this product?' : 'Delete this product permanently? This can’t be undone.'} className="btn-danger">{v._count.saleLineItems > 0 ? 'Archive' : 'Delete permanently'}</ConfirmButton>
       </form>
     </div>
   );

@@ -399,6 +399,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Search
                       {canEdit && !ex && (
                         <SaleEditor
                           saleId={s.id}
+                          saleDateISO={yerevanISODate(s.createdAt)}
                           payment={(s.paymentMethod || 'CASH') as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'}
                           cashToSafe={s.cashToSafe}
                           nonDrawerAmd={Number(s.nonDrawerAmd)}
