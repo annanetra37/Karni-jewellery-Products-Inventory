@@ -53,6 +53,8 @@ export async function GET(req: NextRequest) {
   ws.getRow(1).font = { bold: true };
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 
+  const totals = { green: 0, blue: 0, red: 0, orange: 0 };
+
   for (const tx of rows) {
     const isWithdrawal = tx.type === 'WITHDRAWAL';
     const isBank = tx.type === 'BANK_TO_SAFE';
@@ -77,14 +79,36 @@ export async function GET(req: NextRequest) {
     });
     row.getCell('amount').numFmt = '#,##0';
 
-    const argb = isWithdrawal
-      ? (tx.reason === 'INVESTMENT' ? FILL.orange : FILL.red)   // personal or unset → red
-      : fromDrawer ? FILL.green : FILL.blue;                    // BANK_TO_SAFE & other deposits → blue
+    const kind = isWithdrawal
+      ? (tx.reason === 'INVESTMENT' ? 'orange' : 'red')   // personal or unset → red
+      : fromDrawer ? 'green' : 'blue';                    // BANK_TO_SAFE & other deposits → blue
+    totals[kind] += Math.abs(Number(tx.amountAmd));
+    const argb = FILL[kind];
     row.eachCell((cell) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
     });
   }
   ws.autoFilter = { from: 'A1', to: 'G1' };
+
+  // Colour-coded totals block (one line per colour) plus a net.
+  ws.addRow({});
+  ws.addRow({ type: 'TOTALS' }).getCell('type').font = { bold: true };
+  const addTotal = (label: string, value: number, kind: keyof typeof FILL) => {
+    const row = ws.addRow({ type: label, amount: value });
+    row.getCell('amount').numFmt = '#,##0';
+    row.getCell('type').font = { bold: true };
+    for (const k of ['type', 'source', 'reason', 'note', 'by', 'amount']) {
+      row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[kind] } };
+    }
+  };
+  addTotal('Drawer → Safe', totals.green, 'green');
+  addTotal('POS / other → Safe', totals.blue, 'blue');
+  addTotal('Withdrawal · Personal', totals.red, 'red');
+  addTotal('Withdrawal · Investment', totals.orange, 'orange');
+  const netRow = ws.addRow({ type: 'Net (in − out)', amount: totals.green + totals.blue - totals.red - totals.orange });
+  netRow.getCell('type').font = { bold: true };
+  netRow.getCell('amount').font = { bold: true };
+  netRow.getCell('amount').numFmt = '#,##0';
 
   const buf = await wb.xlsx.writeBuffer();
   return new NextResponse(Buffer.from(buf), {
