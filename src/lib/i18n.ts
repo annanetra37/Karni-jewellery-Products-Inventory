@@ -251,6 +251,7 @@ const D: Record<string, Record<Locale, string>> = {
   'sf.pending': { en: 'Awaiting reconciliation', hy: 'Սպասում է համադրման', ru: 'Ожидает сверки' },
   'sf.pendingHint': { en: 'These safe deposits will be checked the next time a shift opens at that drawer.', hy: 'Այս մուտքերը կստուգվեն, երբ տվյալ դրամարկղում հաջորդ հերթափոխը բացվի։', ru: 'Эти внесения будут сверены при следующем открытии смены в этой кассе.' },
   'sf.allMovements': { en: 'All movements', hy: 'Բոլոր շարժերը', ru: 'Все движения' },
+  'sf.exportExcel': { en: 'Excel', hy: 'Excel', ru: 'Excel' },
   'sf.toSafe': { en: 'To safe', hy: 'Դեպի սեյֆ', ru: 'В сейф' },
   'sf.fromSafe': { en: 'From safe', hy: 'Սեյֆից', ru: 'Из сейфа' },
   'sf.from': { en: 'from', hy: 'որ', ru: 'из' },

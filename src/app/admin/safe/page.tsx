@@ -224,6 +224,12 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
   const isLive = !sp.to;
   const inPeriod = (d: Date) => (!rr.startDate || d >= rr.startDate) && d <= rr.endDate;
   const periodTxs = txs.filter((tx) => inPeriod(tx.occurredAt));
+  // Carry the current date range through to the Excel export.
+  const exportParams = new URLSearchParams();
+  if (sp.range) exportParams.set('range', sp.range);
+  if (sp.from) exportParams.set('from', sp.from);
+  if (sp.to) exportParams.set('to', sp.to);
+  const exportQs = exportParams.toString();
   let periodIn = 0, periodOut = 0;
   for (const tx of periodTxs) {
     const amt = Number(tx.amountAmd);
@@ -437,9 +443,12 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
       <section className="card">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <p className="font-semibold">{t('sf.allMovements')}</p>
-          <p className="text-xs text-karni-700">
-            {rr.startDate ? `${yerevanISODate(rr.startDate)} – ${asOfDate}` : (isLive ? t('sf.allTime') : `… – ${asOfDate}`)}
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-karni-700">
+              {rr.startDate ? `${yerevanISODate(rr.startDate)} – ${asOfDate}` : (isLive ? t('sf.allTime') : `… – ${asOfDate}`)}
+            </p>
+            <a href={`/api/export/safe-movements${exportQs ? `?${exportQs}` : ''}`} className="btn-secondary text-xs">⬇ {t('sf.exportExcel')}</a>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="card">
