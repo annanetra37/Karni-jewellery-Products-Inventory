@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { LineChartHover } from '@/components/LineChartHover';
 import { reconcileSessions, isMismatch } from '@/lib/reconcile';
 import { expectedCloseBySession } from '@/lib/shiftCash';
-import { ConfirmButton } from '@/components/ConfirmButton';
+import { SafeMovements } from '@/components/SafeMovements';
 import { yerevanDateStringStart, yerevanISODate } from '@/lib/datetime';
 import { resolveRange } from '@/lib/dateRange';
 import { DateRangeControls } from '@/components/DateRangeControls';
@@ -230,6 +230,20 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
   if (sp.from) exportParams.set('from', sp.from);
   if (sp.to) exportParams.set('to', sp.to);
   const exportQs = exportParams.toString();
+  // Serialise movements for the client-side searchable/filterable list.
+  const movementsData = periodTxs.map((tx) => ({
+    id: tx.id,
+    type: tx.type as 'DEPOSIT' | 'WITHDRAWAL' | 'BANK_TO_SAFE',
+    fromDrawer: tx.fromDrawer,
+    reason: tx.reason,
+    amount: Number(tx.amountAmd),
+    note: tx.note,
+    sourceName: tx.sellingPoint?.name ?? null,
+    ownerName: tx.owner?.fullName ?? null,
+    splitAll: tx.splitAll,
+    performer: tx.performedBy.fullName,
+    occurredISO: yerevanISODate(tx.occurredAt),
+  }));
   let periodIn = 0, periodOut = 0;
   for (const tx of periodTxs) {
     const amt = Number(tx.amountAmd);
@@ -397,10 +411,14 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
         <LineChartHover series={series} unit="֏" />
       </section>
 
-      {/* Reconciliation */}
+      {/* Reconciliation (collapsible) */}
       <section className="card">
-        <p className="font-semibold mb-1">{t('sf.reconciliation')}</p>
-        <p className="text-xs text-karni-700 mb-3">{t('sf.reconHint')}</p>
+        <details open={flags > 0}>
+          <summary className="font-semibold cursor-pointer select-none flex items-center gap-2">
+            {t('sf.reconciliation')}
+            {flags > 0 && <span className="chip chip-danger text-[11px]">{flags}</span>}
+          </summary>
+          <p className="text-xs text-karni-700 mt-2 mb-3">{t('sf.reconHint')}</p>
 
         {pendingDeposits.length > 0 && (
           <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--bg-tint)' }}>
@@ -437,6 +455,7 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
           })}
           {reconShown.length === 0 && <li className="text-karni-700">{t('sf.noHandovers')}</li>}
         </ul>
+        </details>
       </section>
 
       {/* Movements log */}
@@ -464,63 +483,13 @@ export default async function SafePage({ searchParams }: { searchParams: Promise
             <p className="display text-xl font-semibold mt-1 tabular-nums" style={{ color: 'var(--brand-deep)' }}>{periodIn - periodOut < 0 ? '−' : '+'}{formatAmd(Math.abs(periodIn - periodOut))}</p>
           </div>
         </div>
-        <ul className="space-y-2 text-sm">
-          {periodTxs.slice(0, 100).map((tx) => {
-            const reasonLabel = tx.reason === 'INVESTMENT' ? t('sf.investment') : tx.reason === 'PERSONAL' ? t('sf.personal') : '';
-            const who = tx.type === 'WITHDRAWAL'
-              ? (tx.splitAll ? t('sf.both') : (tx.owner ? `${t('sf.by')} ${tx.owner.fullName}`.trim() : t('sf.withdrawal')))
-              : tx.type === 'BANK_TO_SAFE'
-              ? t('sf.fromBank')
-              : (tx.sellingPoint ? `${t('sf.from')} ${tx.sellingPoint.name}` : t('sf.deposit'));
-            const chipClass = tx.type === 'WITHDRAWAL' ? 'chip-warn' : tx.type === 'BANK_TO_SAFE' ? 'chip-accent' : 'chip-ok';
-            const chipLabel = tx.type === 'WITHDRAWAL' ? t('sf.fromSafe') : tx.type === 'BANK_TO_SAFE' ? t('sf.bankToSafe') : t('sf.toSafe');
-            return (
-              <li key={tx.id} className="flex items-center justify-between gap-3 border-b border-karni-100 pb-2 last:border-0">
-                <div className="min-w-0">
-                  <p className="font-medium">
-                    <span className={`chip mr-1 ${chipClass}`}>{chipLabel}</span>
-                    {who}
-                    {reasonLabel && <span className="text-xs text-karni-700"> · {reasonLabel}</span>}
-                    {tx.note ? <span className="text-xs text-karni-700"> · {tx.note}</span> : null}
-                  </p>
-                  <p className="text-xs text-karni-700">
-                    {tx.occurredAt.toLocaleDateString()} · {t('sf.recordedBy')} {tx.performedBy.fullName}
-                    {tx.type === 'DEPOSIT' && (
-                      <span> · {tx.fromDrawer ? t('sf.sourceDrawerShort') : t('sf.sourceOtherShort')}
-                        {canEdit && (
-                          <form action={toggleDepositSource} className="inline">
-                            <input type="hidden" name="id" value={tx.id} />
-                            <button type="submit" className="btn-link text-[11px] ml-1">{t('sf.changeSource')}</button>
-                          </form>
-                        )}
-                      </span>
-                    )}
-                  </p>
-                  {canEdit && (
-                    <details className="text-[11px] mt-0.5">
-                      <summary className="btn-link cursor-pointer select-none inline-block">{t('sf.editMovement')}</summary>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <form action={editSafeTxDate} className="flex items-center gap-1">
-                          <input type="hidden" name="id" value={tx.id} />
-                          <input className="input py-1 text-xs" name="occurredAt" type="date" defaultValue={yerevanISODate(tx.occurredAt)} />
-                          <button type="submit" className="btn-secondary px-2 py-1 text-[11px]">{t('sf.saveDate')}</button>
-                        </form>
-                        <form action={deleteSafeTx}>
-                          <input type="hidden" name="id" value={tx.id} />
-                          <ConfirmButton message={t('c.confirmDelete')} className="btn-link text-[11px] text-red-700">{t('sf.delete')}</ConfirmButton>
-                        </form>
-                      </div>
-                    </details>
-                  )}
-                </div>
-                <b className={`tabular-nums ${tx.type === 'WITHDRAWAL' ? 'text-red-700' : ''}`}>
-                  {tx.type === 'WITHDRAWAL' ? '−' : '+'}{formatAmd(Number(tx.amountAmd))}
-                </b>
-              </li>
-            );
-          })}
-          {periodTxs.length === 0 && <li className="text-karni-700">{t('sf.noMovements')}</li>}
-        </ul>
+        <SafeMovements
+          movements={movementsData}
+          canEdit={canEdit}
+          editDate={editSafeTxDate}
+          deleteTx={deleteSafeTx}
+          toggleSource={toggleDepositSource}
+        />
       </section>
     </div>
   );
