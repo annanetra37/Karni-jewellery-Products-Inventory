@@ -292,6 +292,28 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const grossRevenue = totalRevenue;
   const netRefund = Number(returnsAgg._sum.returnedAmd ?? 0) - Number(returnsAgg._sum.exchangeAmd ?? 0);
   const netRevenue = grossRevenue - netRefund;
+
+  // An exchange where the customer paid extra (e.g. returned 36,000, took 44,000,
+  // paid 8,000 more) charges that top-up on the exchange sale's payment method.
+  // The gross-sales loop skips exchange sales, so attribute the top-up to its
+  // payment bucket here — otherwise it shows in net revenue but not under Card/Cash.
+  const exchangeReturns = await prisma.saleReturn.findMany({
+    where: {
+      ...(startDate ? { createdAt: { gte: startDate, lte: now } } : {}),
+      ...saleSpWhere,
+      ...(soldByIds.length ? { performedById: { in: soldByIds } } : {}),
+      exchangeSaleId: { not: null },
+    },
+    select: { returnedAmd: true, exchangeAmd: true, exchangeSale: { select: { paymentMethod: true } } },
+  });
+  for (const er of exchangeReturns) {
+    const topUp = Number(er.exchangeAmd) - Number(er.returnedAmd);
+    if (topUp <= 0) continue;
+    const method = er.exchangeSale?.paymentMethod || 'CASH';
+    if (paymentMethods.length && !paymentMethods.includes(method)) continue;
+    addPay(method, topUp);
+  }
+
   const avgSale = totalCount > 0 ? netRevenue / totalCount : 0;
   const sortByValue = (m: Map<string, { count: number; revenue: number }>) =>
     Array.from(m.entries())
