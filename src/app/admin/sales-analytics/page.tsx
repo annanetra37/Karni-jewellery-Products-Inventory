@@ -304,7 +304,18 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       ...(soldByIds.length ? { performedById: { in: soldByIds } } : {}),
       exchangeSaleId: { not: null },
     },
-    select: { returnedAmd: true, exchangeAmd: true, exchangeSale: { select: { paymentMethod: true } } },
+    select: {
+      returnedAmd: true, exchangeAmd: true,
+      exchangeSale: {
+        select: {
+          saleNumber: true, createdAt: true, paymentMethod: true, discountAmd: true,
+          customer: { select: { fullName: true } },
+          soldBy: { select: { fullName: true } },
+          sellingPoint: { select: { name: true } },
+          lineItems: { select: { quantity: true, lineTotalAmd: true, variant: { select: { designName: true, id: true } } } },
+        },
+      },
+    },
   });
   for (const er of exchangeReturns) {
     const topUp = Number(er.exchangeAmd) - Number(er.returnedAmd);
@@ -550,6 +561,37 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
       items: s.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
     };
   });
+  // Exchange top-ups as drill-down rows: the extra a customer paid on an
+  // exchange is a real card/cash purchase, shown alongside normal sales in the
+  // payment breakdowns (the amount is the top-up, not the full exchange value).
+  const exchangeLite: SaleLite[] = [];
+  for (const er of exchangeReturns) {
+    const es = er.exchangeSale;
+    if (!es) continue;
+    const topUp = Number(er.exchangeAmd) - Number(er.returnedAmd);
+    if (topUp <= 0) continue;
+    const method = es.paymentMethod || 'CASH';
+    exchangeLite.push({
+      saleNumber: es.saleNumber,
+      when: formatYerevanDateTime(es.createdAt),
+      customer: es.customer?.fullName || 'Walk-in',
+      soldBy: es.soldBy.fullName,
+      sellingPoint: es.sellingPoint?.name || '—',
+      payment: method,
+      total: topUp,
+      discount: 0,
+      cashToSafe: false,
+      weekday: yerevanWeekday(es.createdAt),
+      hour: yerevanHour(es.createdAt),
+      day: yerevanDayKey(es.createdAt),
+      cashAmt: method === 'CASH' ? topUp : 0,
+      cardAmt: method === 'CARD' ? topUp : 0,
+      toSafeAmt: 0,
+      note: `exchange top-up · ${formatAmd(Number(er.returnedAmd))} returned`,
+      items: es.lineItems.map((li) => ({ name: li.variant.designName, qty: li.quantity, line: Number(li.lineTotalAmd), variantId: li.variant.id })),
+    });
+  }
+
   function groupSales(keyFn: (s: SaleLite) => string | string[]): Map<string, SaleLite[]> {
     const m = new Map<string, SaleLite[]>();
     for (const s of salesLite) {
@@ -683,11 +725,12 @@ export default async function SalesAnalyticsPage({ searchParams }: { searchParam
   const toBreakdown = (m: Map<string, { count: number; revenue: number }>) =>
     Array.from(m.entries()).map(([label, v]) => ({ label, count: v.count, revenue: v.revenue })).sort((a, b) => b.revenue - a.revenue);
   // Sales behind each payment bucket (a split sale appears in both Cash and Card).
+  const payable = [...salesLite, ...exchangeLite];
   const salesByPayBucket: Record<string, SaleLite[]> = {
-    CASH: salesLite.filter((s) => s.cashAmt > 0),
-    CARD: salesLite.filter((s) => s.cardAmt > 0),
-    TRANSFER: salesLite.filter((s) => s.payment === 'TRANSFER'),
-    OTHER: salesLite.filter((s) => s.payment === 'OTHER'),
+    CASH: payable.filter((s) => s.cashAmt > 0),
+    CARD: payable.filter((s) => s.cardAmt > 0),
+    TRANSFER: payable.filter((s) => s.payment === 'TRANSFER'),
+    OTHER: payable.filter((s) => s.payment === 'OTHER'),
   };
   // Payment breakdown whose rows drill into the underlying sales.
   const renderPaymentBreakdown = (rows: { label: string; count: number; revenue: number }[]) => {
